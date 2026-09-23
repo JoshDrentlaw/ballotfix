@@ -1,0 +1,29 @@
+{
+  // Ballot Fix, phase 0. Permission flags in the tasks below are this app's
+  // security policy in executable form; see SECURITY.md. Unlike Parallax Fix
+  // (broad by design), phase 0 needs very little: it talks to one host, reads
+  // its env, and writes its output directory.
+  "name": "ballot-fix",
+  "version": "0.1.0",
+  "exports": "./src/main.ts",
+  "tasks": {
+    "dossier": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=out src/main.ts",
+    "check": "deno fmt --check && deno lint && deno check src/main.ts",
+    "test": "deno test --allow-read --allow-write=out"
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1",
+    "@std/cli": "jsr:@std/cli@^1",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.128"
+  }
+}
