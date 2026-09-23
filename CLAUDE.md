@@ -44,8 +44,22 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - `src/research/anthropic.ts`: the only adapter. Claude with server-side `web_search` and
   `web_fetch`, JSON-schema output, `pause_turn` resumption, `fallbacks: "default"`. Searches run on
   Anthropic's side, so the process only needs `api.anthropic.com`.
-- `src/dossier.ts`: validation and invariant enforcement. `src/race.ts`: orchestration.
-  `src/render.ts`: static HTML. `src/main.ts`: CLI.
+- `src/dossier.ts`: validation and invariant enforcement. `src/race.ts`: orchestration, with
+  `onUpdate` partial results (unfinished candidates have status "pending").
+- `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both
+  the app and the static export, so they can't drift apart.
+- Web app (`deno task serve`, `src/serve.ts`): `src/web/server.ts` routes, `pages.ts` HTML,
+  `jobs.ts` one-race-at-a-time queue, `store.ts` one JSON file per run in `data/`. No client
+  JavaScript: forms post, running races use a meta refresh. POSTs must be same-origin
+  (`Sec-Fetch-Site`, then `Origin`), because starting research spends money.
+- `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
+
+## Verifying UI changes
+
+There is no browser test harness in CI. For UI changes, run `deno task demo` and drive it with
+Playwright against Chromium at `/opt/pw-browsers/chromium` at phone width (390px). Check for
+horizontal overflow and walk the form, running, and finished states. The first such run found a bug
+the unit tests missed: browsers can send `Origin: null` on the app's own form posts.
 
 ## Phases
 

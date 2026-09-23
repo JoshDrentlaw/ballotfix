@@ -86,7 +86,8 @@ export interface SectionResult {
 
 export interface CandidateDossier {
   candidate: BallotCandidate;
-  status: "ok" | "failed";
+  /** "pending" only appears in partial results while a run is still in progress. */
+  status: "ok" | "failed" | "pending";
   sections: Record<SectionId, SectionResult>;
   /**
    * Facts whose URL was not among the pages the research session actually

@@ -1,513 +1,167 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'"
-    >
-    <title>Example City Mayor, 2026-11-03</title>
-    <style>
-      :root {
-        --bg: #fbfaf7;
-        --fg: #1d1d1b;
-        --muted: #5d5b55;
-        --line: #e2dfd7;
-        --card: #ffffff;
-        --accent: #28536b;
-        --warn-bg: #fff4e0;
-        --warn-fg: #6b4300;
-        --ev-primary: #1f6f43;
-        --ev-reported: #28536b;
-        --ev-opinion: #7a4d9c;
-        --ev-unsourced: #8a3b2e;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #161614;
-          --fg: #ecebe6;
-          --muted: #a8a69e;
-          --line: #34332f;
-          --card: #1f1f1c;
-          --accent: #8cc0dc;
-          --warn-bg: #3a2c12;
-          --warn-fg: #f3d39b;
-          --ev-primary: #7fd3a3;
-          --ev-reported: #8cc0dc;
-          --ev-opinion: #c9a3e6;
-          --ev-unsourced: #f0a090;
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      main {
-        max-width: 820px;
-        margin: 0 auto;
-        padding: 24px 16px 64px;
-      }
-      h1 {
-        font-size: 1.6rem;
-        margin: 0 0 4px;
-      }
-      h2 {
-        font-size: 1.35rem;
-        margin: 0;
-      }
-      h3 {
-        font-size: 1.05rem;
-        margin: 0 0 2px;
-      }
-      h4 {
-        font-size: 0.95rem;
-        margin: 20px 0 6px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--muted);
-      }
-      a {
-        color: var(--accent);
-      }
-      .sub, .desig, .meta, .searched, .cov {
-        color: var(--muted);
-      }
-      .meta, .searched {
-        font-size: 0.85rem;
-        margin: 2px 0 0;
-      }
-      .banner {
-        background: var(--warn-bg);
-        color: var(--warn-fg);
-        border-radius: 8px;
-        padding: 12px 14px;
-        margin: 16px 0;
-      }
-      .banner ul {
-        margin: 6px 0 0;
-        padding-left: 20px;
-      }
-      .note {
-        border-left: 3px solid var(--accent);
-        padding: 4px 12px;
-        margin: 12px 0;
-      }
-      .cards {
-        list-style: none;
-        padding: 0;
-        display: grid;
-        gap: 10px;
-        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
-      }
-      .card p {
-        margin: 2px 0;
-        font-size: 0.9rem;
-      }
-      .cov-fail {
-        color: var(--ev-unsourced);
-      }
-      .inc {
-        font-weight: 600;
-        color: var(--fg);
-      }
-      .dossier {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 18px 16px;
-        margin: 28px 0;
-      }
-      .facts {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      .fact {
-        border-top: 1px solid var(--line);
-        padding: 10px 0;
-      }
-      .fact p {
-        margin: 4px 0 0;
-      }
-      .ev {
-        display: inline-block;
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-      }
-      .ev-primary_record {
-        color: var(--ev-primary);
-      }
-      .ev-reported {
-        color: var(--ev-reported);
-      }
-      .ev-opinion {
-        color: var(--ev-opinion);
-      }
-      .ev-unsourced {
-        color: var(--ev-unsourced);
-      }
-      .gap {
-        font-style: italic;
-        color: var(--muted);
-        margin: 4px 0;
-      }
-      .gaps {
-        margin: 0;
-        padding-left: 20px;
-      }
-      details.unverified {
-        margin-top: 18px;
-        border-top: 1px dashed var(--line);
-        padding-top: 10px;
-      }
-      summary {
-        cursor: pointer;
-        color: var(--muted);
-      }
-      .back {
-        margin: 16px 0 0;
-        font-size: 0.9rem;
-      }
-      footer {
-        color: var(--muted);
-        font-size: 0.85rem;
-        margin-top: 40px;
-      }
-    </style>
-  </head>
-  <body>
-    <main id="top">
-      <h1>Example City Mayor, 2026-11-03</h1>
-      <p class="sub">
-        Example City, CA · Candidate list from <a
-          href="https://example.org/nominees.pdf"
-          rel="noopener noreferrer nofollow"
-          target="_blank"
-        >Example City Clerk, Notice of Nominees (placeholder)</a> · Researched 2026-09-23
-      </p>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'">
 
-      <div class="banner">
-        <strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets
-        the same sections and the same research instructions. Each fact links to where it came from
-        and is tagged by the kind of evidence behind it.
-        <ul>
-          <li>
-            Phase 0 researches with general web search only. It does not yet read campaign finance
-            portals, council minutes, or budget documents directly, so records that search engines
-            don&#39;t index are likely missing.
-          </li>
-          <li>
-            Paywalled local news is usually not readable, so coverage from subscription outlets may
-            be absent or represented only by headlines.
-          </li>
-          <li>
-            Social media is not searched: Facebook community groups, Nextdoor, Instagram, and
-            TikTok, where much local political discussion happens, are a blind spot.
-          </li>
-          <li>
-            PDF records (agendas, minutes, budgets, filings) are only included when search surfaced
-            them and they could be fetched.
-          </li>
-          <li>
-            Absence of a finding is not evidence of absence. An empty section means this run found
-            nothing, not that nothing exists.
-          </li>
-        </ul>
-      </div>
+<title>Example City Mayor · Nov 3, 2026</title>
+<style>
+:root { --bg:#fbfaf7; --fg:#1d1d1b; --muted:#5d5b55; --line:#e2dfd7; --card:#ffffff;
+  --accent:#28536b; --accent-fg:#ffffff; --warn-bg:#fff4e0; --warn-fg:#6b4300;
+  --ev-primary:#1f6f43; --ev-reported:#28536b; --ev-opinion:#7a4d9c; --ev-unsourced:#8a3b2e; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161614; --fg:#ecebe6; --muted:#a8a69e;
+  --line:#34332f; --card:#1f1f1c; --accent:#8cc0dc; --accent-fg:#10202a; --warn-bg:#3a2c12; --warn-fg:#f3d39b;
+  --ev-primary:#7fd3a3; --ev-reported:#8cc0dc; --ev-opinion:#c9a3e6; --ev-unsourced:#f0a090; } }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 820px; margin: 0 auto; padding: 16px 16px 64px; }
+h1 { font-size: 1.55rem; line-height: 1.25; margin: 8px 0 4px; }
+h2 { font-size: 1.3rem; margin: 0; }
+h3 { font-size: 1.05rem; margin: 0 0 2px; }
+h4 { font-size: 0.9rem; margin: 22px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+a { color: var(--accent); }
+p, li { overflow-wrap: anywhere; }
+.sub, .desig, .meta, .searched, .cov { color: var(--muted); }
+.meta, .searched { font-size: .85rem; margin: 2px 0 0; }
+.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; margin: 14px 0; }
+.banner p { margin: 0; }
+.banner details { margin-top: 8px; }
+.banner ul { margin: 6px 0 0; padding-left: 20px; }
+.note { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 12px 0; }
+.cards { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.card a { display: block; padding: 2px 0; }
+.card p { margin: 2px 0; font-size: .9rem; }
+.cov-fail { color: var(--ev-unsourced); }
+.cov-pending { font-style: italic; }
+.inc { font-weight: 600; color: var(--fg); }
+.dossier { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 16px; margin: 24px 0; scroll-margin-top: 12px; }
+.facts { list-style: none; padding: 0; margin: 0; }
+.fact { border-top: 1px solid var(--line); padding: 10px 0; }
+.fact p { margin: 4px 0 0; }
+.ev { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.ev-primary_record { color: var(--ev-primary); } .ev-reported { color: var(--ev-reported); }
+.ev-opinion { color: var(--ev-opinion); } .ev-unsourced { color: var(--ev-unsourced); }
+.gap { font-style: italic; color: var(--muted); margin: 4px 0; }
+.gaps { margin: 0; padding-left: 20px; }
+details.unverified { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 10px; }
+summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
+.back { margin: 16px 0 0; font-size: .95rem; }
+footer { color: var(--muted); font-size: .85rem; margin-top: 40px; }
+nav.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+nav.top a { text-decoration: none; font-weight: 700; padding: 8px 0; }
+form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
+label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
+label .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
+input, textarea { font: inherit; font-size: 16px; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+textarea { min-height: 96px; }
+.row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+form.inline { display: inline; margin: 0; }
+.runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.runs a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--fg); }
+.runs .when { color: var(--muted); font-size: .85rem; }
+.pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pill-running { color: var(--ev-reported); } .pill-done { color: var(--ev-primary); }
+.pill-failed, .pill-interrupted { color: var(--ev-unsourced); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
+</style>
+</head>
+<body>
+<main id="top">
 
-      <h2>Candidates</h2>
-      <p class="sub">
-        Listed in the order of the official candidate list, which may differ from the printed
-        ballot. LAYOUT SAMPLE. Placeholder data, not research about real people.
-      </p>
-      <p class="note">
-        Sample Candidate B holds this office now, so there is a public record in it to research.
-        Challengers usually have far less. A shorter dossier is not a cleaner one, and a longer one
-        is not a worse one.
-      </p>
+<h1>Example City Mayor · Nov 3, 2026</h1>
+<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched 2026-09-23</p>
 
-      <ul class="cards">
-        <li class="card">
-          <h3><a href="#sample-candidate-a">Sample Candidate A</a></h3>
-          <p class="desig">Small Business Owner</p>
-          <p class="cov">Sourced facts found in 2 of 8 sections.</p>
-        </li>
-        <li class="card">
-          <h3><a href="#sample-candidate-b">Sample Candidate B</a></h3>
-          <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
-          <p class="cov">Sourced facts found in 2 of 8 sections.</p>
-        </li>
-        <li class="card">
-          <h3><a href="#sample-candidate-c">Sample Candidate C</a></h3>
-          <p class="desig">Ballot designation not found</p>
-          <p class="cov cov-fail">
-            Research failed in this run. Nothing about this candidate was checked.
-          </p>
-        </li>
-      </ul>
 
-      <article class="dossier" id="sample-candidate-a">
-        <h2>Sample Candidate A</h2>
-        <p class="desig">Small Business Owner</p>
 
-        <section class="sec">
-          <h4>Who they are</h4>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-primary_record">Primary record</span>
-              <p>
-                Placeholder: served on the city council from 2006 to 2010 before becoming mayor.
-              </p>
-              <p class="meta">
-                <a
-                  href="https://example.org/mayor"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example City</a> · author not stated · 2024
-              </p>
-            </li>
-          </ul>
-          <p class="searched">Looked at: city website biography; county registrar</p>
-        </section>
-        <section class="sec">
-          <h4>Record in this office</h4>
-          <p class="gap">
-            Not the incumbent in this office, so there is no record in it to report.
-          </p>
-        </section>
-        <section class="sec">
-          <h4>Accomplishments</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Criticisms and controversies</h4>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-reported">Reported</span>
-              <p>
-                Placeholder: the state attorney general sued the city over a warehouse approval.
-              </p>
-              <p class="meta">
-                <a
-                  href="https://example.org/news/1"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example News</a> · by A. Reporter · 2021-07-15
-              </p>
-            </li>
-          </ul>
-          <p class="searched">Looked at: state AG press releases; local news archive</p>
-        </section>
-        <section class="sec">
-          <h4>Money and interests</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Endorsements and affiliations</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Stated platform</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Community impact and local coverage</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
+<div class="banner"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions. Each fact links to where it came from and is tagged by the kind of evidence behind it.</p>
+<details><summary>What this research can't see (5)</summary>
+<ul><li>Phase 0 researches with general web search only. It does not yet read campaign finance portals, council minutes, or budget documents directly, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details></div>
 
-        <details class="unverified">
-          <summary>
-            1 claim not shown above because the cited page was never retrieved in this run
-          </summary>
-          <p>
-            These cite a URL the research session did not actually open, so they can't be traced.
-            Treat them as leads to check yourself, not findings.
-          </p>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-opinion">Opinion / claim</span>
-              <p>Placeholder: a claim whose cited page was never opened.</p>
-              <p class="meta">
-                <a
-                  href="https://example.org/never-opened"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example Blog</a> · author not stated · date not stated
-              </p>
-            </li>
-          </ul>
-        </details>
-        <p class="back"><a href="#top">Back to all candidates</a></p>
-      </article>
-      <article class="dossier" id="sample-candidate-b">
-        <h2>Sample Candidate B</h2>
-        <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
-        <p class="note">
-          <strong>Identity check.</strong> Placeholder: another person with this name serves on a
-          county board.
-        </p>
-        <section class="sec">
-          <h4>Who they are</h4>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-primary_record">Primary record</span>
-              <p>
-                Placeholder: served on the city council from 2006 to 2010 before becoming mayor.
-              </p>
-              <p class="meta">
-                <a
-                  href="https://example.org/mayor"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example City</a> · author not stated · 2024
-              </p>
-            </li>
-          </ul>
-          <p class="searched">Looked at: city website biography; county registrar</p>
-        </section>
-        <section class="sec">
-          <h4>Record in this office</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Accomplishments</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Criticisms and controversies</h4>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-reported">Reported</span>
-              <p>
-                Placeholder: the state attorney general sued the city over a warehouse approval.
-              </p>
-              <p class="meta">
-                <a
-                  href="https://example.org/news/1"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example News</a> · by A. Reporter · 2021-07-15
-              </p>
-            </li>
-          </ul>
-          <p class="searched">Looked at: state AG press releases; local news archive</p>
-        </section>
-        <section class="sec">
-          <h4>Money and interests</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Endorsements and affiliations</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Stated platform</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>Community impact and local coverage</h4>
-          <p class="gap">This run found nothing it could source for this section.</p>
-        </section>
-        <section class="sec">
-          <h4>What this run couldn't check</h4>
-          <ul class="gaps">
-            <li>Placeholder: the campaign finance portal could not be searched.</li>
-          </ul>
-        </section>
-        <details class="unverified">
-          <summary>
-            1 claim not shown above because the cited page was never retrieved in this run
-          </summary>
-          <p>
-            These cite a URL the research session did not actually open, so they can't be traced.
-            Treat them as leads to check yourself, not findings.
-          </p>
-          <ul class="facts">
-            <li class="fact">
-              <span class="ev ev-opinion">Opinion / claim</span>
-              <p>Placeholder: a claim whose cited page was never opened.</p>
-              <p class="meta">
-                <a
-                  href="https://example.org/never-opened"
-                  rel="noopener noreferrer nofollow"
-                  target="_blank"
-                >Example Blog</a> · author not stated · date not stated
-              </p>
-            </li>
-          </ul>
-        </details>
-        <p class="back"><a href="#top">Back to all candidates</a></p>
-      </article>
-      <article class="dossier" id="sample-candidate-c">
-        <h2>Sample Candidate C</h2>
-        <p class="desig">Ballot designation not found</p>
+<h2>Candidates</h2>
+<p class="sub">Listed in the order of the official candidate list, which may differ from the printed ballot. LAYOUT SAMPLE. Placeholder data, not research about real people.</p>
+<p class="note">Sample Candidate B holds this office now, so there is a public record in it to research. Challengers usually have far less. A shorter dossier is not a cleaner one, and a longer one is not a worse one.</p>
 
-        <section class="sec">
-          <h4>Who they are</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Record in this office</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Accomplishments</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Criticisms and controversies</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Money and interests</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Endorsements and affiliations</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Stated platform</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>Community impact and local coverage</h4>
-          <p class="gap">Research for this candidate failed in this run; nothing was checked.</p>
-        </section>
-        <section class="sec">
-          <h4>What this run couldn't check</h4>
-          <ul class="gaps"><li>Research failed: placeholder failure</li></ul>
-        </section>
+<ul class="cards"><li class="card">
+  <h3><a href="#sample-candidate-a">Sample Candidate A</a></h3>
+  <p class="desig">Small Business Owner</p>
+  <p class="cov">Sourced facts found in 2 of 8 sections.</p>
+</li><li class="card">
+  <h3><a href="#sample-candidate-b">Sample Candidate B</a></h3>
+  <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
+  <p class="cov">Sourced facts found in 2 of 8 sections.</p>
+</li><li class="card">
+  <h3><a href="#sample-candidate-c">Sample Candidate C</a></h3>
+  <p class="desig">Ballot designation not found</p>
+  <p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>
+</li></ul>
 
-        <p class="back"><a href="#top">Back to all candidates</a></p>
-      </article>
+<article class="dossier" id="sample-candidate-a">
+  <h2>Sample Candidate A</h2>
+  <p class="desig">Small Business Owner</p>
+  
+  <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span>
+  <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
+  <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-reported">Reported</span>
+  <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
+  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
+  
+  <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
+<p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
+<ul class="facts"><li class="fact">
+  <span class="ev ev-opinion">Opinion / claim</span>
+  <p>Placeholder: a claim whose cited page was never opened.</p>
+  <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
+</li></ul></details>
+  <p class="back"><a href="#top">Back to all candidates</a></p>
+</article><article class="dossier" id="sample-candidate-b">
+  <h2>Sample Candidate B</h2>
+  <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
+  <p class="note"><strong>Identity check.</strong> Placeholder: another person with this name serves on a county board.</p>
+  <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span>
+  <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
+  <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-reported">Reported</span>
+  <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
+  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
+  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section>
+  <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
+<p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
+<ul class="facts"><li class="fact">
+  <span class="ev ev-opinion">Opinion / claim</span>
+  <p>Placeholder: a claim whose cited page was never opened.</p>
+  <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
+</li></ul></details>
+  <p class="back"><a href="#top">Back to all candidates</a></p>
+</article><article class="dossier" id="sample-candidate-c">
+  <h2>Sample Candidate C</h2>
+  <p class="desig">Ballot designation not found</p>
+  
+  <section class="sec"><h4>Who they are</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Criticisms and controversies</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section>
+  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
+  
+  <p class="back"><a href="#top">Back to all candidates</a></p>
+</article>
 
-      <footer>
-        <p>
-          Evidence tags: <strong>Primary record</strong> is a government or official document.
-          <strong>Reported</strong> is journalism describing events. <strong>Opinion /
-            claim</strong> covers endorsements, editorials, and candidates' own statements. <strong
-          >Unsourced</strong> is asserted without support.
-        </p>
-        <p>
-          Generated by Ballot Fix phase 0 using AI-assisted web research (layout-sample). It can be
-          wrong. Check anything that matters to your vote at the linked source.
-        </p>
-      </footer>
-    </main>
-  </body>
+<footer>
+<p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>
+<p>Generated by Ballot Fix using AI-assisted web research (layout-sample). It can be wrong. Check anything that matters to your vote at the linked source.</p>
+</footer>
+</main>
+</body>
 </html>

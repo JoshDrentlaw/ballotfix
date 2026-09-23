@@ -47,7 +47,10 @@ Deno.test("research content is escaped and never becomes markup or script", asyn
   assert(!/<iframe/i.test(html), "iframe tag leaked");
   assert(!/<svg/i.test(html), "svg tag leaked");
   assertStringIncludes(html, "&lt;b&gt;and&lt;/b&gt;");
-  assertStringIncludes(html, `content="default-src 'none'; style-src 'unsafe-inline'"`);
+  assertStringIncludes(
+    html,
+    `content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"`,
+  );
 });
 
 Deno.test("page states no ranking, the order basis, incumbency asymmetry, and standing gaps", async () => {
