@@ -2,8 +2,8 @@
 
 Local-election candidate research. Give it a city and an office; it finds the candidates and builds
 a sourced, same-template dossier for each one. Sibling to Parallax Fix, which it shares a charter
-with but not an engine. The pitch and reasoning live in Parallax Fix's
-`candidate-research-pitch.md`.
+with but not an engine. The pitch and reasoning live in Parallax Fix's `candidate-research-pitch.md`
+(repo `JoshDrentlaw/parallaxfix`).
 
 ## Runtime
 
