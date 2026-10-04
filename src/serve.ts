@@ -30,6 +30,10 @@ const effort = env("BALLOTFIX_EFFORT") ?? "high";
 if (!(EFFORTS as readonly string[]).includes(effort)) {
   throw new Error(`BALLOTFIX_EFFORT must be one of ${EFFORTS.join(", ")}`);
 }
+const basePath = env("BASE_PATH");
+if (basePath && !basePath.startsWith("/")) {
+  throw new Error(`BASE_PATH must start with "/" (got ${JSON.stringify(basePath)})`);
+}
 const canResearch = Boolean(env("ANTHROPIC_API_KEY") || env("ANTHROPIC_AUTH_TOKEN"));
 
 if (host !== "127.0.0.1" && host !== "localhost" && !password) {
@@ -50,5 +54,4 @@ const jobs = new JobRunner(
 );
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
-const basePath = env("BASE_PATH");
 Deno.serve({ hostname: host, port }, createApp({ store, jobs, canResearch, password, basePath }));

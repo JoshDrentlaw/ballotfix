@@ -52,12 +52,12 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   `jobs.ts` one-race-at-a-time queue, `store.ts` one JSON file per run in `data/`. No client
   JavaScript: forms post, running races use a meta refresh. POSTs must be same-origin
   (`Sec-Fetch-Site`, then `Origin`), because starting research spends money.
-- `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy
-  `handle` block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link,
-  form action, and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`).
-  Requests work with or without the prefix, so direct/local access is unaffected. Do **not** pair
-  this with Caddy's `handle_path` (which strips the prefix) — the app has no concept of its
-  incoming path being rewritten, so a stripped prefix and a preserved one must match.
+- `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy `handle`
+  block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link, form action,
+  and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`). Requests work
+  with or without the prefix, so direct/local access is unaffected. Do **not** pair this with
+  Caddy's `handle_path` (which strips the prefix) — the app has no concept of its incoming path
+  being rewritten, so a stripped prefix and a preserved one must match.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
 ## Verifying UI changes
