@@ -131,15 +131,20 @@ How to research:
 How to report each fact:
 - One checkable statement, in neutral language, supported by the page at source_url.
 - source_url must be a page you actually retrieved in this session via search results or fetch. Never construct or guess a URL. If you can't cite a retrieved page, leave the fact out.
-- source_name is the publisher or agency, author is the named author if the page gives one (else null), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else null).
+- source_name is the publisher or agency, author is the named author if the page gives one (else leave empty), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else leave empty).
 - evidence_type: "primary_record" for government or official documents and filings; "reported" for journalism describing events; "opinion" for editorials, endorsements, candidate statements, and advocacy; "unsourced" for anything asserted without support.
 
-For every section, list in "searched" the kinds of sources you tried (short phrases, e.g. "city council minutes 2022-2024", "Fontana Herald News archive"). When a section has little or nothing, say what was missing and why in gap_note. List anything you could not reach or check (paywalls, fetch failures, records not online) in gaps.
+For every section, list in "searched" the kinds of sources you tried (short phrases, e.g. "city council minutes 2022-2024", "Fontana Herald News archive"). When a section has little or nothing, say what was missing and why in gap_note (else leave empty). List anything you could not reach or check (paywalls, fetch failures, records not online) in gaps.
 
 ${NEUTRALITY_RULE}
 
 ${UNTRUSTED_CONTENT_RULE}`;
 
+// author/published/gap_note/identity_note below are plain strings, not ["string","null"]
+// unions: each nullable field here gets duplicated once per template section (8), and the
+// API rejects schemas over 16 total union-typed parameters (we'd be at 25). dossier.ts's
+// cleanOrNull() already treats "" the same as null, so this is schema-only — no parsing
+// change needed. The prompt tells the model to leave these empty rather than omit them.
 const FACT_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -147,8 +152,8 @@ const FACT_SCHEMA = {
     statement: { type: "string" },
     source_name: { type: "string" },
     source_url: { type: "string" },
-    author: { type: ["string", "null"] },
-    published: { type: ["string", "null"] },
+    author: { type: "string" },
+    published: { type: "string" },
     evidence_type: { type: "string", enum: ["primary_record", "reported", "opinion", "unsourced"] },
   },
   required: ["statement", "source_name", "source_url", "author", "published", "evidence_type"],
@@ -160,7 +165,7 @@ const SECTION_SCHEMA = {
   properties: {
     facts: { type: "array", items: FACT_SCHEMA },
     searched: { type: "array", items: { type: "string" } },
-    gap_note: { type: ["string", "null"] },
+    gap_note: { type: "string" },
   },
   required: ["facts", "searched", "gap_note"],
 } as const;
@@ -177,7 +182,7 @@ const CANDIDATE_SCHEMA = {
       properties: Object.fromEntries(SECTIONS.map((s) => [s.id, SECTION_SCHEMA])),
       required: SECTIONS.map((s) => s.id),
     },
-    identity_note: { type: ["string", "null"] },
+    identity_note: { type: "string" },
     gaps: { type: "array", items: { type: "string" } },
   },
   required: ["sections", "identity_note", "gaps"],
