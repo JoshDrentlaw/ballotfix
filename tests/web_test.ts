@@ -33,7 +33,9 @@ class GatedPort implements ResearchPort {
   }
 }
 
-async function setup(opts: { password?: string; canResearch?: boolean; maxQueued?: number } = {}) {
+async function setup(
+  opts: { password?: string; canResearch?: boolean; maxQueued?: number; basePath?: string } = {},
+) {
   const dir = await Deno.makeTempDir();
   const store = new RunStore(dir);
   await store.init();
@@ -44,6 +46,7 @@ async function setup(opts: { password?: string; canResearch?: boolean; maxQueued
     jobs,
     canResearch: opts.canResearch ?? true,
     password: opts.password,
+    basePath: opts.basePath,
   });
   return { dir, store, port, jobs, app };
 }
@@ -101,6 +104,42 @@ Deno.test("submitting a race redirects to it, shows progress, then the finished 
     dl.headers.get("content-disposition"),
     `attachment; filename="fontana-mayor-2026-11-03.html"`,
   );
+});
+
+// Regression: deployed behind Caddy's `handle_path /ballotfix*` (which strips the prefix
+// before forwarding), every `/races/...` link and redirect the app emitted was root-absolute
+// — the browser followed them straight to e.g. nucklehead/races/<id>, no `/ballotfix` prefix,
+// which matched no Caddy route and rendered blank. Fixed by threading basePath through, with
+// Caddy switched to `handle` (which preserves the prefix) to match. This test pins both the
+// prefixed behavior and that unprefixed/direct access (no proxy in front) still works.
+Deno.test("basePath prefixes every generated link and redirect, and still accepts unprefixed paths", async () => {
+  const { app, port, jobs } = await setup({ basePath: "/ballotfix" });
+
+  const home = await (await app(new Request("http://app.test/ballotfix/"))).text();
+  assertStringIncludes(home, `action="/ballotfix/races"`);
+  assertStringIncludes(home, `href="/ballotfix/"`);
+
+  const res = await app(post("/ballotfix/races", FORM));
+  assertEquals(res.status, 303);
+  const loc = res.headers.get("location")!;
+  assertMatch(loc, /^\/ballotfix\/races\/fontana-mayor-2026-11-03-\d{12}-[0-9a-f]{6}$/);
+
+  await new Promise((r) => setTimeout(r, 20));
+  const running = await (await app(new Request(`http://app.test${loc}`))).text();
+  assertStringIncludes(running, "Researching now");
+
+  port.release();
+  await jobs.idle();
+  const done = await (await app(new Request(`http://app.test${loc}`))).text();
+  assertStringIncludes(done, `href="/ballotfix/races/${loc.split("/").pop()}/download"`);
+
+  // Direct/unprefixed access (e.g. curl straight to the container) still works.
+  const bareHome = await app(new Request("http://app.test/"));
+  assertEquals(bareHome.status, 200);
+  const bareHealth = await app(new Request("http://app.test/healthz"));
+  assertEquals(bareHealth.status, 200);
+  const prefixedHealth = await app(new Request("http://app.test/ballotfix/healthz"));
+  assertEquals(prefixedHealth.status, 200);
 });
 
 Deno.test("form errors re-render with the user's values and a 400", async () => {

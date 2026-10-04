@@ -6,6 +6,9 @@
  * Environment:
  *   ANTHROPIC_API_KEY   required to research (the app still opens saved races without it)
  *   HOST, PORT          listen address (default 127.0.0.1:8787)
+ *   BASE_PATH           mount prefix behind a Caddy `handle` block, e.g. "/ballotfix"
+ *                        (see tower-expert's main.ts for the same convention). Requests
+ *                        work with or without it, so direct access is unaffected.
  *   BALLOTFIX_PASSWORD  require this password (HTTP Basic auth, any username)
  *   BALLOTFIX_DATA_DIR  where runs are saved (default data)
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
@@ -47,4 +50,5 @@ const jobs = new JobRunner(
 );
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
-Deno.serve({ hostname: host, port }, createApp({ store, jobs, canResearch, password }));
+const basePath = env("BASE_PATH");
+Deno.serve({ hostname: host, port }, createApp({ store, jobs, canResearch, password, basePath }));

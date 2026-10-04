@@ -201,6 +201,8 @@ export interface PageOptions {
   refreshSeconds?: number;
   /** Show the app's top bar with a link home. Off for exported static files. */
   nav?: boolean;
+  /** Mount prefix (e.g. "/ballotfix") for the nav's home links. Empty when served at root. */
+  base?: string;
 }
 
 /** Full HTML document with a strict CSP: no scripts, no external resources. */
@@ -208,8 +210,9 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
   const refresh = opts.refreshSeconds
     ? `<meta http-equiv="refresh" content="${Math.max(2, Math.floor(opts.refreshSeconds))}">`
     : "";
+  const base = opts.base ?? "";
   const nav = opts.nav
-    ? `<nav class="top"><a href="/">Ballot Fix</a><a href="/#new">New race</a></nav>`
+    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${base}/#new">New race</a></nav>`
     : "";
   return `<!doctype html>
 <html lang="en">

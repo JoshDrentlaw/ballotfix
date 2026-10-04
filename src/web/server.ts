@@ -25,6 +25,13 @@ export interface AppOptions {
   canResearch: boolean;
   /** When set, every request needs HTTP Basic auth with this password (any username). */
   password?: string;
+  /**
+   * Mount prefix (e.g. "/ballotfix") when served behind a Caddy `handle` block that
+   * preserves the path, like tower-expert — see its main.ts. Requests are accepted
+   * both with and without this prefix, so direct/local access keeps working. Every
+   * generated link, form action, and redirect carries it; empty (default) is root.
+   */
+  basePath?: string;
 }
 
 const SECURITY_HEADERS = {
@@ -141,6 +148,7 @@ export function parseRaceForm(v: FormValues): Parsed {
 }
 
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
+  const BASE = (o.basePath ?? "").replace(/\/+$/, "");
   const start = async (
     query: RaceQuery,
     candidates: BallotCandidate[] | null,
@@ -148,11 +156,17 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
   ) => {
     try {
       const run = await o.jobs.submit(query, candidates);
-      return redirect(`/races/${run.id}`);
+      return redirect(`${BASE}/races/${run.id}`);
     } catch (err) {
       if (!(err instanceof QueueFullError)) throw err;
       return html(
-        homePage({ runs: await o.store.list(), canResearch: true, values, error: err.message }),
+        homePage({
+          runs: await o.store.list(),
+          canResearch: true,
+          values,
+          error: err.message,
+          base: BASE,
+        }),
         429,
       );
     }
@@ -160,7 +174,13 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
 
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
-    const path = url.pathname;
+    // Accept the path with or without BASE, so direct/local access (no proxy
+    // prefix) keeps working alongside the Caddy-forwarded prefixed one.
+    let path = url.pathname;
+    if (BASE) {
+      if (path === BASE) path = "/";
+      else if (path.startsWith(`${BASE}/`)) path = path.slice(BASE.length);
+    }
 
     if (path === "/healthz") return new Response("ok", { headers: SECURITY_HEADERS });
 
@@ -175,17 +195,20 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     }
 
     if (req.method === "POST" && !sameOrigin(req)) {
-      return html(messagePage("Not allowed", "That request didn't come from this app."), 403);
+      return html(
+        messagePage("Not allowed", "That request didn't come from this app.", BASE),
+        403,
+      );
     }
 
     if (path === "/" && req.method === "GET") {
-      return html(homePage({ runs: await o.store.list(), canResearch: o.canResearch }));
+      return html(homePage({ runs: await o.store.list(), canResearch: o.canResearch, base: BASE }));
     }
 
     if (path === "/races" && req.method === "POST") {
       if (!o.canResearch) {
         return html(
-          messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server."),
+          messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE),
           503,
         );
       }
@@ -201,7 +224,13 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       const parsed = parseRaceForm(values);
       if (!parsed.ok) {
         return html(
-          homePage({ runs: await o.store.list(), canResearch: true, values, error: parsed.error }),
+          homePage({
+            runs: await o.store.list(),
+            canResearch: true,
+            values,
+            error: parsed.error,
+            base: BASE,
+          }),
           400,
         );
       }
@@ -213,10 +242,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       const [, id, suffix] = m;
       const run = isRunId(id) ? await o.store.get(id) : null;
       if (!run) {
-        return html(messagePage("Not found", "There's no saved race at that address."), 404);
+        return html(messagePage("Not found", "There's no saved race at that address.", BASE), 404);
       }
 
-      if (!suffix && req.method === "GET") return html(runPage(run, o.canResearch));
+      if (!suffix && req.method === "GET") return html(runPage(run, o.canResearch, BASE));
       if (suffix === ".json" && req.method === "GET") {
         return new Response(JSON.stringify(run, null, 2), {
           headers: { "content-type": "application/json; charset=utf-8", ...SECURITY_HEADERS },
@@ -224,7 +253,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
       if (suffix === "/download" && req.method === "GET") {
         if (!run.race || run.status !== "done") {
-          return html(messagePage("Not ready", "This race hasn't finished researching yet."), 409);
+          return html(
+            messagePage("Not ready", "This race hasn't finished researching yet.", BASE),
+            409,
+          );
         }
         const name = slug(`${run.query.city}-${run.query.office}-${run.query.electionDate}`);
         return html(renderRace(run.race), 200, {
@@ -234,7 +266,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       if (suffix === "/rerun" && req.method === "POST") {
         if (!o.canResearch) {
           return html(
-            messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server."),
+            messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE),
             503,
           );
         }
@@ -247,9 +279,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         };
         return await start(run.query, run.candidates, values);
       }
-      return html(messagePage("Not allowed", "That action isn't available here."), 405);
+      return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
     }
 
-    return html(messagePage("Not found", "There's nothing at that address."), 404);
+    return html(messagePage("Not found", "There's nothing at that address.", BASE), 404);
   };
 }

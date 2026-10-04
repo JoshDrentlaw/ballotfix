@@ -50,10 +50,13 @@ export interface HomeOptions {
   canResearch: boolean;
   values?: FormValues;
   error?: string;
+  /** Mount prefix (e.g. "/ballotfix") for generated links. Empty when served at root. */
+  base?: string;
 }
 
 export function homePage(o: HomeOptions): string {
   const v = o.values ?? DEFAULT_FORM;
+  const base = o.base ?? "";
   const disabled = o.canResearch ? "" : " disabled";
   const setup = o.canResearch
     ? ""
@@ -62,7 +65,7 @@ export function homePage(o: HomeOptions): string {
   const runs = o.runs.length
     ? `<ul class="runs">${
       o.runs.map((r) =>
-        `<li><a href="/races/${esc(r.id)}"><strong>${esc(r.query.city)} ${
+        `<li><a href="${base}/races/${esc(r.id)}"><strong>${esc(r.query.city)} ${
           esc(r.query.office)
         }</strong> ${pill(r.status)}<br><span class="when">${
           esc(readableDate(r.query.electionDate))
@@ -74,7 +77,7 @@ export function homePage(o: HomeOptions): string {
   const body = `<h1>Who's on your ballot?</h1>
 <p class="sub">Name a city and an office. Ballot Fix finds the candidates and builds a sourced dossier on each one: background, record, accomplishments, criticisms, money, endorsements, and platform. It never ranks or recommends anyone.</p>
 ${setup}${error}
-<form class="stack" id="new" method="post" action="/races">
+<form class="stack" id="new" method="post" action="${base}/races">
   <div class="row">
     <label>City <input name="city" required maxlength="80" autocomplete="address-level2" value="${
     esc(v.city)
@@ -102,18 +105,18 @@ ${setup}${error}
 </form>
 <h2>Races</h2>
 ${runs}`;
-  return page("Ballot Fix", body, { nav: true });
+  return page("Ballot Fix", body, { nav: true, base });
 }
 
-export function runPage(run: RunRecord, canResearch: boolean): string {
+export function runPage(run: RunRecord, canResearch: boolean, base = ""): string {
   const active = run.status === "queued" || run.status === "running";
   const rerun = canResearch && !active
-    ? `<form class="inline" method="post" action="/races/${
+    ? `<form class="inline" method="post" action="${base}/races/${
       esc(run.id)
     }/rerun"><button class="secondary" type="submit">Research again</button></form>`
     : "";
   const download = run.race && run.status === "done"
-    ? `<a class="button" href="/races/${esc(run.id)}/download">Download page</a>`
+    ? `<a class="button" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
   const actions = rerun || download ? `<div class="actions">${download}${rerun}</div>` : "";
 
@@ -139,20 +142,22 @@ ${
         : ""
     }
 ${actions}`;
-    return page(title, body, { nav: true, ...refresh });
+    return page(title, body, { nav: true, base, ...refresh });
   }
   return page(raceTitle(run.race), raceBody(run.race, { status, actions }), {
     nav: true,
+    base,
     ...refresh,
   });
 }
 
-export function messagePage(title: string, message: string): string {
+export function messagePage(title: string, message: string, base = ""): string {
   return page(
     title,
-    `<h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/">Back to Ballot Fix</a></p>`,
+    `<h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="${base}/">Back to Ballot Fix</a></p>`,
     {
       nav: true,
+      base,
     },
   );
 }

@@ -15,6 +15,9 @@ services:
       # boundary — same posture as parallax-fix and tower-expert.
       HOST: 0.0.0.0
       PORT: ${PORT:-8787}
+      # Caddy uses `handle /ballotfix*` (preserves the prefix) to match, not
+      # `handle_path` — see src/web/server.ts's basePath handling.
+      BASE_PATH: ${BASE_PATH:-/ballotfix}
       # Research spends money on the API key; require auth since HOST is 0.0.0.0 here.
       BALLOTFIX_PASSWORD: ${BALLOTFIX_PASSWORD:?set in .env}
       BALLOTFIX_DATA_DIR: /app/data
