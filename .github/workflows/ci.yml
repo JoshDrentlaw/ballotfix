@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Serialize runs per ref so two pushes can't deploy into the same dir concurrently.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -27,8 +32,28 @@ jobs:
         run: deno lint
 
       - name: Type check
-        run: deno check src/main.ts
+        run: deno check src/main.ts src/serve.ts examples/demo_server.ts examples/build_sample.ts
 
       # No network or API key needed: the research adapter is tested against a stubbed client.
       - name: Test
         run: deno task test
+
+  # nucklehead is the only deploy target (private, Tailscale-only — see CLAUDE.md).
+  # No prod Droplet exists for Ballotfix, so unlike parallax-fix there's no
+  # development/main split: this repo deploys straight from main.
+  deploy:
+    name: Deploy to nucklehead
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest and restart containers
+        run: |
+          cd /srv/data-collection/ballotfix
+          git fetch origin
+          # Stash any local work (recoverable via `git stash list`) so reset --hard
+          # can't silently destroy it; -u keeps the gitignored .env untouched.
+          git stash push -u -m "pre-deploy $(date -Iseconds)" || true
+          git checkout -B main origin/main
+          git reset --hard origin/main
+          docker compose up --build -d

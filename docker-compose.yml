@@ -1,0 +1,30 @@
+# Production stack for nucklehead (also the file CI deploys with `docker compose up --build -d`).
+# Real secrets come from an untracked, gitignored .env in this dir (auto-loaded by compose
+# for ${VAR} substitution). No Postgres: Ballotfix persists runs as JSON files under
+# BALLOTFIX_DATA_DIR (src/web/store.ts), so a named volume is enough.
+services:
+  web:
+    build: .
+    container_name: ballotfix-web
+    restart: unless-stopped
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 0.0.0.0: the app's own default (127.0.0.1, SECURITY.md) is unreachable from
+      # outside the container's network namespace. Docker only forwards the published
+      # port below, and nucklehead's Caddy (Tailscale/localhost-scoped) is the actual
+      # boundary — same posture as parallax-fix and tower-expert.
+      HOST: 0.0.0.0
+      PORT: ${PORT:-8787}
+      # Research spends money on the API key; require auth since HOST is 0.0.0.0 here.
+      BALLOTFIX_PASSWORD: ${BALLOTFIX_PASSWORD:?set in .env}
+      BALLOTFIX_DATA_DIR: /app/data
+      BALLOTFIX_MODEL: ${BALLOTFIX_MODEL:-}
+      BALLOTFIX_EFFORT: ${BALLOTFIX_EFFORT:-high}
+    ports:
+      # 127.0.0.1 binding: only the host Caddy may reach this; Tailscale is the boundary.
+      - "127.0.0.1:8421:8787"
+    volumes:
+      - ballotfix_data:/app/data
+
+volumes:
+  ballotfix_data:
