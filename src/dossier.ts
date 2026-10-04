@@ -143,6 +143,22 @@ export function failedCandidate(candidate: BallotCandidate, error: string): Cand
   };
 }
 
+/** Placeholder for a candidate still being researched; replaced when their research finishes. */
+export function pendingCandidate(candidate: BallotCandidate): CandidateDossier {
+  const sections = {} as Record<SectionId, SectionResult>;
+  for (const id of SECTION_IDS) sections[id] = emptySection("Still researching.");
+  return {
+    candidate,
+    status: "pending",
+    sections,
+    unverified: [],
+    identity_note: null,
+    gaps: [],
+    model: null,
+    error: null,
+  };
+}
+
 /** Sections with at least one verified fact. Drives the overview's coverage line. */
 export function coveredSections(d: CandidateDossier): number {
   return SECTION_IDS.filter((id) => d.sections[id].facts.length > 0).length;

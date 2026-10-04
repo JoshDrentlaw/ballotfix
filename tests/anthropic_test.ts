@@ -5,10 +5,13 @@
  */
 import { assertEquals, assertRejects } from "@std/assert";
 import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic_ from "@anthropic-ai/sdk";
 import {
   AnthropicResearcher,
+  describeApiError,
   ResearchIncompleteError,
   ResearchRefusedError,
+  ResearchUnavailableError,
 } from "../src/research/anthropic.ts";
 import { SECTION_IDS } from "../src/template.ts";
 import { listing, QUERY } from "./fakes.ts";
@@ -154,4 +157,24 @@ Deno.test("findBallot sanitizes order_basis and blank names", async () => {
   assertEquals(l.candidates, [{ name: "Joz Sida", ballot_designation: null, incumbent: false }]);
   assertEquals(l.order_basis, "unofficial");
   assertEquals(l.retrieved_urls, ["https://kvcrnews.org/a"]);
+});
+
+Deno.test("SDK errors become plain-language messages for the app", async () => {
+  const auth = new Anthropic_.AuthenticationError(
+    401,
+    { type: "error" },
+    "invalid x-api-key",
+    new Headers(),
+  );
+  const { client } = stubClient([]);
+  (client.beta.messages as unknown as { stream: () => never }).stream = () => {
+    throw auth;
+  };
+  const err = await assertRejects(
+    () => new AnthropicResearcher({ client }).findBallot(QUERY),
+    ResearchUnavailableError,
+  );
+  assertEquals(err.message.includes("API key was rejected"), true);
+  const plain = new Error("something else");
+  assertEquals(describeApiError(plain), plain);
 });

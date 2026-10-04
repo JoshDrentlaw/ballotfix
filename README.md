@@ -8,24 +8,50 @@ to its source and is tagged by the kind of evidence behind it.
 It never ranks or recommends anyone. Every candidate gets the same sections and the same research
 effort, and every page says what the run couldn't see.
 
-## Quick start
+## Quick start: the app
 
 ```sh
 cp .env.example .env        # then put your Anthropic API key in it
-deno task dossier --city Fontana --office Mayor
-open out/fontana-mayor-2026-11-03.html
+deno task serve             # open http://127.0.0.1:8787
 ```
 
-If you already know the candidates, skip discovery and give them in ballot order:
+Enter a city, state, office, and election date, then tap **Research this race**. The race page fills
+in as each candidate finishes and refreshes itself, so you can leave and come back. Finished races
+stay listed on the home page, can be researched again, and can be downloaded as a single HTML file
+to share. Everything works on a phone.
+
+If you already know the candidates, open **Already know the candidates?** and list them one per line
+in ballot order. That skips the ballot lookup.
+
+To try the app without an API key or any cost, run `deno task demo` (port 8788). It is the real app
+with placeholder research.
+
+### Using it from your phone
+
+The app listens on localhost by default. To reach it from other devices, for example over Tailscale,
+set a password and listen on all interfaces:
 
 ```sh
+HOST=0.0.0.0 BALLOTFIX_PASSWORD='something long' deno task serve
+```
+
+Research spends money on your API key, so don't expose it without `BALLOTFIX_PASSWORD`. Other
+settings: `PORT` (default 8787), `BALLOTFIX_DATA_DIR` (default `data`), `BALLOTFIX_MODEL`,
+`BALLOTFIX_EFFORT` (`low` to `max`, default `high`).
+
+## Command line
+
+The same research is available without the app:
+
+```sh
+deno task dossier --city Fontana --office Mayor
 deno task dossier --city Fontana --office Mayor \
   --candidates "Jackie Heredia;Acquanetta Warren;Sal Casillas" --incumbent "Acquanetta Warren"
 ```
 
-Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`
-(`low` to `max`, default `high`), `--concurrency` (default 3), `--out` (default `out`). Re-render a
-saved run without calling the API: `deno task dossier --render out/<file>.json`.
+Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`,
+`--concurrency` (default 3), `--out` (default `out`). Re-render a saved run without calling the API:
+`deno task dossier --render out/<file>.json`.
 
 `examples/sample.html` shows the page layout with placeholder data.
 
@@ -37,7 +63,8 @@ saved run without calling the API: `deno task dossier --render out/<file>.json`.
    and page fetch. Output is JSON constrained to the fixed template.
 3. **Provenance check.** Facts are shown only if their URL was actually retrieved in that session.
    Others go to a collapsed "unverified" list, as leads rather than findings.
-4. **Page.** A single static HTML file, no scripts, readable on a phone.
+4. **Page.** Server-rendered HTML with no scripts, readable on a phone. The app researches one race
+   at a time, a few candidates in parallel, and queues up to three more.
 
 ## Cost
 
