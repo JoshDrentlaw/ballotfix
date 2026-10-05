@@ -136,6 +136,8 @@ How to report each fact:
 
 For every section, list in "searched" the kinds of sources you tried (short phrases, e.g. "city council minutes 2022-2024", "Fontana Herald News archive"). When a section has little or nothing, say what was missing and why in gap_note (else leave empty). List anything you could not reach or check (paywalls, fetch failures, records not online) in gaps.
 
+Return "sections" as an array with exactly one entry per id listed above (each id exactly once, in any order), each entry's "id" field set to that section's id.
+
 ${NEUTRALITY_RULE}
 
 ${UNTRUSTED_CONTENT_RULE}`;
@@ -159,28 +161,39 @@ const FACT_SCHEMA = {
   required: ["statement", "source_name", "source_url", "author", "published", "evidence_type"],
 } as const;
 
+// `id` is a discriminant, not a nested duplicate: this schema is reused once per
+// array item rather than inlined per section (see CANDIDATE_SCHEMA below), which is
+// what keeps the compiled grammar small enough for the API to accept — inlining a
+// full copy of this (plus FACT_SCHEMA) as 8 separate named object properties was
+// previously accepted once the null-union count was fixed, but still rejected for
+// "compiled grammar too large" at the next retry.
 const SECTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    id: { type: "string", enum: SECTIONS.map((s) => s.id) },
     facts: { type: "array", items: FACT_SCHEMA },
     searched: { type: "array", items: { type: "string" } },
     gap_note: { type: "string" },
   },
-  required: ["facts", "searched", "gap_note"],
+  required: ["id", "facts", "searched", "gap_note"],
 } as const;
 
-// Every template section is a required key, so the schema itself enforces
-// that no section can be skipped for any candidate.
+// "sections" is an array, not an object keyed by section id — an exactly-once-per-id
+// object schema would re-inline SECTION_SCHEMA per key, same problem as above. The
+// array's one `items` schema is shared across all entries. Completeness (every id
+// present exactly once) is enforced by researchCandidate()'s conversion back to a
+// Record below and by dossier.ts's per-section fallback, not by this schema — minItems/
+// maxItems only bound the count, they can't require a specific *set* of ids.
 const CANDIDATE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
     sections: {
-      type: "object",
-      additionalProperties: false,
-      properties: Object.fromEntries(SECTIONS.map((s) => [s.id, SECTION_SCHEMA])),
-      required: SECTIONS.map((s) => s.id),
+      type: "array",
+      items: SECTION_SCHEMA,
+      minItems: SECTIONS.length,
+      maxItems: SECTIONS.length,
     },
     identity_note: { type: "string" },
     gaps: { type: "array", items: { type: "string" } },
@@ -310,7 +323,17 @@ export class AnthropicResearcher implements ResearchPort {
       this.#maxFetches,
     );
     const o = json as Record<string, unknown>;
-    const sections = (o.sections ?? {}) as Record<string, RawSection | undefined>;
+    const sections: Record<string, RawSection | undefined> = {};
+    for (const entry of Array.isArray(o.sections) ? o.sections : []) {
+      const e = entry as Record<string, unknown>;
+      if (typeof e.id === "string") {
+        sections[e.id] = {
+          facts: Array.isArray(e.facts) ? e.facts as RawSection["facts"] : [],
+          searched: Array.isArray(e.searched) ? e.searched as string[] : [],
+          gap_note: typeof e.gap_note === "string" ? e.gap_note : null,
+        };
+      }
+    }
     return {
       sections,
       identity_note: typeof o.identity_note === "string" ? o.identity_note : null,

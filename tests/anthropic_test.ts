@@ -64,9 +64,8 @@ const fetchError = {
 };
 
 const cand = { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true };
-const emptySections = Object.fromEntries(
-  SECTION_IDS.map((id) => [id, { facts: [], searched: [], gap_note: "none" }]),
-);
+// Wire format: an array with one entry per section id (see anthropic.ts's CANDIDATE_SCHEMA).
+const emptySections = SECTION_IDS.map((id) => ({ id, facts: [], searched: [], gap_note: "none" }));
 
 Deno.test("resumes after pause_turn and collects URLs across all turns", async () => {
   const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: ["x"] });
@@ -95,7 +94,7 @@ Deno.test("resumes after pause_turn and collects URLs across all turns", async (
   assertEquals(r.gaps, ["x"]);
 });
 
-Deno.test("request uses server web tools, a schema requiring every section, and default fallbacks", async () => {
+Deno.test("request uses server web tools, a bounded sections array, and default fallbacks", async () => {
   const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
   const { client, requests } = stubClient([{
     stop_reason: "end_turn",
@@ -106,12 +105,29 @@ Deno.test("request uses server web tools, a schema requiring every section, and 
     tools: { type: string }[];
     fallbacks: string;
     betas: string[];
-    output_config: { format: { schema: { properties: { sections: { required: string[] } } } } };
+    output_config: {
+      format: {
+        schema: {
+          properties: {
+            sections: {
+              minItems: number;
+              maxItems: number;
+              items: { properties: { id: { enum: string[] } } };
+            };
+          };
+        };
+      };
+    };
   };
   assertEquals(req.tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
   assertEquals(req.fallbacks, "default");
   assertEquals(req.betas, ["server-side-fallback-2026-07-01"]);
-  assertEquals(req.output_config.format.schema.properties.sections.required, [...SECTION_IDS]);
+  // Bounded to exactly one entry per section, with one shared items schema (not one
+  // inlined copy per section) — the structural fix for the API's grammar-size limit.
+  const sectionsSchema = req.output_config.format.schema.properties.sections;
+  assertEquals(sectionsSchema.minItems, SECTION_IDS.length);
+  assertEquals(sectionsSchema.maxItems, SECTION_IDS.length);
+  assertEquals(sectionsSchema.items.properties.id.enum, [...SECTION_IDS]);
 });
 
 Deno.test("refusal raises ResearchRefusedError", async () => {
