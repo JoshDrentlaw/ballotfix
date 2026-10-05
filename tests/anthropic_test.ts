@@ -94,7 +94,7 @@ Deno.test("resumes after pause_turn and collects URLs across all turns", async (
   assertEquals(r.gaps, ["x"]);
 });
 
-Deno.test("request uses server web tools, a bounded sections array, and default fallbacks", async () => {
+Deno.test("request uses server web tools, a shared sections-array item schema, and default fallbacks", async () => {
   const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
   const { client, requests } = stubClient([{
     stop_reason: "end_turn",
@@ -107,26 +107,17 @@ Deno.test("request uses server web tools, a bounded sections array, and default 
     betas: string[];
     output_config: {
       format: {
-        schema: {
-          properties: {
-            sections: {
-              minItems: number;
-              maxItems: number;
-              items: { properties: { id: { enum: string[] } } };
-            };
-          };
-        };
+        schema: { properties: { sections: { items: { properties: { id: { enum: string[] } } } } } };
       };
     };
   };
   assertEquals(req.tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
   assertEquals(req.fallbacks, "default");
   assertEquals(req.betas, ["server-side-fallback-2026-07-01"]);
-  // Bounded to exactly one entry per section, with one shared items schema (not one
-  // inlined copy per section) — the structural fix for the API's grammar-size limit.
+  // One shared items schema (not one inlined copy per section) — the structural fix for
+  // the API's grammar-size limit. No minItems/maxItems: the API rejects array length
+  // bounds other than 0 or 1, so completeness isn't schema-enforced (see dossier.ts).
   const sectionsSchema = req.output_config.format.schema.properties.sections;
-  assertEquals(sectionsSchema.minItems, SECTION_IDS.length);
-  assertEquals(sectionsSchema.maxItems, SECTION_IDS.length);
   assertEquals(sectionsSchema.items.properties.id.enum, [...SECTION_IDS]);
 });
 

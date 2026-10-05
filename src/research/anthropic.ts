@@ -181,20 +181,17 @@ const SECTION_SCHEMA = {
 
 // "sections" is an array, not an object keyed by section id — an exactly-once-per-id
 // object schema would re-inline SECTION_SCHEMA per key, same problem as above. The
-// array's one `items` schema is shared across all entries. Completeness (every id
-// present exactly once) is enforced by researchCandidate()'s conversion back to a
-// Record below and by dossier.ts's per-section fallback, not by this schema — minItems/
-// maxItems only bound the count, they can't require a specific *set* of ids.
+// array's one `items` schema is shared across all entries. No length bound: the API
+// rejects `minItems`/`maxItems` other than 0 or 1 outright ("values other than 0 or 1
+// are not supported"). Completeness (every id present exactly once) is enforced by
+// researchCandidate()'s conversion back to a Record below and by dossier.ts's per-
+// section fallback — a missing id is just absent from the array, same approach Document
+// Parser's AnthropicHeaderExtractor uses for its field-entry array.
 const CANDIDATE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
-    sections: {
-      type: "array",
-      items: SECTION_SCHEMA,
-      minItems: SECTIONS.length,
-      maxItems: SECTIONS.length,
-    },
+    sections: { type: "array", items: SECTION_SCHEMA },
     identity_note: { type: "string" },
     gaps: { type: "array", items: { type: "string" } },
   },
