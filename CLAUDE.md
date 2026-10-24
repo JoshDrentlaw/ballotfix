@@ -50,22 +50,35 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   the app and the static export, so they can't drift apart.
 - Web app (`deno task serve`, `src/serve.ts`): `src/web/server.ts` routes, `pages.ts` HTML,
   `jobs.ts` one-race-at-a-time queue, `store.ts` one JSON file per run in `data/`. No client
-  JavaScript: forms post, running races use a meta refresh. POSTs must be same-origin
-  (`Sec-Fetch-Site`, then `Origin`), because starting research spends money.
+  JavaScript except `src/web/webauthn.js` (below): forms post, running races use a meta refresh.
+  POSTs must be same-origin (`Sec-Fetch-Site`, then `Origin`), because starting research spends
+  money.
+- Sign-in (`src/auth/`, ported from job-radar): on when `BALLOTFIX_PASSWORD` is set. Cookie sessions
+  (only the token's SHA-256 is stored, in `data/auth/auth.json`), a password form, and passkeys
+  registered from `/account`. `server.ts`'s `authRoute` is default-deny: anything not listed as
+  public there needs a session. Passkeys need `BALLOTFIX_BASE_URL` to be an `https://` (or
+  localhost) origin; the relying party comes from it, never from the request. The ceremony code in
+  `src/auth/webauthn/` is a straight port; keep its checks and its fixture tests intact.
+- The one script: `src/web/webauthn.js`, served at `/static/webauthn.js`, loaded only by the sign-in
+  and account pages, which alone get `script-src 'self'` (`SCRIPT_PAGE_CSP`). Race pages, exports,
+  and anything showing research content never load it and keep the no-script CSP.
 - `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy `handle`
   block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link, form action,
   and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`). Requests work
   with or without the prefix, so direct/local access is unaffected. Do **not** pair this with
   Caddy's `handle_path` (which strips the prefix) — the app has no concept of its incoming path
   being rewritten, so a stripped prefix and a preserved one must match.
-- `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
+- `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research,
+  with sign-in on (password `demo`) and passkeys working at `http://localhost:8788`.
 
 ## Verifying UI changes
 
 There is no browser test harness in CI. For UI changes, run `deno task demo` and drive it with
 Playwright against Chromium at `/opt/pw-browsers/chromium` at phone width (390px). Check for
-horizontal overflow and walk the form, running, and finished states. The first such run found a bug
-the unit tests missed: browsers can send `Origin: null` on the app's own form posts.
+horizontal overflow and walk the form, running, and finished states (sign in with `demo` first). The
+first such run found a bug the unit tests missed: browsers can send `Origin: null` on the app's own
+form posts. For passkey changes, open the demo at `localhost` (not `127.0.0.1`) and use CDP's
+`WebAuthn.addVirtualAuthenticator` (resident key + user verification) to register and sign in.
 
 ## Phases
 

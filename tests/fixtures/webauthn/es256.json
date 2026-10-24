@@ -1,0 +1,26 @@
+{
+  "note": "ES256 (-7), the algorithm every platform authenticator supports",
+  "algorithm": -7,
+  "origin": "http://localhost:34809",
+  "rpId": "localhost",
+  "registrationChallenge": "Q2hhbGxlbmdlRm9yUmVnaXN0cmF0aW9uRVMyNTY",
+  "authenticationChallenge": "Q2hhbGxlbmdlRm9yQXV0aGVudGljYXRpb25FUzI1Ng",
+  "userHandle": "MDE4ZjJhNDQtM2Y2Yy03YzFlLTliM2EtMmY0YzVkNmU3YThi",
+  "registration": {
+    "id": "0nSQxHEuhFoF16XpVxahMqwILPEP3dAnzO3mLlVFR5w",
+    "rawId": "0nSQxHEuhFoF16XpVxahMqwILPEP3dAnzO3mLlVFR5w",
+    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiUTJoaGJHeGxibWRsUm05eVVtVm5hWE4wY21GMGFXOXVSVk15TlRZIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDozNDgwOSIsImNyb3NzT3JpZ2luIjpmYWxzZSwib3RoZXJfa2V5c19jYW5fYmVfYWRkZWRfaGVyZSI6ImRvIG5vdCBjb21wYXJlIGNsaWVudERhdGFKU09OIGFnYWluc3QgYSB0ZW1wbGF0ZS4gU2VlIGh0dHBzOi8vZ29vLmdsL3lhYlBleCJ9",
+    "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVikSZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NdAAAAAQECAwQFBgcIAQIDBAUGBwgAINJ0kMRxLoRaBdel6VcWoTKsCCzxD93QJ8zt5i5VRUecpQECAyYgASFYIK7bW9AVQyJEiNCAuTXDFb4byMp00cwoN6KLkweGf3fyIlggPw_wSlbE7NVrpemnJqBsjiUbSSy2LG2ODZTP850m9Nw",
+    "transports": [
+      "internal"
+    ]
+  },
+  "authentication": {
+    "id": "0nSQxHEuhFoF16XpVxahMqwILPEP3dAnzO3mLlVFR5w",
+    "rawId": "0nSQxHEuhFoF16XpVxahMqwILPEP3dAnzO3mLlVFR5w",
+    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiUTJoaGJHeGxibWRsUm05eVFYVjBhR1Z1ZEdsallYUnBiMjVGVXpJMU5nIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDozNDgwOSIsImNyb3NzT3JpZ2luIjpmYWxzZX0",
+    "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MdAAAAAg",
+    "signature": "MEUCIQDsVeh_RcyAFuJzwOBj5xo0pTOqb40pGby36yd1At91LQIgc87uGNkgiNI14thk_154Fs6MNyBO1pHKyRGF4jDI2QA",
+    "userHandle": "MDE4ZjJhNDQtM2Y2Yy03YzFlLTliM2EtMmY0YzVkNmU3YThi"
+  }
+}

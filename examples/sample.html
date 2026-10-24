@@ -15,6 +15,7 @@
   --line:#34332f; --card:#1f1f1c; --accent:#8cc0dc; --accent-fg:#10202a; --warn-bg:#3a2c12; --warn-fg:#f3d39b;
   --ev-primary:#7fd3a3; --ev-reported:#8cc0dc; --ev-opinion:#c9a3e6; --ev-unsourced:#f0a090; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 820px; margin: 0 auto; padding: 16px 16px 64px; }
@@ -53,6 +54,7 @@ summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 footer { color: var(--muted); font-size: .85rem; margin-top: 40px; }
 nav.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
 nav.top a { text-decoration: none; font-weight: 700; padding: 8px 0; }
+nav.top span { display: flex; gap: 16px; }
 form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
 label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
 label .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
@@ -72,13 +74,19 @@ form.inline { display: inline; margin: 0; }
 .pill-failed, .pill-interrupted { color: var(--ev-unsourced); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
+h2.section { margin-top: 28px; }
+.stack-tight { display: grid; gap: 10px; margin: 16px 0; }
+.inline-field { display: flex; gap: 8px; flex: 1 1 100%; margin: 0; }
+.inline-field button { flex: none; }
+.inline-field input { min-width: 0; padding: 10px 12px; }
+.card .actions { margin: 10px 0 0; }
 </style>
 </head>
 <body>
 <main id="top">
 
 <h1>Example City Mayor · Nov 3, 2026</h1>
-<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched 2026-09-23</p>
+<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched 2026-10-24</p>
 
 
 

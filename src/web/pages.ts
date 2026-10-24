@@ -1,5 +1,9 @@
-/** HTML for the web app. Every page goes through render.ts's page(): no scripts, strict CSP. */
+/**
+ * HTML for the web app. Every page goes through render.ts's page() and its
+ * strict CSP. Only the sign-in and account pages load a script (passkeys).
+ */
 
+import type { Credential } from "../auth/store.ts";
 import { esc, page, raceBody, raceTitle, readableDate, titleFor } from "../render.ts";
 import type { RunRecord, RunStatus } from "./store.ts";
 
@@ -52,6 +56,8 @@ export interface HomeOptions {
   error?: string;
   /** Mount prefix (e.g. "/ballotfix") for generated links. Empty when served at root. */
   base?: string;
+  /** Sign-in is on: show the Account link. */
+  account?: boolean;
 }
 
 export function homePage(o: HomeOptions): string {
@@ -105,10 +111,10 @@ ${setup}${error}
 </form>
 <h2>Races</h2>
 ${runs}`;
-  return page("Ballot Fix", body, { nav: true, base });
+  return page("Ballot Fix", body, { nav: true, base, account: o.account });
 }
 
-export function runPage(run: RunRecord, canResearch: boolean, base = ""): string {
+export function runPage(run: RunRecord, canResearch: boolean, base = "", account = false): string {
   const active = run.status === "queued" || run.status === "running";
   const rerun = canResearch && !active
     ? `<form class="inline" method="post" action="${base}/races/${
@@ -142,22 +148,157 @@ ${
         : ""
     }
 ${actions}`;
-    return page(title, body, { nav: true, base, ...refresh });
+    return page(title, body, { nav: true, base, account, ...refresh });
   }
   return page(raceTitle(run.race), raceBody(run.race, { status, actions }), {
     nav: true,
     base,
+    account,
     ...refresh,
   });
 }
 
-export function messagePage(title: string, message: string, base = ""): string {
+export function messagePage(title: string, message: string, base = "", account = false): string {
   return page(
     title,
     `<h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="${base}/">Back to Ballot Fix</a></p>`,
     {
       nav: true,
       base,
+      account,
     },
   );
+}
+
+export interface LoginOptions {
+  base: string;
+  /** Where to go after signing in: an app path, already checked by the server. */
+  next: string;
+  /** Show the passkey button (the server has a secure BALLOTFIX_BASE_URL). */
+  passkeys: boolean;
+  error?: string;
+  notice?: string;
+}
+
+export function loginPage(o: LoginOptions): string {
+  const error = o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : "";
+  const notice = o.notice ? `<p class="note" role="status">${esc(o.notice)}</p>` : "";
+  // The button ships hidden; webauthn.js reveals it when the browser supports passkeys.
+  const passkey = o.passkeys
+    ? `<div class="stack-tight">
+  <button type="button" hidden data-passkey-signin data-options="${o.base}/login/passkey/options" data-finish="${o.base}/login/passkey" data-next="${
+      esc(o.next)
+    }">Sign in with a passkey</button>
+  <p class="error" role="alert" hidden data-passkey-status></p>
+</div>`
+    : "";
+  const body = `<h1>Sign in</h1>
+<p class="sub">Ballot Fix spends money on research, so it's private to whoever runs it.</p>
+${error}${notice}${passkey}
+<form class="stack" method="post" action="${o.base}/login">
+  <input type="hidden" name="next" value="${esc(o.next)}">
+  <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+  <button type="submit"${o.passkeys ? ' class="secondary"' : ""}>Sign in with the password</button>
+</form>`;
+  return page("Sign in · Ballot Fix", body, {
+    base: o.base,
+    script: o.passkeys ? `${o.base}/static/webauthn.js` : undefined,
+  });
+}
+
+/** Why passkeys are unavailable, or where they work, for the account page. */
+export type PasskeySetup =
+  | { state: "no-base-url" }
+  | { state: "insecure"; baseUrl: string }
+  | { state: "ready"; origin: string; elsewhere: string | null };
+
+export interface AccountOptions {
+  base: string;
+  setup: PasskeySetup;
+  credentials: readonly Credential[];
+  sessions: number;
+  error?: string;
+  notice?: string;
+}
+
+function day(iso: string): string {
+  return readableDate(iso.slice(0, 10));
+}
+
+export function accountPage(o: AccountOptions): string {
+  const b = o.base;
+  const error = o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : "";
+  const notice = o.notice ? `<p class="note" role="status">${esc(o.notice)}</p>` : "";
+
+  let setup = "";
+  if (o.setup.state === "no-base-url") {
+    setup =
+      `<p class="error">Passkeys are off. Set <code>BALLOTFIX_BASE_URL</code> on the server to the
+https:// address you open Ballot Fix at (just the origin, like <code>https://host.example.ts.net</code>),
+then restart it.</p>`;
+  } else if (o.setup.state === "insecure") {
+    setup = `<p class="error">Passkeys are off. <code>BALLOTFIX_BASE_URL</code> is
+<code>${esc(o.setup.baseUrl)}</code>, and browsers only allow passkeys over HTTPS (or on localhost).
+Serve Ballot Fix over HTTPS and set it to that address.</p>`;
+  } else if (o.setup.elsewhere) {
+    setup = `<p class="error">Passkeys here belong to <code>${esc(o.setup.origin)}</code>, but this
+page was opened at <code>${esc(o.setup.elsewhere)}</code>. Open the first address to register or use
+one.</p>`;
+  }
+
+  const list = o.credentials.length
+    ? `<ul class="runs">${
+      o.credentials.map((c) => {
+        const used = c.lastUsedAt ? `last used ${esc(day(c.lastUsedAt))}` : "not used yet";
+        const kind = c.backedUp ? "synced" : "on one device only";
+        return `<li class="card"><strong>${esc(c.label)}</strong><br><span class="sub">Added ${
+          esc(day(c.createdAt))
+        } · ${used} · ${kind}</span>
+  <div class="actions">
+    <form class="inline-field" method="post" action="${b}/account/passkeys/${esc(c.id)}/rename">
+      <input name="label" maxlength="60" value="${esc(c.label)}" aria-label="Name for ${
+          esc(c.label)
+        }">
+      <button class="secondary" type="submit">Rename</button>
+    </form>
+    <form class="inline" method="post" action="${b}/account/passkeys/${esc(c.id)}/delete">
+      <button class="secondary" type="submit">Remove</button>
+    </form>
+  </div></li>`;
+      }).join("")
+    }</ul>`
+    : `<p class="sub">No passkeys yet.</p>`;
+
+  const ready = o.setup.state === "ready";
+  // Hidden until webauthn.js confirms the browser can do this.
+  const register = ready
+    ? `<div class="stack-tight">
+  <label hidden data-passkey-label>Name for this device <input maxlength="60" placeholder="e.g. Phone"></label>
+  <button type="button" hidden data-passkey-register data-options="${b}/account/passkeys/options" data-finish="${b}/account/passkeys">Add a passkey on this device</button>
+  <p class="error" role="alert" hidden data-passkey-register-status></p>
+  <p class="sub" hidden data-passkey-unsupported>This browser doesn't support passkeys. The password still works.</p>
+  <noscript><p class="sub">Adding a passkey needs JavaScript, which is off in this browser.</p></noscript>
+</div>`
+    : "";
+
+  const body = `<h1>Account</h1>
+${error}${notice}
+<h2 class="section">Passkeys</h2>
+<p class="sub">A passkey signs you in with your device's fingerprint, face, or PIN instead of the
+password. The password keeps working either way, in case you lose a device.</p>
+${setup}
+${list}
+${register}
+<h2 class="section">Sessions</h2>
+<p class="sub">Signed in on ${o.sessions} ${o.sessions === 1 ? "browser" : "browsers"}.</p>
+<div class="actions">
+  <form class="inline" method="post" action="${b}/logout"><button type="submit">Sign out</button></form>
+  <form class="inline" method="post" action="${b}/account/sign-out-everywhere"><button class="secondary" type="submit">Sign out everywhere</button></form>
+</div>`;
+  return page("Account · Ballot Fix", body, {
+    nav: true,
+    base: b,
+    account: true,
+    script: ready ? `${b}/static/webauthn.js` : undefined,
+  });
 }

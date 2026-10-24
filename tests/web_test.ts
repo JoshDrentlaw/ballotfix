@@ -34,7 +34,7 @@ class GatedPort implements ResearchPort {
 }
 
 async function setup(
-  opts: { password?: string; canResearch?: boolean; maxQueued?: number; basePath?: string } = {},
+  opts: { canResearch?: boolean; maxQueued?: number; basePath?: string } = {},
 ) {
   const dir = await Deno.makeTempDir();
   const store = new RunStore(dir);
@@ -45,7 +45,6 @@ async function setup(
     store,
     jobs,
     canResearch: opts.canResearch ?? true,
-    password: opts.password,
     basePath: opts.basePath,
   });
   return { dir, store, port, jobs, app };
@@ -185,20 +184,6 @@ Deno.test("a real browser's same-origin form post is accepted even with Origin: 
   assertEquals(res.status, 303);
   port.release();
   await jobs.idle();
-});
-
-Deno.test("password protects every page except the health check", async () => {
-  const { app } = await setup({ password: "s3cret" });
-  assertEquals((await app(new Request("http://app.test/"))).status, 401);
-  assertEquals((await app(new Request("http://app.test/healthz"))).status, 200);
-  const bad = new Request("http://app.test/", {
-    headers: { authorization: `Basic ${btoa("me:nope")}` },
-  });
-  assertEquals((await app(bad)).status, 401);
-  const good = new Request("http://app.test/", {
-    headers: { authorization: `Basic ${btoa("me:s3cret")}` },
-  });
-  assertEquals((await app(good)).status, 200);
 });
 
 Deno.test("unknown and malformed run ids are 404s, never file paths", async () => {

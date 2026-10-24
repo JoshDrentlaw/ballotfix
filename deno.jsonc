@@ -26,6 +26,8 @@
     "singleQuote": false
   },
   "lint": {
+    // Browser code, linted for a server runtime it never runs in.
+    "exclude": ["src/web/webauthn.js"],
     "rules": {
       "tags": ["recommended"]
     }

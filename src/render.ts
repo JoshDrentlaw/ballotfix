@@ -137,6 +137,7 @@ export const STYLES = `
   --line:#34332f; --card:#1f1f1c; --accent:#8cc0dc; --accent-fg:#10202a; --warn-bg:#3a2c12; --warn-fg:#f3d39b;
   --ev-primary:#7fd3a3; --ev-reported:#8cc0dc; --ev-opinion:#c9a3e6; --ev-unsourced:#f0a090; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 820px; margin: 0 auto; padding: 16px 16px 64px; }
@@ -175,6 +176,7 @@ summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 footer { color: var(--muted); font-size: .85rem; margin-top: 40px; }
 nav.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
 nav.top a { text-decoration: none; font-weight: 700; padding: 8px 0; }
+nav.top span { display: flex; gap: 16px; }
 form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
 label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
 label .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
@@ -194,6 +196,12 @@ form.inline { display: inline; margin: 0; }
 .pill-failed, .pill-interrupted { color: var(--ev-unsourced); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
+h2.section { margin-top: 28px; }
+.stack-tight { display: grid; gap: 10px; margin: 16px 0; }
+.inline-field { display: flex; gap: 8px; flex: 1 1 100%; margin: 0; }
+.inline-field button { flex: none; }
+.inline-field input { min-width: 0; padding: 10px 12px; }
+.card .actions { margin: 10px 0 0; }
 `;
 
 export interface PageOptions {
@@ -203,27 +211,45 @@ export interface PageOptions {
   nav?: boolean;
   /** Mount prefix (e.g. "/ballotfix") for the nav's home links. Empty when served at root. */
   base?: string;
+  /** Add an Account link to the nav (the web app, when sign-in is on). */
+  account?: boolean;
+  /**
+   * URL of a same-origin script to load. Only the sign-in and account pages use
+   * this (for passkeys); it loosens the CSP to `script-src 'self'` on that page
+   * alone. Race pages and exports never set it.
+   */
+  script?: string;
 }
 
-/** Full HTML document with a strict CSP: no scripts, no external resources. */
+/** The CSP of every page without a script: no scripts, no external resources. */
+export const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'";
+/** The CSP of a page with `script`: its own origin's script and fetches, nothing else. */
+export const SCRIPT_PAGE_CSP =
+  "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; " +
+  "form-action 'self'; base-uri 'none'";
+
+/** Full HTML document with a strict CSP: no external resources, and no scripts unless `script`. */
 export function page(title: string, body: string, opts: PageOptions = {}): string {
   const refresh = opts.refreshSeconds
     ? `<meta http-equiv="refresh" content="${Math.max(2, Math.floor(opts.refreshSeconds))}">`
     : "";
   const base = opts.base ?? "";
   const nav = opts.nav
-    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${base}/#new">New race</a></nav>`
+    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><span><a href="${base}/#new">New race</a>${
+      opts.account ? `<a href="${base}/account">Account</a>` : ""
+    }</span></nav>`
     : "";
+  const script = opts.script ? `\n<script src="${esc(opts.script)}" defer></script>` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="${opts.script ? SCRIPT_PAGE_CSP : PAGE_CSP}">
 ${refresh}
 <title>${esc(title)}</title>
-<style>${STYLES}</style>
+<style>${STYLES}</style>${script}
 </head>
 <body>
 <main id="top">

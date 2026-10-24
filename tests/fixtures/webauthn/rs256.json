@@ -1,0 +1,26 @@
+{
+  "note": "RS256 (-257), the TPM-backed case",
+  "algorithm": -257,
+  "origin": "http://localhost:34809",
+  "rpId": "localhost",
+  "registrationChallenge": "Q2hhbGxlbmdlRm9yUmVnaXN0cmF0aW9uUlMyNTY",
+  "authenticationChallenge": "Q2hhbGxlbmdlRm9yQXV0aGVudGljYXRpb25SUzI1Ng",
+  "userHandle": "MDE4ZjJhNDQtM2Y2Yy03YzFlLTliM2EtMmY0YzVkNmU3YThi",
+  "registration": {
+    "id": "37WLzmobwO-0XWZex3KDMmxS8NpIoA_xhE1ZD-bG_p4",
+    "rawId": "37WLzmobwO-0XWZex3KDMmxS8NpIoA_xhE1ZD-bG_p4",
+    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiUTJoaGJHeGxibWRsUm05eVVtVm5hWE4wY21GMGFXOXVVbE15TlRZIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDozNDgwOSIsImNyb3NzT3JpZ2luIjpmYWxzZX0",
+    "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVkBZ0mWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjRQAAAAEAAAAAAAAAAAAAAAAAAAAAACDftYvOahvA77RdZl7HcoMybFLw2kigD_GETVkP5sb-nqQBAwM5AQAgWQEAnTrs9cw9BzqDw_u330spc9nAfHJpzmV6nmgCobr2RNTR3HrG0h4wkDj7q3mYzCLD85NLOVYzMuz3tuTHjSJed-o0PbOXfTmfI_BvnwQ54Zqw5KXcCmxn9JqJmXgvJJrWmO_dNQqrPHE5pl5K_T_A1Ck34gI8HY9ui_-lauoP7hPAXubuFYV-L8EbpmIRNoCyAN_tnDfKa4OXfMe4oU0_WKyUZ0PBRSNidM4OVpMqj9Ki4HPGhjIyix95riar22eeuq0ZsEZOY5PNfo3q5XDdEuldh3yJ50CFYYKOhlYzEW9OaYBoePc4NTk6px25b6SzY3IIqQLYr_SHR5LhBisWJSFDAQAB",
+    "transports": [
+      "usb"
+    ]
+  },
+  "authentication": {
+    "id": "37WLzmobwO-0XWZex3KDMmxS8NpIoA_xhE1ZD-bG_p4",
+    "rawId": "37WLzmobwO-0XWZex3KDMmxS8NpIoA_xhE1ZD-bG_p4",
+    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiUTJoaGJHeGxibWRsUm05eVFYVjBhR1Z1ZEdsallYUnBiMjVTVXpJMU5nIiwib3JpZ2luIjoiaHR0cDovL2xvY2FsaG9zdDozNDgwOSIsImNyb3NzT3JpZ2luIjpmYWxzZX0",
+    "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MFAAAAAg",
+    "signature": "JZkz2GKzEgHe91xlTea0RjvLLRe77GcTB-Onn4_DShmnojOo5vcvojjeHII24eRQdXfV5PRmHOzXuhHHOPLejYii1C_aw3zmizD_543VY9iqRPgiY-p8OCHDFz8XUgNnmy13abCj_OGjid3whcEojTPd0O0qMov1l2E47lqQ8-q1XJ4cpJDHYNThx8NB5v1G18dADxPShJ6aFlu1GTiTb40YuubtOwasKyrVZENV-NO8MVT6ejSeuxFuAjV7liwajElJGWmfw86AgGNBzBQqaanji976VrIULRpfm-IJ2KfU7RVvbPHPLKSGRSBqF1-OyOyHI2AzUj09L9M0HWTuPg",
+    "userHandle": "MDE4ZjJhNDQtM2Y2Yy03YzFlLTliM2EtMmY0YzVkNmU3YThi"
+  }
+}

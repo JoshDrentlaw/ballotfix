@@ -20,6 +20,10 @@ services:
       BASE_PATH: ${BASE_PATH:-/ballotfix}
       # Research spends money on the API key; require auth since HOST is 0.0.0.0 here.
       BALLOTFIX_PASSWORD: ${BALLOTFIX_PASSWORD:?set in .env}
+      # The https:// origin Caddy serves this at (no path), e.g. https://nucklehead.<tailnet>.ts.net.
+      # Passkeys need it and HTTPS; until then sign-in is password only. Sign-in state lives in the
+      # data volume (data/auth/), so it survives redeploys.
+      BALLOTFIX_BASE_URL: ${BALLOTFIX_BASE_URL:-}
       BALLOTFIX_DATA_DIR: /app/data
       BALLOTFIX_MODEL: ${BALLOTFIX_MODEL:-}
       BALLOTFIX_EFFORT: ${BALLOTFIX_EFFORT:-high}

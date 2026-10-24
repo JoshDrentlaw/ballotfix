@@ -35,8 +35,23 @@ set a password and listen on all interfaces:
 HOST=0.0.0.0 BALLOTFIX_PASSWORD='something long' deno task serve
 ```
 
-Research spends money on your API key, so don't expose it without `BALLOTFIX_PASSWORD`. Other
-settings: `PORT` (default 8787), `BALLOTFIX_DATA_DIR` (default `data`), `BALLOTFIX_MODEL`,
+Research spends money on your API key, so don't expose it without `BALLOTFIX_PASSWORD`. With it set,
+the app has a sign-in page and cookie sessions.
+
+**Passkeys.** Once signed in with the password, the **Account** page can register a passkey for each
+device (fingerprint, face, or PIN), and the sign-in page then offers "Sign in with a passkey". The
+password keeps working as a backup. Passkeys need two things:
+
+- HTTPS. Browsers refuse passkeys over plain HTTP (localhost aside). Over Tailscale, Caddy can serve
+  the machine's `*.ts.net` name with a certificate from `tailscale cert` (MagicDNS and HTTPS
+  certificates turned on in the tailnet's admin console).
+- `BALLOTFIX_BASE_URL` set to that origin, e.g. `https://nucklehead.example.ts.net` (no path; the
+  prefix goes in `BASE_PATH`). Passkeys are bound to its hostname, so changing it later strands the
+  ones already registered. The password still works, and you can register them again.
+
+Until both are in place the Account page says what's missing, and sign-in is password only.
+
+Other settings: `PORT` (default 8787), `BALLOTFIX_DATA_DIR` (default `data`), `BALLOTFIX_MODEL`,
 `BALLOTFIX_EFFORT` (`low` to `max`, default `high`).
 
 ## Command line
