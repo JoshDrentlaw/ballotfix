@@ -8,17 +8,19 @@ import {
 import { BallotJobs, JobRunner, QueueFullError } from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
-import { BallotStore, type RunRecord, RunStore } from "../src/web/store.ts";
+import { BallotStore, ChoiceStore, type RunRecord, RunStore } from "../src/web/store.ts";
 import type {
   BallotCandidate,
   BallotPage,
   BallotReader,
   BallotReading,
+  MeasureQuery,
   RaceQuery,
   RawCandidateResearch,
+  RawMeasureResearch,
   ResearchPort,
 } from "../src/types.ts";
-import { listing, QUERY, raw } from "./fakes.ts";
+import { listing, QUERY, raw, rawMeasure } from "./fakes.ts";
 
 const CANDS: BallotCandidate[] = [
   { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true },
@@ -39,6 +41,29 @@ class GatedPort implements ResearchPort {
     await this.gate;
     if (c.name === "Joz Sida") throw new Error("rate limited");
     return raw();
+  }
+  measures: MeasureQuery[] = [];
+  async researchMeasure(m: MeasureQuery): Promise<RawMeasureResearch> {
+    this.measures.push(m);
+    await this.gate;
+    return rawMeasure({
+      official_title: "Fontana Parks Tax",
+      sections: {
+        effect: {
+          facts: [{
+            statement: "A yes vote adds a half-cent sales tax.",
+            source_name: "City Attorney",
+            source_url: "https://fontana.example/analysis",
+            author: null,
+            published: null,
+            evidence_type: "primary_record",
+          }],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: ["https://fontana.example/analysis"],
+    });
   }
 }
 
@@ -61,7 +86,22 @@ const READING: BallotReading = {
       candidates: [],
     },
   ],
-  measures: ["Measure X: parks sales tax"],
+  measures: [
+    {
+      kind: "measure",
+      label: "Measure X",
+      jurisdiction: "City of Fontana",
+      question: "Shall a half-cent sales tax for parks be adopted?",
+      person: "",
+    },
+    {
+      kind: "retention",
+      label: "Associate Justice, Court of Appeal, Fourth District",
+      jurisdiction: "State of California",
+      question: "Shall Pat Judge be elected to the office for the term provided by law?",
+      person: "Pat Judge",
+    },
+  ],
   notes: null,
   model: "fake",
 };
@@ -89,6 +129,8 @@ async function setup(
   await store.init();
   const ballotStore = new BallotStore(dir);
   await ballotStore.init();
+  const choices = new ChoiceStore(dir);
+  await choices.init();
   const port = new GatedPort();
   const reader = new GatedReader();
   const jobs = new JobRunner(store, () => port, { maxQueued: opts.maxQueued });
@@ -97,11 +139,12 @@ async function setup(
     store,
     jobs,
     ballots,
+    choices,
     canResearch: opts.canResearch ?? true,
     password: opts.password,
     basePath: opts.basePath,
   });
-  return { dir, store, ballotStore, port, reader, jobs, ballots, app };
+  return { dir, store, ballotStore, choices, port, reader, jobs, ballots, app };
 }
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
@@ -135,6 +178,17 @@ function post(path: string, body: Record<string, string>, headers: Record<string
   });
 }
 
+/**
+ * Waits, by state rather than a fixed delay (CI runners are slow), until the race at
+ * `loc` reaches the gated candidate calls, i.e. its partial race has been saved.
+ */
+async function untilRunning(store: RunStore, loc: string) {
+  const id = loc.split("/").pop()!;
+  for (let i = 0; i < 500 && !(await store.get(id))?.race; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 const FORM = { city: "Fontana", state: "ca", office: "Mayor", election: "2026-11-03" };
 
 Deno.test("home page renders the form and a mobile viewport", async () => {
@@ -155,8 +209,7 @@ Deno.test("submitting a race redirects to it, shows progress, then the finished 
   const loc = res.headers.get("location")!;
   assertMatch(loc, /^\/races\/fontana-mayor-2026-11-03-\d{12}-[0-9a-f]{6}$/);
 
-  // Let the job reach the gated candidate calls.
-  await new Promise((r) => setTimeout(r, 20));
+  await untilRunning(store, loc);
   const running = await (await app(new Request(`http://app.test${loc}`))).text();
   assertStringIncludes(running, `http-equiv="refresh" content="10"`);
   assertStringIncludes(running, "Researching now");
@@ -189,7 +242,7 @@ Deno.test("submitting a race redirects to it, shows progress, then the finished 
 // Caddy switched to `handle` (which preserves the prefix) to match. This test pins both the
 // prefixed behavior and that unprefixed/direct access (no proxy in front) still works.
 Deno.test("basePath prefixes every generated link and redirect, and still accepts unprefixed paths", async () => {
-  const { app, port, jobs } = await setup({ basePath: "/ballotfix" });
+  const { app, port, jobs, store } = await setup({ basePath: "/ballotfix" });
 
   const home = await (await app(new Request("http://app.test/ballotfix/"))).text();
   assertStringIncludes(home, `action="/ballotfix/races"`);
@@ -200,7 +253,7 @@ Deno.test("basePath prefixes every generated link and redirect, and still accept
   const loc = res.headers.get("location")!;
   assertMatch(loc, /^\/ballotfix\/races\/fontana-mayor-2026-11-03-\d{12}-[0-9a-f]{6}$/);
 
-  await new Promise((r) => setTimeout(r, 20));
+  await untilRunning(store, loc);
   const running = await (await app(new Request(`http://app.test${loc}`))).text();
   assertStringIncludes(running, "Researching now");
 
@@ -352,7 +405,9 @@ Deno.test("an uploaded ballot is read, reviewed, and the picked contest research
   const review = await (await app(new Request(`http://app.test${loc}`))).text();
   assert(!review.includes(`http-equiv="refresh"`));
   assertStringIncludes(review, "Member, City Council, District 2");
-  assertStringIncludes(review, "Measure X: parks sales tax");
+  assertStringIncludes(review, "Measure X");
+  assertStringIncludes(review, `name="pick_measure" value="0"`);
+  assertStringIncludes(review, "Research this judge");
   assertStringIncludes(review, "No candidate names could be read");
   assertStringIncludes(review, `name="pick" value="0"`);
   assert(!review.includes(`name="pick" value="2"`), "a contest with no names can't be picked");
@@ -497,7 +552,7 @@ Deno.test("a queue that fills partway keeps the user's edits and an honest count
   assertStringIncludes(body, "queue is full");
   assertStringIncludes(body, `value="Fontana (corrected)"`);
   assertStringIncludes(body, `name="pick" value="1" checked`);
-  assertStringIncludes(body, "Up to 3 contests can be started right now");
+  assertStringIncludes(body, "Up to 3 contests or measures can be started right now");
   s.port.release();
   await s.jobs.idle();
 });
@@ -675,4 +730,333 @@ Deno.test("sniffBallotType trusts bytes, not names", () => {
   );
   assertEquals(sniffBallotType(HEIC), "heic");
   assertEquals(sniffBallotType(enc("<svg onload=alert(1)>")), null);
+});
+
+Deno.test("a measure and a judge picked from the ballot are researched, with the voter's issues", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const go = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+    ["pick_measure", "1"],
+    ["mlabel_1", "Associate Justice, Court of Appeal, Fourth District"],
+    ["mjur_1", "State of California"],
+    ["mperson_1", "Pat Judge"],
+    ["priorities", "housing costs\n\nparks; Parks"],
+  ]));
+  assertEquals(go.status, 303);
+  assertEquals(go.headers.get("location"), loc);
+  s.port.release();
+  await s.jobs.idle();
+
+  const runs = await s.store.list();
+  const measure = runs.find((r) => r.measure)!;
+  const judge = runs.find((r) => !r.measure)!;
+  assertEquals(measure.status, "done");
+  assertEquals(measure.priorities, ["housing costs", "parks"]);
+  // The question read from the ballot goes along to identify the measure.
+  assertEquals(s.port.measures[0].question, "Shall a half-cent sales tax for parks be adopted?");
+  assertEquals(measure.measure_result!.sections.effect.facts.length, 1);
+  assertEquals(measure.measure_result!.priorities.map((p) => p.issue), ["housing costs", "parks"]);
+
+  // A retention question is a one-person race with the judge as the incumbent.
+  assertEquals(judge.candidates, [{
+    name: "Pat Judge",
+    ballot_designation: null,
+    incumbent: true,
+  }]);
+  assertEquals(judge.race!.listing.contest_kind, "retention");
+  assertEquals(judge.race!.listing.order_basis, "official_ballot_order");
+  assertEquals(judge.priorities, ["housing costs", "parks"]);
+
+  const page = await (await s.app(new Request(`http://app.test/races/${measure.id}`))).text();
+  assertStringIncludes(page, "Measure X · City of Fontana · Nov 3, 2026");
+  assertStringIncludes(page, "A yes vote adds a half-cent sales tax.");
+  assertStringIncludes(page, "Official title: Fontana Parks Tax");
+  assertStringIncludes(page, `href="/races/${measure.id}/download"`);
+  assertStringIncludes(page, "You asked about:</strong> housing costs; parks");
+  const judgePage = await (await s.app(new Request(`http://app.test/races/${judge.id}`))).text();
+  assertStringIncludes(judgePage, "yes/no retention question");
+
+  const dl = await s.app(new Request(`http://app.test/races/${measure.id}/download`));
+  assertEquals(dl.status, 200);
+  assertStringIncludes(await dl.text(), "does not recommend a yes or no vote");
+
+  // Both items are marked started, and a rerun keeps the measure and the issues.
+  const review = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  assert(!review.includes(`name="pick_measure"`));
+  assertStringIncludes(review, `href="/races/${measure.id}"`);
+  await s.app(post(`/races/${measure.id}/rerun`, {}));
+  await s.jobs.idle();
+  const again = (await s.store.list())[0];
+  assertEquals(again.measure?.label, "Measure X");
+  assertEquals(again.priorities, ["housing costs", "parks"]);
+});
+
+Deno.test("a ballot saved before measures were researched still offers them, asking for the jurisdiction", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  const b = (await s.ballotStore.get(id))!;
+  await s.ballotStore.save({
+    ...b,
+    reading: { ...b.reading!, measures: ["Measure X: parks tax"] },
+  });
+  const review = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  assertStringIncludes(review, `name="pick_measure" value="0"`);
+  assertStringIncludes(review, `<details open><summary>Fix what was read`);
+
+  const missing = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X: parks tax"],
+    ["mjur_0", ""],
+  ]));
+  assertEquals(missing.status, 400);
+  assertStringIncludes(await missing.text(), "put it on the ballot");
+  assertEquals(s.port.measures.length, 0);
+});
+
+Deno.test("issues are optional, but limited in number and length", async () => {
+  const s = await setup();
+  const tooMany = await s.app(post("/races", { ...FORM, priorities: "a\nb\nc\nd\ne\nf" }));
+  assertEquals(tooMany.status, 400);
+  assertStringIncludes(await tooMany.text(), "up to 5 issues");
+  const tooLong = await s.app(post("/races", { ...FORM, priorities: "x".repeat(121) }));
+  assertEquals(tooLong.status, 400);
+  const ok = await s.app(post("/races", { ...FORM, priorities: "housing costs" }));
+  assertEquals(ok.status, 303);
+  assertEquals((await s.store.list())[0].priorities, ["housing costs"]);
+  const none = await s.app(post("/races", FORM));
+  assertEquals(none.status, 303);
+  assertEquals((await s.store.list()).find((r) => !r.priorities)?.query.city, "Fontana");
+  s.port.release();
+  await s.jobs.idle();
+});
+
+Deno.test("measure pick values must be plain numbers of measures that exist", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  for (const v of ["01", "", "7"]) {
+    const res = await s.app(postForm(`${loc}/research`, [
+      ["election", "2026-11-03"],
+      ["state", "CA"],
+      ["pick_measure", v],
+      ["mlabel_7", "Measure Z"],
+      ["mjur_7", "City of Fontana"],
+    ]));
+    assertEquals(res.status, 400, v);
+  }
+  assertEquals((await s.store.list()).length, 0);
+});
+
+Deno.test("notes and a pick are saved apart from the run, kept on rerun, and listed on the picks sheet", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+  ]));
+  let runs = await s.store.list();
+  const mayor = runs.find((r) => !r.measure)!;
+  const measure = runs.find((r) => r.measure)!;
+  assertEquals(mayor.ballot, { id: loc.split("/").pop()!, key: "0", vote_for: 1 });
+
+  // While research runs, the page refreshes itself, so there's no form to lose typing in.
+  const running = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  assertStringIncludes(running, "once research finishes");
+  assert(!running.includes(`/choice"`));
+  s.port.release();
+  await s.jobs.idle();
+
+  const page = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  assertStringIncludes(page, `action="/races/${mayor.id}/choice"`);
+  assertStringIncludes(page, `type="radio" name="pick" value="Acquanetta Warren"`);
+
+  // Only real options, and no more than the ballot says to vote for.
+  const bogus = await s.app(postForm(`/races/${mayor.id}/choice`, [["pick", "Someone Else"]]));
+  assertEquals(bogus.status, 400);
+  const two = await s.app(postForm(`/races/${mayor.id}/choice`, [
+    ["pick", "Acquanetta Warren"],
+    ["pick", "Joz Sida"],
+  ]));
+  assertEquals(two.status, 400);
+
+  const save = await s.app(postForm(`/races/${mayor.id}/choice`, [
+    ["pick", "Joz Sida"],
+    ["notes", "Check the <warehouse> vote again"],
+  ]));
+  assertEquals(save.status, 303);
+  assertEquals(save.headers.get("location"), `/races/${mayor.id}?saved=1#mine`);
+  await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "No"]]));
+  assertEquals(
+    (await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "Maybe"]]))).status,
+    400,
+  );
+
+  // Never in downloads or the run's JSON.
+  const dl = await (await s.app(new Request(`http://app.test/races/${mayor.id}/download`))).text();
+  assert(!dl.includes("warehouse"));
+  const json = await (await s.app(new Request(`http://app.test/races/${mayor.id}.json`))).text();
+  assert(!json.includes("warehouse"));
+
+  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  assertStringIncludes(sheet, "2 of 5 decided");
+  assertStringIncludes(sheet, "Check the &lt;warehouse&gt; vote again");
+  assert(
+    sheet.indexOf("Joz Sida") < sheet.indexOf(">No<"),
+    "ballot order: contests, then measures",
+  );
+  assertStringIncludes(sheet, `name="pick_1"`);
+
+  // A rerun keeps the notes and pick, and the sheet follows the new run.
+  await s.app(post(`/races/${mayor.id}/rerun`, {}));
+  await s.jobs.idle();
+  runs = await s.store.list();
+  const rerun = runs[0];
+  assert(rerun.id !== mayor.id);
+  assertEquals(rerun.choice_id, `${loc.split("/").pop()}-0`);
+  assertEquals(rerun.choice_id, mayor.choice_id);
+  const again = await (await s.app(new Request(`http://app.test/races/${rerun.id}`))).text();
+  assertStringIncludes(again, `value="Joz Sida" checked`);
+  const b = (await s.ballotStore.get(loc.split("/").pop()!))!;
+  assertEquals(b.started["0"], rerun.id);
+});
+
+Deno.test("each contest can add its own issues to the ballot-wide ones", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const res = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["priorities", "housing costs"],
+    ["priorities_0", "warehouses\nHousing costs"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+  ]));
+  assertEquals(res.status, 303);
+  const runs = await s.store.list();
+  assertEquals(runs.find((r) => !r.measure)!.priorities, ["housing costs", "warehouses"]);
+  assertEquals(runs.find((r) => r.measure)!.priorities, ["housing costs"]);
+
+  const tooMany = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick", "1"],
+    ["office_1", "Member, City Council, District 2"],
+    ["city_1", "City of Fontana"],
+    ["candidates_1", "Pat Example"],
+    ["priorities", "a\nb\nc\nd\ne"],
+    ["priorities_1", "f\ng\nh\ni"],
+  ]));
+  assertEquals(tooMany.status, 400);
+  assertStringIncludes(await tooMany.text(), "up to 8 issues in all");
+  s.port.release();
+  await s.jobs.idle();
+});
+
+Deno.test("the picks sheet changes every pick and note in place, researched or not", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  assertStringIncludes(sheet, "Pat Judge (retention)");
+  assertStringIncludes(sheet, `name="pick_m1" value="Yes"`);
+  assertStringIncludes(sheet, `type="radio" name="pick_0"`);
+
+  // One bad item refuses the whole sheet and keeps what was typed.
+  const bad = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["pick_m0", "Maybe"],
+  ]));
+  assertEquals(bad.status, 400);
+  const badPage = await bad.text();
+  assertStringIncludes(badPage, "Measure X: That pick isn&#39;t one of the choices");
+  assertStringIncludes(badPage, "Known quantity");
+  assertEquals(await s.choices.list(), []);
+  const tooMany = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["pick_0", "Joz Sida"],
+  ]));
+  assertEquals(tooMany.status, 400);
+
+  const save = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["pick_m0", "No"],
+  ]));
+  assertEquals(save.status, 303);
+  assertEquals(save.headers.get("location"), `${loc}/picks?saved=1`);
+  assertEquals((await s.choices.list()).length, 2, "unchanged items aren't written");
+  const after = await (await s.app(new Request(`http://app.test${loc}/picks?saved=1`))).text();
+  assertStringIncludes(after, "2 of 5 decided");
+  assertStringIncludes(after, `value="Acquanetta Warren" checked`);
+
+  // Researching it later shows the same note on the research page, and the sheet
+  // then edits that same record.
+  await s.app(postForm(`${loc}/research`, MAYOR));
+  s.port.release();
+  await s.jobs.idle();
+  const run = (await s.store.list())[0];
+  const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(page, "Known quantity");
+  const fresh = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  const seen = fresh.match(/name="seen_0" value="([^"]*)"/)![1];
+  const seenM0 = fresh.match(/name="seen_m0" value="([^"]*)"/)![1];
+  assert(seen && seenM0, "the sheet carries each item's version");
+  // As a browser posts it: every item, including the measure left as it was.
+  const edit = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Joz Sida"],
+    ["notes_0", "Changed my mind"],
+    ["seen_0", seen],
+    ["pick_m0", "No"],
+    ["seen_m0", seenM0],
+  ]));
+  assertEquals(edit.status, 303);
+  const again = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(again, `value="Joz Sida" checked`);
+  assertStringIncludes(again, "Changed my mind");
+
+  // A sheet loaded before that edit can't write its older copy back over it.
+  const stale = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["seen_0", seen],
+    ["pick_m0", "Yes"],
+    ["seen_m0", seenM0],
+  ]));
+  assertEquals(stale.status, 409);
+  assertStringIncludes(await stale.text(), "changed somewhere else");
+  const kept = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(kept, "Changed my mind");
+  // All or nothing: the measure in that same post wasn't saved either.
+  assertEquals((await s.choices.get(`${loc.split("/").pop()}-m0`))!.picks, ["No"]);
+});
+
+Deno.test("a saved pick that is no longer listed survives saving the form", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  // Picked as read, then the name was corrected when research started.
+  await s.choices.save({
+    id: `${id}-0`,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+    picks: ["Joz Sda"],
+    notes: "",
+  });
+  await s.app(postForm(`${loc}/research`, MAYOR));
+  s.port.release();
+  await s.jobs.idle();
+  const run = (await s.store.list())[0];
+  const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(page, `value="Joz Sda" checked`);
+  await s.app(postForm(`/races/${run.id}/choice`, [["pick", "Joz Sda"], ["notes", "typo?"]]));
+  assertEquals((await s.choices.get(`${id}-0`))!.picks, ["Joz Sda"]);
 });

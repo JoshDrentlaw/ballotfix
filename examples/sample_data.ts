@@ -7,6 +7,7 @@ import type {
   BallotReader,
   BallotReading,
   RawCandidateResearch,
+  RawMeasureResearch,
   ResearchPort,
 } from "../src/types.ts";
 
@@ -94,8 +95,81 @@ export const sampleReading: BallotReading = {
       ],
     },
   ],
-  measures: ["Measure X (placeholder): sales tax for parks"],
+  measures: [
+    {
+      kind: "measure",
+      label: "Measure X",
+      jurisdiction: "City of Example",
+      question:
+        "PLACEHOLDER. Shall the measure establishing a one-half cent sales tax for parks, providing about $10 million a year until ended by voters, be adopted?",
+      person: "",
+    },
+    {
+      kind: "retention",
+      label: "Associate Justice, Court of Appeal (placeholder)",
+      jurisdiction: "State of Example",
+      question:
+        "PLACEHOLDER. Shall Sample Judge G be elected to the office for the term provided by law?",
+      person: "Sample Judge G",
+    },
+  ],
   notes: "LAYOUT SAMPLE. Placeholder contests, not read from your upload.",
+  model: "layout-sample",
+};
+
+export const measureFacts: RawMeasureResearch = {
+  sections: {
+    effect: {
+      facts: [{
+        statement:
+          "Placeholder: a yes vote adds a half-cent sales tax for parks; a no vote leaves the rate as it is.",
+        source_name: "Example City Attorney, impartial analysis",
+        source_url: "https://example.org/measure-x/analysis.pdf",
+        author: null,
+        published: "2026-08",
+        evidence_type: "primary_record",
+      }],
+      searched: ["county voter information guide"],
+      gap_note: null,
+    },
+    history: {
+      facts: [{
+        statement: "Placeholder: the city council placed it on the ballot by a 4-1 vote.",
+        source_name: "Example City Council minutes",
+        source_url: "https://example.org/minutes/2026-07-08",
+        author: null,
+        published: "2026-07-08",
+        evidence_type: "primary_record",
+      }],
+      searched: ["council agendas and minutes"],
+      gap_note: null,
+    },
+    priority_1: {
+      facts: [{
+        statement: "Placeholder: the analysis says revenue may be spent only on park maintenance.",
+        source_name: "Example City Attorney, impartial analysis",
+        source_url: "https://example.org/measure-x/analysis.pdf",
+        author: null,
+        published: "2026-08",
+        evidence_type: "primary_record",
+      }],
+      searched: ["impartial analysis"],
+      gap_note: null,
+    },
+  },
+  stances: {
+    priority_1: {
+      stance: "aligns",
+      basis: "Placeholder: the analysis restricts the revenue to parks.",
+    },
+  },
+  official_title: "Example City Parks Sales Tax Measure (placeholder)",
+  identity_note: null,
+  gaps: ["Placeholder: committee filings for the No side were not online."],
+  retrieved_urls: [
+    "https://example.org/measure-x/analysis.pdf",
+    "https://example.org/minutes/2026-07-08",
+  ],
   model: "layout-sample",
 };
 
@@ -117,11 +191,26 @@ export function samplePort(delayMs = 0): ResearchPort {
       await wait();
       return listing;
     },
-    researchCandidate: async (_q, c) => {
+    researchCandidate: async (_q, c, _l, priorities = []) => {
       await wait();
       await wait();
       if (c.name.endsWith("C")) throw new Error("placeholder failure");
-      return c.incumbent ? withFacts : { ...withFacts, identity_note: null, gaps: [] };
+      const base = c.incumbent ? withFacts : { ...withFacts, identity_note: null, gaps: [] };
+      if (!priorities.length) return base;
+      // Placeholder stance on the first issue, backed by a retrieved page, so the layout shows.
+      return {
+        ...base,
+        sections: { ...base.sections, priority_1: base.sections.criticisms },
+        stances: {
+          priority_1: c.incumbent
+            ? { stance: "conflicts", basis: "Placeholder: the warehouse approval cited above." }
+            : { stance: "unclear", basis: "" },
+        },
+      };
+    },
+    researchMeasure: async () => {
+      await wait();
+      return measureFacts;
     },
   };
 }

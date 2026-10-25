@@ -3,7 +3,7 @@
  * resumption, refusal handling, retrieved-URL collection, and the request
  * shape (server tools, schema, fallbacks).
  */
-import { assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import type Anthropic from "@anthropic-ai/sdk";
 import Anthropic_ from "@anthropic-ai/sdk";
 import {
@@ -14,7 +14,7 @@ import {
   ResearchUnavailableError,
   toBase64,
 } from "../src/research/anthropic.ts";
-import { SECTION_IDS } from "../src/template.ts";
+import { MEASURE_SECTION_IDS, SECTION_IDS } from "../src/template.ts";
 import { listing, QUERY } from "./fakes.ts";
 
 type Resp = { stop_reason: string; content: unknown[]; stop_details?: unknown };
@@ -65,7 +65,7 @@ const fetchError = {
 };
 
 const cand = { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true };
-// Wire format: an array with one entry per section id (see anthropic.ts's CANDIDATE_SCHEMA).
+// Wire format: an array with one entry per section id (see anthropic.ts's candidateSchema).
 const emptySections = SECTION_IDS.map((id) => ({ id, facts: [], searched: [], gap_note: "none" }));
 
 Deno.test("resumes after pause_turn and collects URLs across all turns", async () => {
@@ -120,6 +120,107 @@ Deno.test("request uses server web tools, a shared sections-array item schema, a
   // bounds other than 0 or 1, so completeness isn't schema-enforced (see dossier.ts).
   const sectionsSchema = req.output_config.format.schema.properties.sections;
   assertEquals(sectionsSchema.items.properties.id.enum, [...SECTION_IDS]);
+});
+
+type Req = {
+  system: string;
+  messages: { content: string }[];
+  tools: unknown[];
+  output_config: {
+    format: {
+      schema: {
+        required: string[];
+        properties: { sections: { items: { properties: { id: { enum: string[] } } } } };
+      };
+    };
+  };
+};
+
+Deno.test("the voter's issues become extra section ids and prompt lines, nothing else", async () => {
+  const final = JSON.stringify({ sections: emptySections, identity_note: "", gaps: [] });
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: final }],
+  }]);
+  await new AnthropicResearcher({ client }).researchCandidate(QUERY, cand, listing([cand]), [
+    "housing costs",
+    "parks",
+  ]);
+  const req = requests[0] as Req;
+  assertEquals(req.output_config.format.schema.properties.sections.items.properties.id.enum, [
+    ...SECTION_IDS,
+    "priority_1",
+    "priority_2",
+  ]);
+  assertStringIncludes(req.messages[0].content, "- priority_1: housing costs");
+  assertStringIncludes(req.system, "compare the candidate's documented record");
+  assertStringIncludes(req.system, "never recommend a vote");
+  // Stances are requested only alongside issues, one per priority id.
+  const props = (req.output_config.format.schema as unknown as {
+    properties: { stances: { items: { properties: { id: { enum: string[] } } } } };
+  }).properties;
+  assertEquals(props.stances.items.properties.id.enum, ["priority_1", "priority_2"]);
+  assert(!req.messages[0].content.includes("retention question"));
+});
+
+Deno.test("a retention question tells the researcher it is a yes/no on a sitting judge", async () => {
+  const final = JSON.stringify({ sections: emptySections, identity_note: "", gaps: [] });
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: final }],
+  }]);
+  const judge = { name: "Pat Judge", ballot_designation: null, incumbent: true };
+  await new AnthropicResearcher({ client }).researchCandidate(QUERY, judge, {
+    ...listing([judge]),
+    contest_kind: "retention",
+  });
+  const req = requests[0] as Req;
+  assertStringIncludes(req.messages[0].content, "This is a retention question");
+  // Without issues, the schema is exactly the template, and no stances are asked for.
+  assert(!req.output_config.format.schema.required.includes("stances"));
+  assertEquals(req.output_config.format.schema.properties.sections.items.properties.id.enum, [
+    ...SECTION_IDS,
+  ]);
+});
+
+Deno.test("researchMeasure uses the measure template, web tools, and the ballot question", async () => {
+  const final = JSON.stringify({
+    official_title: " Parks Tax ",
+    sections: [
+      ...MEASURE_SECTION_IDS.map((id) => ({ id, facts: [], searched: [], gap_note: "" })),
+      { id: "priority_1", facts: [], searched: ["x"], gap_note: "nothing" },
+    ],
+    identity_note: "",
+    gaps: ["no filings", 3],
+  });
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [search, { type: "text", text: final }],
+  }]);
+  const r = await new AnthropicResearcher({ client }).researchMeasure({
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "Shall a half-cent sales tax be adopted?",
+    state: "CA",
+    electionDate: "2026-11-03",
+  }, ["parks"]);
+  assertEquals(r.official_title, "Parks Tax");
+  assertEquals(r.identity_note, null);
+  assertEquals(r.gaps, ["no filings"]);
+  assertEquals(r.sections.priority_1?.searched, ["x"]);
+  assertEquals(r.retrieved_urls, ["https://kvcrnews.org/a"]);
+  const req = requests[0] as Req;
+  assertEquals(req.tools.length, 2);
+  assertEquals(req.output_config.format.schema.properties.sections.items.properties.id.enum, [
+    ...MEASURE_SECTION_IDS,
+    "priority_1",
+  ]);
+  assertStringIncludes(req.messages[0].content, "Shall a half-cent sales tax be adopted?");
+  assertStringIncludes(req.messages[0].content, "City of Fontana");
+  assertStringIncludes(req.system, "Do not recommend a yes or no vote");
+  // Both sides get mirrored instructions.
+  assertStringIncludes(req.system, "case_for (The case for, as supporters make it)");
+  assertStringIncludes(req.system, "case_against (The case against, as opponents make it)");
 });
 
 Deno.test("refusal raises ResearchRefusedError", async () => {
@@ -184,7 +285,19 @@ Deno.test("readBallot sends the pages without web tools and cleans what comes ba
       },
       { office: "", jurisdiction: "x", vote_for: 0, candidates: [] },
     ],
-    measures: ["Measure X", ""],
+    measures: [
+      "Measure X",
+      "",
+      {
+        kind: "retention",
+        label: " Associate Justice ",
+        jurisdiction: "State of California",
+        question: "Shall Pat Judge be elected?",
+        person: " Pat Judge ",
+      },
+      { kind: "bogus", label: "Prop 1", jurisdiction: "", question: "", person: "Not A Judge" },
+      { kind: "measure", label: "", jurisdiction: "", question: "", person: "" },
+    ],
     notes: "",
   });
   const { client, requests } = stubClient([{
@@ -201,7 +314,18 @@ Deno.test("readBallot sends the pages without web tools and cleans what comes ba
   assertEquals(r.contests.length, 1);
   assertEquals(r.contests[0].office, "Mayor");
   assertEquals(r.contests[0].candidates.map((c) => c.name), ["Acquanetta Warren"]);
-  assertEquals(r.measures, ["Measure X"]);
+  assertEquals(r.measures, [
+    { kind: "measure", label: "Measure X", jurisdiction: "", question: "", person: "" },
+    {
+      kind: "retention",
+      label: "Associate Justice",
+      jurisdiction: "State of California",
+      question: "Shall Pat Judge be elected?",
+      person: "Pat Judge",
+    },
+    // Unknown kinds are measures, and a measure has no person.
+    { kind: "measure", label: "Prop 1", jurisdiction: "", question: "", person: "" },
+  ]);
   assertEquals(r.notes, null);
 
   const req = requests[0] as {

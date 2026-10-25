@@ -30,7 +30,41 @@ side), or the sample ballot PDF from your county's website. Claude reads the con
 about a minute, for a few cents. You then see every contest in the order your ballot prints it, fix
 any misread names, and tick the ones to research. Each one becomes a normal race whose candidate
 order is labeled as coming from your ballot, unless you changed its list, in which case the order is
-labeled as entered by you. Measures are listed as not researched.
+labeled as entered by you.
+
+Measures, propositions, and judicial retention questions are listed too, in printed order, and can
+be ticked the same way:
+
+- A **measure** gets one page with the same sections every time: what a yes or no vote does, its
+  history (how it got on the ballot, earlier versions, the law it changes), who is for and against
+  it and who those people and groups are, the money on each side, its cost, the case for and the
+  case against (with mirrored instructions), and endorsements and coverage. The ballot question as
+  printed goes along, so the right "Measure X" is found.
+- A **judge on a retention question** gets the same dossier as a candidate, as a one-person race,
+  with the page explaining there is no opponent to compare with.
+
+### What matters most to you (optional)
+
+On the race form and the ballot review, you can list up to five issues, one per line. On the ballot
+review that list covers everything you research, and each contest or measure can add more of its own
+(up to eight in all). Each issue becomes an extra section, shown first, for every candidate and
+measure, and every candidate in a contest is asked about the same issues in the same words.
+
+Name a topic ("housing costs") or state your view ("protect abortion access", "oppose new sales
+taxes"). For a stated view, each issue is marked **conflicts with your view**, **matches your
+view**, **mixed**, or **not enough on record**, with a one-line basis, and the candidate cards show
+the conflicts first. A conflict or match only shows when a source the research actually opened backs
+it. There is never an overall score or a recommendation. For a measure, the mark is about what a yes
+vote would do. Re-running keeps the same issues.
+
+### Notes and picks
+
+Once a race or measure finishes, its page has **Your notes and pick**: a preliminary choice (radio
+buttons, or checkboxes for vote-for-two contests; Yes or No for measures and judges) and free-form
+notes. **Your picks** on the ballot page lists every contest and measure in ballot order, and you
+can change any pick or note right there, researched or not, with one Save. It prints as a clean
+cheat sheet to keep beside you while you fill in your ballot. Notes and picks are saved in
+`data/choices/`, kept when you research again, and never included in downloaded pages.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
   is saved (in `data/ballots/`).
@@ -63,8 +97,11 @@ The same research is available without the app:
 ```sh
 deno task dossier --city Fontana --office Mayor
 deno task dossier --city Fontana --office Mayor \
-  --candidates "Jackie Heredia;Acquanetta Warren;Sal Casillas" --incumbent "Acquanetta Warren"
+  --candidates "Jackie Heredia;Acquanetta Warren;Sal Casillas" --incumbent "Acquanetta Warren" \
+  --priorities "housing costs;public safety"
 ```
+
+Measures are researched from the app (via an uploaded ballot), not the CLI.
 
 Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`,
 `--concurrency` (default 3), `--out` (default `out`). Re-render a saved run without calling the API:
@@ -86,8 +123,8 @@ Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `-
 
 ## Cost
 
-Each candidate is one research session with up to 15 searches and 10 page fetches on
-`claude-opus-5`. Expect roughly a dollar or two per candidate at `high` effort. Use
+Each candidate, and each measure, is one research session with up to 15 searches and 10 page fetches
+on `claude-opus-5`. Expect roughly a dollar or two per candidate or measure at `high` effort. Use
 `--effort
 medium` or `--model` to trade depth for cost.
 

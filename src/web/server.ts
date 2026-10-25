@@ -7,25 +7,31 @@
  *   POST /races                 start a race, then redirect to it
  *   GET  /races/:id             race page (refreshes itself while running)
  *   POST /races/:id/rerun       research the same race again
+ *   POST /races/:id/choice      save the voter's notes and preliminary pick
  *   GET  /races/:id/download    standalone HTML file of a finished race
  *   GET  /races/:id.json        raw run record
  *   POST /ballots               upload photos/PDF of a ballot, then redirect to it
  *   GET  /ballots/:id           reading progress, then the contests found, for review
- *   POST /ballots/:id/research  start races for the contests the user picked
+ *   POST /ballots/:id/research  start races and measures the user picked
+ *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
  *   GET  /healthz
  */
 
-import { renderRace, slug } from "../render.ts";
+import { measuresOf, parsePriorities } from "../dossier.ts";
+import { renderMeasure, renderRace, slug } from "../render.ts";
+import { MAX_PRIORITIES } from "../template.ts";
 import type {
   BallotCandidate,
   BallotMediaType,
   BallotPage,
   CandidateSource,
+  MeasureQuery,
   RaceQuery,
 } from "../types.ts";
-import { type BallotJobs, type JobRunner, QueueFullError } from "./jobs.ts";
+import { type BallotJobs, type JobRunner, QueueFullError, type SubmitExtras } from "./jobs.ts";
 import {
   ballotPage,
+  choiceOptions,
   DEFAULT_FORM,
   type FormValues,
   type HomeOptions,
@@ -33,16 +39,29 @@ import {
   MAX_BALLOT_FILE_BYTES,
   MAX_BALLOT_FILES,
   MAX_BALLOT_TOTAL_BYTES,
+  MAX_NOTES,
   messagePage,
+  type PickItem,
+  picksPage,
   runPage,
+  withSaved,
 } from "./pages.ts";
-import { type BallotRecord, isRunId, type RunStore } from "./store.ts";
+import {
+  type BallotRecord,
+  type ChoiceRecord,
+  type ChoiceStore,
+  isRunId,
+  type RunRecord,
+  type RunStore,
+} from "./store.ts";
 
 export interface AppOptions {
   store: RunStore;
   jobs: JobRunner;
   /** Reads uploaded ballots. Without it, the upload routes are 404s. */
   ballots?: BallotJobs;
+  /** Keeps the voter's notes and picks. Without it, there is no notes panel. */
+  choices?: ChoiceStore;
   /** False when no API key is configured: pages still work, research is disabled. */
   canResearch: boolean;
   /** When set, every request needs HTTP Basic auth with this password (any username). */
@@ -177,6 +196,26 @@ export function parseRaceForm(v: FormValues): Parsed {
 }
 
 /**
+ * The ballot-wide issues followed by one contest's own, repeats dropped. Every
+ * candidate in that contest gets the combined list in the same words.
+ */
+export function combinePriorities(
+  shared: readonly string[],
+  own: readonly string[],
+  label: string,
+): { ok: true; issues: string[] } | { ok: false; error: string } {
+  const seen = new Set(shared.map((s) => s.toLowerCase()));
+  const issues = [...shared, ...own.filter((s) => !seen.has(s.toLowerCase()))];
+  return issues.length > MAX_PRIORITIES
+    ? {
+      ok: false,
+      error:
+        `${label}: up to ${MAX_PRIORITIES} issues in all, counting the ones for your whole ballot.`,
+    }
+    : { ok: true, issues };
+}
+
+/**
  * The file's real type from its first bytes; the browser's claimed type isn't
  * trusted. "heic" is recognized only to explain how to send a JPEG instead.
  */
@@ -240,6 +279,8 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array<ArrayBu
 
 const MB = 1024 * 1024;
 const BALLOTS_BUSY = "Other ballots are being read right now. Try again in a minute.";
+
+export { parsePriorities };
 
 export async function parseBallotUpload(
   form: FormData,
@@ -309,32 +350,58 @@ export const EDITED_BALLOT_SOURCE: CandidateSource = {
     "Read by AI from the ballot images you uploaded, then changed by you before research, so the order is as you entered it and not confirmed as the ballot's. The images weren't kept, so this list can't be linked.",
 };
 
+/** Key in BallotRecord.started for a measure; contests use their bare index. */
+export function measureKey(index: number): string {
+  return `m${index}`;
+}
+
 type Picked = {
-  index: number;
+  /** Key in BallotRecord.started. */
+  key: string;
   query: RaceQuery;
-  candidates: BallotCandidate[];
-  source: CandidateSource;
+  candidates: BallotCandidate[] | null;
+  source: CandidateSource | null;
+  measure?: MeasureQuery;
+  /** The ballot-wide issues plus this item's own. */
+  priorities: string[];
+  vote_for: number | null;
 };
 
-/** Validates the ballot review form: which contests to research, and the user's corrections. */
+/** Only plain digits: "01", "1e0", or "" must not alias another item. */
+function pickIndexes(form: FormData, name: string): number[] | null {
+  const raw = form.getAll(name).map(String);
+  if (raw.some((v) => !/^(0|[1-9]\d{0,3})$/.test(v))) return null;
+  return [...new Set(raw.map(Number))];
+}
+
+/** Validates the ballot review form: what to research, and the user's corrections. */
 export function parseBallotResearch(
   b: BallotRecord,
   form: FormData,
 ): { ok: true; picks: Picked[] } | { ok: false; error: string } {
   const r = b.reading;
   if (!r) return { ok: false, error: "This ballot hasn't been read." };
-  const raw = form.getAll("pick").map(String);
-  if (!raw.length) return { ok: false, error: "Choose at least one contest to research." };
-  // Only plain digits: "01", "1e0", or "" must not alias another contest.
-  if (raw.some((v) => !/^(0|[1-9]\d{0,3})$/.test(v))) {
-    return { ok: false, error: "That contest isn't available to research." };
+  const indexes = pickIndexes(form, "pick");
+  const measureIndexes = pickIndexes(form, "pick_measure");
+  if (!indexes || !measureIndexes) {
+    return { ok: false, error: "That item isn't available to research." };
   }
-  const indexes = [...new Set(raw.map(Number))];
+  if (!indexes.length && !measureIndexes.length) {
+    return { ok: false, error: "Choose at least one contest or measure to research." };
+  }
+  const shared = parsePriorities(field(form, "priorities"));
+  if (!shared.ok) return shared;
+  /** This item's issues on top of the ballot-wide ones. */
+  const issuesFor = (key: string, label: string) => {
+    const own = parsePriorities(field(form, `priorities_${key}`));
+    if (!own.ok) return { ok: false as const, error: `${label}: ${own.error}` };
+    return combinePriorities(shared.issues, own.issues, label);
+  };
   const picks: Picked[] = [];
   for (const i of indexes) {
     const contest = r.contests[i];
     if (!contest || b.started[String(i)]) {
-      return { ok: false, error: "That contest isn't available to research." };
+      return { ok: false, error: "That item isn't available to research." };
     }
     const values: FormValues = {
       city: field(form, `city_${i}`),
@@ -350,6 +417,8 @@ export function parseBallotResearch(
     if (!parsed.candidates) {
       return { ok: false, error: `${label}: list at least one candidate.` };
     }
+    const issues = issuesFor(String(i), label);
+    if (!issues.ok) return issues;
     // Keep the designations read from the ballot for names the user didn't change.
     const read = new Map(contest.candidates.map((c) => [c.name.toLowerCase(), c]));
     const edited = parsed.candidates.length !== contest.candidates.length ||
@@ -357,16 +426,162 @@ export function parseBallotResearch(
         c.name.toLowerCase() !== contest.candidates[k].name.toLowerCase()
       );
     picks.push({
-      index: i,
+      key: String(i),
       query: parsed.query,
       candidates: parsed.candidates.map((c) => ({
         ...c,
         ballot_designation: read.get(c.name.toLowerCase())?.ballot_designation ?? null,
       })),
       source: edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE,
+      priorities: issues.issues,
+      vote_for: contest.vote_for,
+    });
+  }
+
+  const measures = measuresOf(r);
+  for (const i of measureIndexes) {
+    const m = measures[i];
+    if (!m || b.started[measureKey(i)]) {
+      return { ok: false, error: "That item isn't available to research." };
+    }
+    const label = field(form, `mlabel_${i}`);
+    const jurisdiction = field(form, `mjur_${i}`);
+    const name = label || m.label || "A measure";
+    const issues = issuesFor(measureKey(i), name);
+    if (!issues.ok) return issues;
+    if (m.kind === "retention") {
+      // A retention question is research on one person: a one-candidate race.
+      const person = field(form, `mperson_${i}`);
+      const parsed = parseRaceForm({
+        city: jurisdiction,
+        state: field(form, "state"),
+        office: label,
+        election: field(form, "election"),
+        candidates: person,
+        incumbent: person,
+      });
+      if (!parsed.ok) return { ok: false, error: `${name}: ${parsed.error}` };
+      if (parsed.candidates?.length !== 1) {
+        return { ok: false, error: `${name}: enter the judge's name.` };
+      }
+      const edited = person.toLowerCase() !== m.person.toLowerCase();
+      picks.push({
+        key: measureKey(i),
+        query: parsed.query,
+        candidates: parsed.candidates,
+        source: {
+          ...(edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE),
+          contest_kind: "retention",
+        },
+        priorities: issues.issues,
+        vote_for: 1,
+      });
+      continue;
+    }
+    if (!label || label.length > 80) {
+      return {
+        ok: false,
+        error: `${name}: enter the measure's letter or number (up to 80 characters).`,
+      };
+    }
+    if (!jurisdiction || jurisdiction.length > 80) {
+      return {
+        ok: false,
+        error: `${name}: enter the city, county, district, or state that put it on the ballot.`,
+      };
+    }
+    const base = parseRaceForm({
+      city: jurisdiction,
+      state: field(form, "state"),
+      office: label,
+      election: field(form, "election"),
+      candidates: "",
+      incumbent: "",
+    });
+    if (!base.ok) return { ok: false, error: `${name}: ${base.error}` };
+    picks.push({
+      key: measureKey(i),
+      query: base.query,
+      candidates: null,
+      source: null,
+      measure: {
+        label,
+        jurisdiction,
+        // The question as read stays attached unless the user re-labeled it as a different measure.
+        question: label.toLowerCase() === m.label.toLowerCase() ? m.question : "",
+        state: base.query.state,
+        electionDate: base.query.electionDate,
+      },
+      priorities: issues.issues,
+      vote_for: 1,
     });
   }
   return { ok: true, picks };
+}
+
+/** Validates the notes-and-pick form against what can be picked. */
+export function parseChoice(
+  { options, max }: { options: readonly string[]; max: number },
+  form: FormData,
+  suffix = "",
+): { ok: true; picks: string[]; notes: string } | { ok: false; error: string } {
+  const picks = [...new Set(form.getAll(`pick${suffix}`).map(String).filter(Boolean))];
+  if (picks.some((p) => !options.includes(p))) {
+    return { ok: false, error: "That pick isn't one of the choices for this." };
+  }
+  if (picks.length > max) {
+    return { ok: false, error: `This one is vote for ${max}; pick up to ${max}.` };
+  }
+  const raw = form.get(`notes${suffix}`);
+  const notes = (typeof raw === "string" ? raw : "").replace(/\r\n/g, "\n").trim();
+  if (notes.length > MAX_NOTES) {
+    return { ok: false, error: `Notes can be up to ${MAX_NOTES} characters.` };
+  }
+  return { ok: true, picks, notes };
+}
+
+async function saveChoice(
+  store: ChoiceStore,
+  id: string,
+  c: { picks: string[]; notes: string },
+): Promise<void> {
+  const prev = await store.get(id);
+  const at = new Date().toISOString();
+  await store.save({ id, created_at: prev?.created_at ?? at, updated_at: at, ...c });
+}
+
+/** What a ballot item is and what can be picked for it, from the reading. */
+export function ballotItem(
+  b: BallotRecord,
+  key: string,
+): { heading: string; detail: string; options: string[]; max: number } | null {
+  const r = b.reading;
+  if (!r || !/^m?(0|[1-9]\d{0,3})$/.test(key)) return null;
+  if (key.startsWith("m")) {
+    const m = measuresOf(r)[Number(key.slice(1))];
+    if (!m) return null;
+    return {
+      heading: m.kind === "retention" ? `${m.person || "Judge"} (retention)` : m.label,
+      detail: [m.jurisdiction, m.kind === "retention" ? m.label : ""].filter(Boolean).join(" · "),
+      options: ["Yes", "No"],
+      max: 1,
+    };
+  }
+  const c = r.contests[Number(key)];
+  if (!c) return null;
+  return {
+    heading: c.office,
+    detail: [c.jurisdiction, c.vote_for ? `vote for ${c.vote_for}` : ""].filter(Boolean).join(
+      " · ",
+    ),
+    options: c.candidates.map((x) => x.name),
+    max: Math.max(1, c.vote_for ?? 1),
+  };
+}
+
+/** Where notes and a pick for a ballot item live, whether or not it's researched. */
+export function ballotChoiceId(ballotId: string, key: string): string {
+  return `${ballotId}-${key}`;
 }
 
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
@@ -387,19 +602,47 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     candidates: BallotCandidate[] | null,
     values: FormValues,
     source: CandidateSource | null = null,
+    extras: SubmitExtras = {},
   ) => {
     try {
-      const run = await o.jobs.submit(query, candidates, source);
+      const run = await o.jobs.submit(query, candidates, source, extras);
       return redirect(`${BASE}/races/${run.id}`);
     } catch (err) {
       if (!(err instanceof QueueFullError)) throw err;
       return html(await home({ values, error: err.message }), 429);
     }
   };
+  const choiceFor = async (run: RunRecord): Promise<ChoiceRecord | null> =>
+    o.choices ? await o.choices.get(run.choice_id ?? run.id) : null;
+
+  /** Every contest and measure on a ballot, in printed order, with its run and the voter's pick. */
+  const pickItems = async (b: BallotRecord): Promise<PickItem[]> => {
+    const r = b.reading;
+    if (!r) return [];
+    const keys = [
+      ...r.contests.map((_, i) => String(i)),
+      ...measuresOf(r).map((_, i) => measureKey(i)),
+    ];
+    return await Promise.all(keys.map(async (key): Promise<PickItem> => {
+      const it = ballotItem(b, key)!;
+      const id = b.started[key];
+      const run = id ? await o.store.get(id) : null;
+      const choiceId = run ? run.choice_id ?? run.id : ballotChoiceId(b.id, key);
+      const choice = o.choices ? await o.choices.get(choiceId) : null;
+      // A researched contest may have a corrected candidate list; pick from that.
+      const { options, max } = run ? choiceOptions(run) : it;
+      return { key, heading: it.heading, detail: it.detail, options, max, run, choice, choiceId };
+    }));
+  };
+
   const researchOff = () =>
     html(messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE), 503);
 
-  const ballotRoutes = async (req: Request, path: string): Promise<Response | null> => {
+  const ballotRoutes = async (
+    req: Request,
+    path: string,
+    url: URL,
+  ): Promise<Response | null> => {
     const ballots = o.ballots;
     if (!ballots) return null;
 
@@ -441,7 +684,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
     }
 
-    const m = path.match(/^\/ballots\/([^/]+?)(\/research)?$/);
+    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/picks)?$/);
     if (!m) return null;
     const [, id, suffix] = m;
     const b = isRunId(id) ? await ballots.store.get(id) : null;
@@ -451,6 +694,44 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     const view = () => ({ canResearch: o.canResearch, available: o.jobs.available, base: BASE });
 
     if (!suffix && req.method === "GET") return html(ballotPage(b, view()));
+    if (suffix === "/picks" && req.method === "GET") {
+      return html(picksPage(b, await pickItems(b), BASE, { saved: url.searchParams.has("saved") }));
+    }
+    if (suffix === "/picks" && req.method === "POST" && o.choices) {
+      const form = await req.formData();
+      const items = await pickItems(b);
+      // Validate everything before saving anything, so an error never half-saves the sheet.
+      const parsed = [];
+      for (const it of items) {
+        const p = parseChoice(
+          { options: withSaved(it.options, it.choice?.picks), max: it.max },
+          form,
+          `_${it.key}`,
+        );
+        if (!p.ok) {
+          return html(
+            picksPage(b, items, BASE, { error: `${it.heading}: ${p.error}`, form }),
+            400,
+          );
+        }
+        const same = (it.choice?.notes ?? "") === p.notes &&
+          JSON.stringify(it.choice?.picks ?? []) === JSON.stringify(p.picks);
+        // Saved elsewhere (a research page, another tab) since this sheet was loaded:
+        // writing this sheet's older copy back would undo that.
+        if (!same && field(form, `seen_${it.key}`) !== (it.choice?.updated_at ?? "")) {
+          return html(
+            picksPage(b, items, BASE, {
+              error:
+                `${it.heading} was changed somewhere else after you opened this page. Nothing was saved; here is the current version, so redo your changes.`,
+            }),
+            409,
+          );
+        }
+        if (!same) parsed.push({ it, p });
+      }
+      for (const { it, p } of parsed) await saveChoice(o.choices, it.choiceId, p);
+      return redirect(`${BASE}/ballots/${b.id}/picks?saved=1`);
+    }
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
       const form = await req.formData();
@@ -487,8 +768,13 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         let updated = fresh;
         try {
           for (const p of parsed.picks) {
-            const run = await o.jobs.submit(p.query, p.candidates, p.source);
-            started[String(p.index)] = run.id;
+            const run = await o.jobs.submit(p.query, p.candidates, p.source, {
+              priorities: p.priorities,
+              measure: p.measure,
+              ballot: { id: fresh.id, key: p.key, vote_for: p.vote_for },
+              choiceId: ballotChoiceId(fresh.id, p.key),
+            });
+            started[p.key] = run.id;
             last = run.id;
           }
         } catch (err) {
@@ -541,7 +827,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
 
     if (path === "/" && req.method === "GET") return html(await home());
 
-    const ballotResponse = await ballotRoutes(req, path);
+    const ballotResponse = await ballotRoutes(req, path, url);
     if (ballotResponse) return ballotResponse;
 
     if (path === "/races" && req.method === "POST") {
@@ -554,13 +840,18 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         election: field(form, "election"),
         candidates: field(form, "candidates"),
         incumbent: field(form, "incumbent"),
+        priorities: field(form, "priorities"),
       };
       const parsed = parseRaceForm(values);
       if (!parsed.ok) return html(await home({ values, error: parsed.error }), 400);
-      return await start(parsed.query, parsed.candidates, values);
+      const priorities = parsePriorities(values.priorities ?? "");
+      if (!priorities.ok) return html(await home({ values, error: priorities.error }), 400);
+      return await start(parsed.query, parsed.candidates, values, null, {
+        priorities: priorities.issues,
+      });
     }
 
-    const m = path.match(/^\/races\/([^/]+?)(\.json|\/rerun|\/download)?$/);
+    const m = path.match(/^\/races\/([^/]+?)(\.json|\/rerun|\/download|\/choice)?$/);
     if (m) {
       const [, id, suffix] = m;
       const run = isRunId(id) ? await o.store.get(id) : null;
@@ -568,21 +859,46 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         return html(messagePage("Not found", "There's no saved race at that address.", BASE), 404);
       }
 
-      if (!suffix && req.method === "GET") return html(runPage(run, o.canResearch, BASE));
+      const view = async (extra: { saved?: boolean } = {}) =>
+        runPage(run, o.canResearch, BASE, {
+          choices: Boolean(o.choices),
+          choice: await choiceFor(run),
+          ...extra,
+        });
+      if (!suffix && req.method === "GET") {
+        return html(await view({ saved: url.searchParams.has("saved") }));
+      }
+      if (suffix === "/choice" && req.method === "POST" && o.choices) {
+        const { options, max } = choiceOptions(run);
+        const prev = await choiceFor(run);
+        const parsed = parseChoice(
+          { options: withSaved(options, prev?.picks), max },
+          await req.formData(),
+        );
+        if (!parsed.ok) {
+          return html(messagePage("Not saved", parsed.error, BASE), 400);
+        }
+        await saveChoice(o.choices, run.choice_id ?? run.id, parsed);
+        return redirect(`${BASE}/races/${run.id}?saved=1#mine`);
+      }
       if (suffix === ".json" && req.method === "GET") {
         return new Response(JSON.stringify(run, null, 2), {
           headers: { "content-type": "application/json; charset=utf-8", ...SECURITY_HEADERS },
         });
       }
       if (suffix === "/download" && req.method === "GET") {
-        if (!run.race || run.status !== "done") {
+        const ready = run.status === "done" && (run.measure ? run.measure_result : run.race);
+        if (!ready) {
           return html(
-            messagePage("Not ready", "This race hasn't finished researching yet.", BASE),
+            messagePage("Not ready", "This hasn't finished researching yet.", BASE),
             409,
           );
         }
         const name = slug(`${run.query.city}-${run.query.office}-${run.query.electionDate}`);
-        return html(renderRace(run.race), 200, {
+        const file = run.measure && run.measure_result
+          ? renderMeasure(run.measure_result)
+          : renderRace(run.race!);
+        return html(file, 200, {
           "content-disposition": `attachment; filename="${name}.html"`,
         });
       }
@@ -595,7 +911,36 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           office: run.query.office,
           election: run.query.electionDate,
         };
-        return await start(run.query, run.candidates, values, run.candidate_source ?? null);
+        const res = await start(run.query, run.candidates, values, run.candidate_source ?? null, {
+          priorities: run.priorities,
+          measure: run.measure ?? undefined,
+          choiceId: run.choice_id ?? run.id,
+          ballot: run.ballot,
+        });
+        // Point the ballot (and its picks sheet) at the new run.
+        const next = res.headers.get("location")?.split("/").pop();
+        const link = run.ballot;
+        // Wait out a contest start on the same ballot (it holds the lock only briefly).
+        for (let i = 0; link && starting.has(link.id) && i < 100; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (res.status === 303 && next && link && o.ballots && !starting.has(link.id)) {
+          // Same per-ballot lock as starting contests, so neither write loses the other's.
+          starting.add(link.id);
+          try {
+            const b = await o.ballots.store.get(link.id);
+            if (b && b.started[link.key] === run.id) {
+              await o.ballots.store.save({
+                ...b,
+                started: { ...b.started, [link.key]: next },
+                updated_at: new Date().toISOString(),
+              });
+            }
+          } finally {
+            starting.delete(link.id);
+          }
+        }
+        return res;
       }
       return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
     }

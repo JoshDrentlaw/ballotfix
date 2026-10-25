@@ -61,7 +61,17 @@ textarea { min-height: 96px; }
 .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
 button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
+.mine h2 { margin: 0; }
+.mine p { margin: 0; }
+.picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.picks li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
+.picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
+.picks .notes { white-space: pre-line; margin: 4px 0 0; }
+.printonly { display: none; }
+.picks fieldset, .picks label { margin-top: 8px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -78,10 +88,22 @@ input[type=file] { padding: 10px; }
 .contest p { margin: 0; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
+fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
+fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .contest details { display: grid; gap: 10px; }
 .contest details label { margin-top: 10px; }
+.priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
+h5 { font-size: 1rem; margin: 16px 0 4px; }
+.stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
+.card .stance { font-size: .85rem; }
+.stance .basis { color: var(--fg); }
+.stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
+.stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
+.measure-q { white-space: pre-line; }
+/* Last, so it wins over the screen rules above. */
+@media print { nav.top, .actions, .noprint { display: none; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 </style>
 </head>
 <body>
@@ -96,6 +118,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 <details><summary>What this research can't see (5)</summary>
 <ul><li>Phase 0 researches with general web search only. It does not yet read campaign finance portals, council minutes, or budget documents directly, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details></div>
 
+
 <h2>Candidates</h2>
 <p class="sub">Listed in the order of the official candidate list, which may differ from the printed ballot. LAYOUT SAMPLE. Placeholder data, not research about real people.</p>
 <p class="note">Sample Candidate B holds this office now, so there is a public record in it to research. Challengers usually have far less. A shorter dossier is not a cleaner one, and a longer one is not a worse one.</p>
@@ -103,20 +126,24 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 <ul class="cards"><li class="card">
   <h3><a href="#sample-candidate-a">Sample Candidate A</a></h3>
   <p class="desig">Small Business Owner</p>
+  
   <p class="cov">Sourced facts found in 2 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-b">Sample Candidate B</a></h3>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
+  
   <p class="cov">Sourced facts found in 2 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-c">Sample Candidate C</a></h3>
   <p class="desig">Ballot designation not found</p>
+  
   <p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>
 </li></ul>
 
 <article class="dossier" id="sample-candidate-a">
   <h2>Sample Candidate A</h2>
   <p class="desig">Small Business Owner</p>
+  
   
   <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
@@ -127,7 +154,6 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -140,6 +166,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <h2>Sample Candidate B</h2>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
   <p class="note"><strong>Identity check.</strong> Placeholder: another person with this name serves on a county board.</p>
+  
   <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
@@ -149,8 +176,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section>
-  <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
+  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span>
@@ -162,11 +188,12 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <h2>Sample Candidate C</h2>
   <p class="desig">Ballot designation not found</p>
   
+  
   <section class="sec"><h4>Who they are</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Criticisms and controversies</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
-  
   <p class="back"><a href="#top">Back to all candidates</a></p>
 </article>
+
 
 <footer>
 <p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>

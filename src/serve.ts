@@ -10,14 +10,15 @@
  *                        (see tower-expert's main.ts for the same convention). Requests
  *                        work with or without it, so direct access is unaffected.
  *   BALLOTFIX_PASSWORD  require this password (HTTP Basic auth, any username)
- *   BALLOTFIX_DATA_DIR  where runs are saved (default data); ballot readings go in its ballots/
+ *   BALLOTFIX_DATA_DIR  where runs are saved (default data); ballot readings go in its
+ *                        ballots/, and the voter's notes and picks in its choices/
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
 import { BallotJobs, JobRunner } from "./web/jobs.ts";
 import { createApp } from "./web/server.ts";
-import { BallotStore, RunStore } from "./web/store.ts";
+import { BallotStore, ChoiceStore, RunStore } from "./web/store.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = typeof EFFORTS[number];
@@ -47,6 +48,8 @@ const store = new RunStore(dataDir);
 await store.init();
 const ballotStore = new BallotStore(dataDir);
 await ballotStore.init();
+const choices = new ChoiceStore(dataDir);
+await choices.init();
 const now = new Date().toISOString();
 const interrupted = await store.markInterrupted(now);
 if (interrupted) console.log(`Marked ${interrupted} unfinished run(s) as interrupted.`);
@@ -60,5 +63,5 @@ const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.lo
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
 Deno.serve(
   { hostname: host, port },
-  createApp({ store, jobs, ballots, canResearch, password, basePath }),
+  createApp({ store, jobs, ballots, choices, canResearch, password, basePath }),
 );

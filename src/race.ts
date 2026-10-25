@@ -1,11 +1,20 @@
-/** Orchestrates one race: ballot, then every candidate, then assembly. */
+/** Orchestrates one race (ballot, then every candidate, then assembly) or one measure. */
 
-import { assembleCandidate, failedCandidate, pendingCandidate, STANDING_GAPS } from "./dossier.ts";
+import {
+  assembleCandidate,
+  assembleMeasure,
+  failedCandidate,
+  pendingCandidate,
+  placeholderMeasure,
+  STANDING_GAPS,
+} from "./dossier.ts";
 import type {
   BallotCandidate,
   BallotListing,
   CandidateDossier,
   CandidateSource,
+  MeasureDossier,
+  MeasureQuery,
   RaceDossier,
   RaceQuery,
   ResearchPort,
@@ -16,6 +25,8 @@ export interface RunRaceOptions {
   candidates?: BallotCandidate[];
   /** Where `candidates` came from. Defaults to "supplied by the user", unofficial order. */
   candidateSource?: CandidateSource;
+  /** Issues the voter said matter most; asked about identically for every candidate. */
+  priorities?: readonly string[];
   concurrency?: number;
   onProgress?: (msg: string) => void;
   /**
@@ -70,14 +81,16 @@ export async function runRace(
   }
 
   const now = opts.now ?? (() => new Date());
+  const priorities = [...(opts.priorities ?? [])];
   const snapshot = (candidates: CandidateDossier[]): RaceDossier => ({
     query,
     listing,
+    priorities,
     candidates: [...candidates],
     standing_gaps: [...STANDING_GAPS],
     generated_at: now().toISOString(),
   });
-  const current = listing.candidates.map(pendingCandidate);
+  const current = listing.candidates.map((c) => pendingCandidate(c, priorities));
   // Updates are chained so a slow save can't land after a newer one.
   let updates: Promise<void> = Promise.resolve();
   const emit = () => {
@@ -93,16 +106,46 @@ export async function runRace(
   await mapLimit(listing.candidates, opts.concurrency ?? 3, async (c, i) => {
     log(`Researching ${c.name}...`);
     try {
-      const raw = await port.researchCandidate(query, c, listing);
-      current[i] = assembleCandidate(c, raw);
+      const raw = await port.researchCandidate(query, c, listing, priorities);
+      current[i] = assembleCandidate(c, raw, priorities);
       log(`Done: ${c.name}.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`Failed: ${c.name}: ${msg}`);
-      current[i] = failedCandidate(c, msg);
+      current[i] = failedCandidate(c, msg, priorities);
     }
     await emit();
   });
 
   return snapshot(current);
+}
+
+export interface RunMeasureOptions {
+  priorities?: readonly string[];
+  onProgress?: (msg: string) => void;
+  /** Called once with the pending placeholder, before research starts. */
+  onUpdate?: (partial: MeasureDossier) => void | Promise<void>;
+  now?: () => Date;
+}
+
+/** One research session for one measure. A failure still returns the full template. */
+export async function runMeasure(
+  query: MeasureQuery,
+  port: ResearchPort,
+  opts: RunMeasureOptions = {},
+): Promise<MeasureDossier> {
+  const log = opts.onProgress ?? (() => {});
+  const now = opts.now ?? (() => new Date());
+  const priorities = [...(opts.priorities ?? [])];
+  await opts.onUpdate?.(placeholderMeasure(query, priorities, now(), null));
+  log(`Researching ${query.label} (${query.jurisdiction})...`);
+  try {
+    const raw = await port.researchMeasure(query, priorities);
+    log(`Done: ${query.label}.`);
+    return assembleMeasure(query, raw, priorities, now());
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`Failed: ${query.label}: ${msg}`);
+    return placeholderMeasure(query, priorities, now(), msg);
+  }
 }

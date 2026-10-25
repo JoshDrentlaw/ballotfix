@@ -4,17 +4,18 @@
  * predictable and avoids rate limits. A small queue holds the rest.
  */
 
-import { runRace } from "../race.ts";
+import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
 import type {
   BallotCandidate,
   BallotPage,
   BallotReader,
   CandidateSource,
+  MeasureQuery,
   RaceQuery,
   ResearchPort,
 } from "../types.ts";
-import type { BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
+import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
 
 export interface JobRunnerOptions {
   /** Candidates researched in parallel within one race. */
@@ -26,6 +27,17 @@ export interface JobRunnerOptions {
 }
 
 export class QueueFullError extends Error {}
+
+export interface SubmitExtras {
+  /** Issues the voter said matter most; the same list for every candidate. */
+  priorities?: string[];
+  /** Research this measure instead of a race. */
+  measure?: MeasureQuery;
+  /** Keep using an earlier run's notes and pick (on rerun). Default: the new run's id. */
+  choiceId?: string;
+  /** The ballot item this comes from. */
+  ballot?: BallotLink | null;
+}
 
 export class JobRunner {
   readonly #store: RunStore;
@@ -46,7 +58,7 @@ export class JobRunner {
     this.#log = opts.log ?? (() => {});
   }
 
-  /** Races waiting or running. */
+  /** Races (and measures) waiting or running. */
   get pending(): number {
     return this.#waiting;
   }
@@ -67,6 +79,7 @@ export class JobRunner {
     query: RaceQuery,
     candidates: BallotCandidate[] | null,
     candidateSource: CandidateSource | null = null,
+    extras: SubmitExtras = {},
   ): Promise<RunRecord> {
     // One running plus maxQueued waiting.
     if (this.#waiting > this.#maxQueued) {
@@ -75,11 +88,16 @@ export class JobRunner {
       );
     }
     const at = this.#now().toISOString();
+    const id = this.#newId(query);
     const run: RunRecord = {
-      id: this.#newId(query),
+      id,
       query,
       candidates,
       candidate_source: candidateSource,
+      ...(extras.measure ? { measure: extras.measure, measure_result: null } : {}),
+      ...(extras.priorities?.length ? { priorities: extras.priorities } : {}),
+      choice_id: extras.choiceId ?? id,
+      ...(extras.ballot ? { ballot: extras.ballot } : {}),
       status: "queued",
       created_at: at,
       updated_at: at,
@@ -107,9 +125,23 @@ export class JobRunner {
     };
     try {
       await save({});
+      if (run.measure) {
+        const result = await runMeasure(run.measure, this.#makePort(), {
+          priorities: run.priorities,
+          onProgress: (m) => this.#log(`[${run.id}] ${m}`),
+          onUpdate: (partial) => save({ measure_result: partial }),
+        });
+        await save({
+          measure_result: result,
+          status: result.status === "failed" ? "failed" : "done",
+          error: result.error,
+        });
+        return;
+      }
       const race = await runRace(run.query, this.#makePort(), {
         candidates: run.candidates ?? undefined,
         candidateSource: run.candidate_source ?? undefined,
+        priorities: run.priorities,
         concurrency: this.#concurrency,
         onProgress: (m) => this.#log(`[${run.id}] ${m}`),
         onUpdate: (partial) => save({ race: partial }),

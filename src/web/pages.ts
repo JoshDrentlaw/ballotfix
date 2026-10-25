@@ -1,8 +1,19 @@
 /** HTML for the web app. Every page goes through render.ts's page(): no scripts, strict CSP. */
 
-import { esc, page, raceBody, raceTitle, readableDate, titleFor } from "../render.ts";
+import { measuresOf } from "../dossier.ts";
+import {
+  esc,
+  measureBody,
+  measureTitle,
+  page,
+  raceBody,
+  raceTitle,
+  readableDate,
+  titleFor,
+} from "../render.ts";
+import { MAX_PRIORITIES, MAX_PRIORITIES_PER_LIST } from "../template.ts";
 import { BALLOT_MEDIA_TYPES } from "../types.ts";
-import type { BallotRecord, BallotStatus, RunRecord, RunStatus } from "./store.ts";
+import type { BallotRecord, BallotStatus, ChoiceRecord, RunRecord, RunStatus } from "./store.ts";
 
 /** Upload limits. Claude takes up to 10 MB of base64 per image and 32 MB per request. */
 export const MAX_BALLOT_FILES = 8;
@@ -16,6 +27,8 @@ export interface FormValues {
   election: string;
   candidates: string;
   incumbent: string;
+  /** "What matters most to you": one issue per line. Optional. */
+  priorities?: string;
 }
 
 export const DEFAULT_FORM: FormValues = {
@@ -25,7 +38,26 @@ export const DEFAULT_FORM: FormValues = {
   election: "2026-11-03",
   candidates: "",
   incumbent: "",
+  priorities: "",
 };
+
+/** The optional "what matters most" field, shared by the race form and the ballot review. */
+function prioritiesField(value: string, forBallot = false): string {
+  return `<label>What matters most to you? <span class="hint">Optional. Up to ${MAX_PRIORITIES_PER_LIST} issues, one per line.${
+    forBallot
+      ? " These apply to everything you research from this ballot; each contest and measure can add its own below its name."
+      : ""
+  } Name a topic ("housing costs") or state your view ("protect abortion access", "oppose new sales taxes"). Where you state a view, each one is marked as conflicting with it or matching it when a cited source backs that up. Every candidate is checked against the same list.</span>
+    <textarea name="priorities" maxlength="700">${esc(value)}</textarea></label>`;
+}
+
+/** One contest's or measure's own issues, on top of the ballot-wide ones. */
+function itemPrioritiesField(key: string, value: string): string {
+  return `<details${value ? " open" : ""}><summary>More issues for this one</summary>
+  <label>Issues just for this one <span class="hint">One per line. Together with the ones for your whole ballot, up to ${MAX_PRIORITIES} in all.</span>
+    <textarea name="priorities_${esc(key)}" maxlength="700">${esc(value)}</textarea></label>
+</details>`;
+}
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   queued: "Waiting",
@@ -45,6 +77,13 @@ function when(iso: string): string {
 }
 
 function progress(run: RunRecord): string {
+  if (run.measure) {
+    return run.status === "done"
+      ? "Measure researched"
+      : run.status === "queued" || run.status === "running"
+      ? "Researching the measure"
+      : "Measure not researched";
+  }
   const cands = run.race?.candidates ?? [];
   if (!cands.length) return run.status === "done" ? "No candidates found" : "Finding the ballot";
   const done = cands.filter((c) => c.status !== "pending").length;
@@ -95,7 +134,9 @@ export function homePage(o: HomeOptions): string {
           esc(when(b.created_at))
         }</strong> ${ballotPill(b.status)}<br><span class="when">${
           b.reading
-            ? `${b.reading.contests.length} contests · ${Object.keys(b.started).length} researched`
+            ? `${b.reading.contests.length} contests · ${b.reading.measures.length} measures · ${
+              Object.keys(b.started).length
+            } researched`
             : `${b.pages} file${b.pages === 1 ? "" : "s"}`
         }</span></a></li>`
       ).join("")
@@ -112,7 +153,7 @@ ${ballotError}
       BALLOT_MEDIA_TYPES.join(",")
     }"></label>
   <button type="submit"${disabled}>Read my ballot</button>
-  <p class="sub">Reading takes about a minute and costs a few cents. Then you choose which contests to research. The images are sent to Anthropic to be read and are not saved here; only the list of contests is kept. Leave out the return envelope, which has your signature. Marks on a filled-in ballot are ignored and never recorded.</p>
+  <p class="sub">Reading takes about a minute and costs a few cents. Then you choose which contests and measures to research. The images are sent to Anthropic to be read and are not saved here; only the list of contests is kept. Leave out the return envelope, which has your signature. Marks on a filled-in ballot are ignored and never recorded.</p>
 </form>
 <h2>Or name one race</h2>`
     : "";
@@ -120,7 +161,11 @@ ${ballotError}
   const body = `<h1>Who's on your ballot?</h1>
 <p class="sub">${
     o.canUpload ? "Upload your ballot, or name" : "Name"
-  } a city and an office. Ballot Fix finds the candidates and builds a sourced dossier on each one: background, record, accomplishments, criticisms, money, endorsements, and platform. It never ranks or recommends anyone.</p>
+  } a city and an office. Ballot Fix finds the candidates and builds a sourced dossier on each one: background, record, accomplishments, criticisms, money, endorsements, and platform.${
+    o.canUpload
+      ? " From your ballot it also researches measures: what they do, their history, who is behind each side, the money, and both sides' arguments."
+      : ""
+  } It never ranks or recommends anyone.</p>
 ${setup}
 ${upload}
 ${error}
@@ -147,6 +192,7 @@ ${error}
     <label>Current office holders, if running <span class="hint">Exactly as written above. Separate several with semicolons.</span>
       <input name="incumbent" maxlength="300" value="${esc(v.incumbent)}"></label>
   </details>
+  ${prioritiesField(v.priorities ?? "")}
   <button type="submit"${disabled}>Research this race</button>
   <p class="sub">Takes several minutes. Each candidate costs roughly one to two dollars of API use. You can leave this page and come back.</p>
 </form>
@@ -233,6 +279,7 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
       ? `<label class="check"><input type="checkbox" name="pick" value="${i}"${
         picked.has(String(i)) ? " checked" : ""
       }> Research this contest</label>
+${itemPrioritiesField(String(i), posted(`priorities_${i}`, ""))}
 <details><summary>Fix what was read</summary>
   <label>Office <input name="office_${i}" maxlength="80" value="${
         esc(posted(`office_${i}`, c.office.slice(0, 80)))
@@ -260,19 +307,64 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
     }</h3><p class="desig">${where}</p>${names}${choose}</li>`;
   }).join("");
 
-  const anyLeft = r.contests.some((c, i) => c.candidates.length && !b.started[String(i)]);
+  const pickedMeasures = new Set(o.form?.getAll("pick_measure").map(String) ?? []);
+  const items = measuresOf(r);
+  const measureItems = items.map((m, i) => {
+    const runId = b.started[`m${i}`];
+    const retention = m.kind === "retention";
+    const heading = retention ? m.person || m.label : m.label;
+    const where = [m.jurisdiction, retention ? `retention · ${m.label}` : "measure"]
+      .filter(Boolean).map(esc).join(" · ");
+    const question = m.question
+      ? `<details><summary>Ballot question</summary><p class="measure-q">${
+        esc(m.question)
+      }</p></details>`
+      : "";
+    // Open the fixes when something research needs wasn't read, so it's seen before submitting.
+    const missing = !m.jurisdiction || (retention && !m.person);
+    const choose = runId
+      ? `<p><a href="${base}/races/${esc(runId)}">Research started: view it</a></p>`
+      : `<label class="check"><input type="checkbox" name="pick_measure" value="${i}"${
+        pickedMeasures.has(String(i)) ? " checked" : ""
+      }> ${retention ? "Research this judge" : "Research this measure"}</label>
+${itemPrioritiesField(`m${i}`, posted(`priorities_m${i}`, ""))}
+<details${missing ? " open" : ""}><summary>Fix what was read</summary>
+  ${
+        retention
+          ? `<label>Judge's name <input name="mperson_${i}" maxlength="100" value="${
+            esc(posted(`mperson_${i}`, m.person.slice(0, 100)))
+          }"></label>`
+          : ""
+      }
+  <label>${
+        retention ? "Office" : "Measure letter or number"
+      } <input name="mlabel_${i}" maxlength="80" value="${
+        esc(posted(`mlabel_${i}`, m.label.slice(0, 80)))
+      }"></label>
+  <label>Placed on the ballot by <span class="hint">City, county, district, or state, e.g. "City of Fontana".</span>
+    <input name="mjur_${i}" maxlength="80" value="${
+        esc(posted(`mjur_${i}`, m.jurisdiction.slice(0, 80)))
+      }"></label>
+</details>`;
+    return `<li class="contest"><h3>${
+      esc(heading)
+    }</h3><p class="desig">${where}</p>${question}${choose}</li>`;
+  }).join("");
+
+  const anyLeft = r.contests.some((c, i) => c.candidates.length && !b.started[String(i)]) ||
+    items.some((_, i) => !b.started[`m${i}`]);
   const error = o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : "";
   const notes = r.notes
     ? `<p class="note"><strong>Reading notes.</strong> ${esc(r.notes)}</p>`
     : "";
-  const measures = r.measures.length
-    ? `<h2>Not researched here</h2>
-<p class="sub">Ballot Fix researches candidates, not measures or yes/no retention questions. These were on your ballot:</p>
-<ul class="gaps">${r.measures.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>`
+  const measures = items.length
+    ? `<h2>Measures and yes/no questions</h2>
+<p class="sub">In the order your ballot prints them. A measure gets what it would do, its history, who is behind each side, the money, its cost, and both sides' arguments. A judge on a retention question gets the same dossier as a candidate.</p>
+<ol class="contests">${measureItems}</ol>`
     : "";
-  const empty = r.contests.length
+  const empty = r.contests.length || items.length
     ? ""
-    : `<p class="gap">No contests between candidates were found on this ballot.</p>`;
+    : `<p class="gap">No contests or measures were found on this ballot.</p>`;
   const submit = anyLeft
     ? `<div class="row">
   <label>Election date <input name="election" type="date" required value="${
@@ -282,45 +374,191 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
       esc(posted("state", r.state ?? DEFAULT_FORM.state))
     }"></label>
 </div>
-<button type="submit"${o.canResearch ? "" : " disabled"}>Research selected contests</button>
-<p class="sub">Each candidate costs roughly one to two dollars of API use. ${
+<button type="submit"${o.canResearch ? "" : " disabled"}>Research what's selected</button>
+<p class="sub">Each candidate or measure costs roughly one to two dollars of API use. ${
       o.available
-        ? `Up to ${o.available} contest${o.available === 1 ? "" : "s"} can be started right now.`
+        ? `Up to ${o.available} contest${o.available === 1 ? "" : "s"} or measure${
+          o.available === 1 ? "" : "s"
+        } can be started right now.`
         : "Other races are researching right now; try again when one finishes."
     }</p>`
     : "";
 
+  const picksLink = Object.keys(b.started).length
+    ? `<div class="actions"><a class="button" href="${base}/ballots/${
+      esc(b.id)
+    }/picks">Your picks so far</a></div>`
+    : "";
   const body = `<h1>${title}</h1>
 <p class="sub">Read from ${b.pages} uploaded file${b.pages === 1 ? "" : "s"}${
     r.county ? ` · ${esc(r.county)}` : ""
   } · ${esc(when(b.created_at))}</p>
 <div class="banner"><p><strong>Check these against your ballot before researching.</strong> They were read by AI from your images and can be wrong. Contests are in the order your ballot prints them, and candidates in the order printed under each.</p></div>
+${picksLink}
 ${notes}${error}${empty}
 <form class="stack" method="post" action="${base}/ballots/${esc(b.id)}/research">
-<ol class="contests">${contests}</ol>
+${anyLeft ? prioritiesField(posted("priorities", ""), true) : ""}
+${r.contests.length ? `<h2>Contests</h2><ol class="contests">${contests}</ol>` : ""}
+${measures}
 ${submit}
-</form>
-${measures}`;
+</form>`;
   return page(title, body, { nav: true, base });
 }
 
-export function runPage(run: RunRecord, canResearch: boolean, base = ""): string {
+export const MAX_NOTES = 4000;
+
+/**
+ * What the voter can pick for a run: Yes or No for a measure or retention
+ * question, else the candidates, up to the number the ballot says to vote for.
+ */
+export function choiceOptions(run: RunRecord): { options: string[]; max: number } {
+  const listing = run.race?.listing;
+  if (
+    run.measure || listing?.contest_kind === "retention" ||
+    run.candidate_source?.contest_kind === "retention"
+  ) {
+    return { options: ["Yes", "No"], max: 1 };
+  }
+  const names = (listing?.candidates ?? run.candidates ?? []).map((c) => c.name);
+  return { options: names, max: Math.max(1, run.ballot?.vote_for ?? 1) };
+}
+
+function pickText(picks: readonly string[] | undefined): string {
+  return picks?.length ? esc(picks.join(", ")) : `<span class="undecided">Undecided</span>`;
+}
+
+/**
+ * What can be picked, plus any saved pick that is no longer listed (say, a
+ * name corrected after it was picked), so saving the form never erases it.
+ */
+export function withSaved(options: readonly string[], saved: readonly string[] = []): string[] {
+  return [...options, ...saved.filter((p) => !options.includes(p))];
+}
+
+/** Radio buttons (or checkboxes for vote-for-several) for a pick, with "Undecided". */
+function choiceInputs(
+  name: string,
+  listed: readonly string[],
+  max: number,
+  current: readonly string[],
+): string {
+  const options = withSaved(listed, current);
+  const picked = new Set(current);
+  return max > 1
+    ? options.map((o) =>
+      `<label class="check"><input type="checkbox" name="${name}" value="${esc(o)}"${
+        picked.has(o) ? " checked" : ""
+      }> ${esc(o)}</label>`
+    ).join("")
+    : [...options, ""].map((o) =>
+      `<label class="check"><input type="radio" name="${name}" value="${esc(o)}"${
+        (o ? picked.has(o) : picked.size === 0) ? " checked" : ""
+      }> ${o ? esc(o) : "Undecided"}</label>`
+    ).join("");
+}
+
+/** The notes-and-pick form, for a researched run or a ballot item researched or not. */
+function choiceForm(
+  action: string,
+  options: readonly string[],
+  max: number,
+  choice: ChoiceRecord | null,
+  saved: boolean,
+  sheet: string | null,
+): string {
+  const inputs = choiceInputs("pick", options, max, choice?.picks ?? []);
+  return `${saved ? `<p class="note" role="status">Saved.</p>` : ""}
+<form class="stack" method="post" action="${action}">
+  ${
+    options.length
+      ? `<fieldset class="plain"><legend>Leaning toward${
+        max > 1 ? ` (vote for up to ${max})` : ""
+      }</legend>${inputs}</fieldset>`
+      : ""
+  }
+  <label>Notes <span class="hint">For you, when you fill in your ballot.</span>
+    <textarea name="notes" maxlength="${MAX_NOTES}">${esc(choice?.notes ?? "")}</textarea></label>
+  <button type="submit">Save</button>
+  <p class="sub">Saved on this server, never in downloaded pages. Anyone with the app's password can see it.${
+    sheet ? ` All your picks are on <a href="${sheet}">your picks sheet</a>.` : ""
+  }</p>
+</form>`;
+}
+
+/**
+ * The voter's notes and preliminary pick on a run's page. Hidden while
+ * research runs, since the page refreshes itself and would throw away
+ * anything half-typed.
+ */
+function choicePanel(
+  run: RunRecord,
+  choice: ChoiceRecord | null,
+  active: boolean,
+  base: string,
+  saved: boolean,
+): string {
+  const head = `<section class="mine" id="mine"><h2>Your notes and pick</h2>`;
+  if (active) {
+    return `${head}<p class="sub">You can write notes and a preliminary pick here once research finishes.${
+      choice ? ` So far: ${pickText(choice.picks)}.` : ""
+    }</p></section>`;
+  }
+  const { options, max } = choiceOptions(run);
+  return `${head}${
+    choiceForm(
+      `${base}/races/${esc(run.id)}/choice`,
+      options,
+      max,
+      choice,
+      saved,
+      run.ballot ? `${base}/ballots/${esc(run.ballot.id)}/picks` : null,
+    )
+  }</section>`;
+}
+
+export interface RunPageOptions {
+  /** The voter's saved notes and pick, when the app keeps them. */
+  choice?: ChoiceRecord | null;
+  /** Show the notes and pick panel. */
+  choices?: boolean;
+  /** Just saved: say so. */
+  saved?: boolean;
+}
+
+export function runPage(
+  run: RunRecord,
+  canResearch: boolean,
+  base = "",
+  opts: RunPageOptions = {},
+): string {
   const active = run.status === "queued" || run.status === "running";
   const rerun = canResearch && !active
     ? `<form class="inline" method="post" action="${base}/races/${
       esc(run.id)
     }/rerun"><button class="secondary" type="submit">Research again</button></form>`
     : "";
-  const download = run.race && run.status === "done"
+  const download = (run.measure ? run.measure_result : run.race) && run.status === "done"
     ? `<a class="button" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
-  const actions = rerun || download ? `<div class="actions">${download}${rerun}</div>` : "";
+  const mine = opts.choices
+    ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false)
+    : "";
+  const jump = opts.choices
+    ? `<a class="button secondary" href="#mine">Your notes and pick</a>`
+    : "";
+  const actions = rerun || download || jump
+    ? `<div class="actions">${jump}${download}${rerun}</div>`
+    : "";
 
   let status = "";
   if (active) {
     status = `<p class="note" role="status">${pill(run.status)} ${
-      run.status === "queued" ? "Waiting for another race to finish." : esc(progress(run))
-    } done. This page refreshes itself every 10 seconds.</p>`;
+      run.status === "queued"
+        ? "Waiting for another race to finish."
+        : run.measure
+        ? "Researching this measure."
+        : `${esc(progress(run))} done.`
+    } This page refreshes itself every 10 seconds.</p>`;
   } else if (run.status === "failed" || run.status === "interrupted") {
     status = `<p class="error" role="alert">${pill(run.status)} ${
       esc(run.error ?? "Research stopped.")
@@ -328,6 +566,21 @@ export function runPage(run: RunRecord, canResearch: boolean, base = ""): string
   }
 
   const refresh = active ? { refreshSeconds: 10 } : {};
+  if (run.measure) {
+    if (!run.measure_result) {
+      const title = measureTitle(run.measure);
+      const body = `<h1>${esc(title)}</h1>
+${status || `<p class="sub">No results were saved for this run.</p>`}
+${actions}
+${mine}`;
+      return page(title, body, { nav: true, base, ...refresh });
+    }
+    return page(
+      measureTitle(run.measure),
+      measureBody(run.measure_result, { status, actions, mine, stopped: !active }),
+      { nav: true, base, ...refresh },
+    );
+  }
   if (!run.race) {
     const title = titleFor(run.query);
     const body = `<h1>${esc(title)}</h1>
@@ -337,14 +590,78 @@ ${
         ? `<p class="sub">Finding who's on the ballot. Candidates appear here as soon as the list is found.</p>`
         : ""
     }
-${actions}`;
+${actions}
+${mine}`;
     return page(title, body, { nav: true, base, ...refresh });
   }
-  return page(raceTitle(run.race), raceBody(run.race, { status, actions }), {
+  return page(raceTitle(run.race), raceBody(run.race, { status, actions, mine }), {
     nav: true,
     base,
     ...refresh,
   });
+}
+
+/** One line of the picks sheet: a contest or measure, in ballot order. */
+export interface PickItem {
+  key: string;
+  /** What can be picked: from the research run if there is one, else from the reading. */
+  options: string[];
+  max: number;
+  heading: string;
+  detail: string;
+  run: RunRecord | null;
+  choice: ChoiceRecord | null;
+  /** Where this item's notes and pick are saved. */
+  choiceId: string;
+}
+
+/**
+ * Everything the voter has leaned toward, in ballot order, to fill in the
+ * ballot from. One form, so every pick and note can be changed in place.
+ */
+export function picksPage(
+  b: BallotRecord,
+  items: PickItem[],
+  base = "",
+  o: { saved?: boolean; error?: string; form?: FormData } = {},
+): string {
+  const title = "Your picks";
+  const decided = items.filter((x) => x.choice?.picks.length).length;
+  const posted = (name: string) => o.form?.getAll(name).map(String);
+  const list = items.map((x) => {
+    const current = posted(`pick_${x.key}`)?.filter(Boolean) ?? x.choice?.picks ?? [];
+    const notesValue = posted(`notes_${x.key}`)?.[0] ?? x.choice?.notes ?? "";
+    const pick = `<p class="pick">${pickText(x.choice?.picks)}</p>`;
+    const notes = x.choice?.notes ? `<p class="notes printonly">${esc(x.choice.notes)}</p>` : "";
+    const research = x.run
+      ? `<a href="${base}/races/${esc(x.run.id)}">See the research</a>`
+      : "Not researched";
+    const inputs = x.options.length
+      ? `<fieldset class="plain"><legend>Change pick${
+        x.max > 1 ? ` (vote for up to ${x.max})` : ""
+      }</legend>${choiceInputs(`pick_${x.key}`, x.options, x.max, current)}</fieldset>`
+      : "";
+    return `<li><h3>${esc(x.heading)}</h3><p class="desig">${esc(x.detail)}</p>${pick}${notes}
+<div class="noprint">${inputs}
+<input type="hidden" name="seen_${esc(x.key)}" value="${esc(x.choice?.updated_at ?? "")}">
+<label>Notes <textarea name="notes_${esc(x.key)}" maxlength="${MAX_NOTES}">${
+      esc(notesValue)
+    }</textarea></label>
+<p class="sub">${research}</p></div></li>`;
+  }).join("");
+  const body = `<h1>${title}</h1>
+<p class="sub">From the ballot uploaded ${
+    esc(when(b.created_at))
+  } · ${decided} of ${items.length} decided. Contests in the order your ballot prints them, then measures in theirs; your ballot may mix the two.</p>
+<p class="note noprint">These are your own preliminary picks and notes, saved on this server. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
+${o.saved ? `<p class="note noprint" role="status">Saved.</p>` : ""}
+${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
+<form method="post" action="${base}/ballots/${esc(b.id)}/picks">
+<ol class="picks">${list}</ol>
+<div class="actions noprint"><button type="submit">Save picks and notes</button></div>
+</form>
+<p class="noprint"><a href="${base}/ballots/${esc(b.id)}">Back to your ballot</a></p>`;
+  return page(title, body, { nav: true, base });
 }
 
 export function messagePage(title: string, message: string, base = ""): string {

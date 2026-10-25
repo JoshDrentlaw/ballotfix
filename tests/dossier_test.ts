@@ -1,11 +1,13 @@
-import { assert, assertEquals, assertMatch } from "@std/assert";
+import { assert, assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
 import {
   assembleCandidate,
+  assembleMeasure,
   failedCandidate,
   incumbencyNote,
+  measuresOf,
   normalizeUrl,
 } from "../src/dossier.ts";
-import { SECTION_IDS } from "../src/template.ts";
+import { MEASURE_SECTION_IDS, SECTION_IDS } from "../src/template.ts";
 import { listing, raw } from "./fakes.ts";
 
 const WARREN = { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true };
@@ -117,4 +119,87 @@ Deno.test("normalizeUrl matches across scheme, www, fragment, trailing slash, ut
 Deno.test("incumbency note appears only when someone holds the office", () => {
   assert(incumbencyNote(listing([WARREN, SIDA]))!.startsWith("Acquanetta Warren holds"));
   assertEquals(incumbencyNote(listing([SIDA])), null);
+});
+
+Deno.test("a measure gets the full template, the provenance check, and the voter's issues", () => {
+  const q = {
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  };
+  const d = assembleMeasure(
+    q,
+    {
+      sections: {
+        effect: { facts: [fact("https://a.example/x")], searched: [], gap_note: null },
+        priority_1: { facts: [fact("https://never.example/y")], searched: [], gap_note: null },
+      },
+      official_title: null,
+      identity_note: null,
+      gaps: [],
+      retrieved_urls: ["https://a.example/x"],
+      model: "fake",
+    },
+    ["parks"],
+    new Date("2026-10-25T00:00:00Z"),
+  );
+  assertEquals(Object.keys(d.sections), [...MEASURE_SECTION_IDS]);
+  assertEquals(d.sections.effect.facts.length, 1);
+  assertEquals(
+    d.sections.case_against.gap_note,
+    "This run found nothing it could source for this section.",
+  );
+  assertEquals(d.priorities.map((p) => p.issue), ["parks"]);
+  assertEquals(d.priorities[0].result.facts, []);
+  assertEquals(d.unverified.map((f) => f.source_url), ["https://never.example/y"]);
+  assert(d.standing_gaps.length > 0);
+});
+
+Deno.test("every candidate gets one result per issue, in the voter's order", () => {
+  const d = assembleCandidate(SIDA, {
+    sections: {},
+    identity_note: null,
+    gaps: [],
+    retrieved_urls: [],
+    model: "fake",
+  }, ["b", "a"]);
+  assertEquals(d.priorities!.map((p) => p.issue), ["b", "a"]);
+  assert(d.priorities!.every((p) => p.result.gap_note));
+  assertEquals(failedCandidate(SIDA, "x", ["b"]).priorities!.length, 1);
+});
+
+Deno.test("measuresOf reads older string-only readings as measures", () => {
+  const m = measuresOf({
+    election_date: null,
+    state: null,
+    county: null,
+    contests: [],
+    measures: ["Measure X: parks"],
+    notes: null,
+    model: "old",
+  });
+  assertEquals(m, [{
+    kind: "measure",
+    label: "Measure X: parks",
+    jurisdiction: "",
+    question: "",
+    person: "",
+  }]);
+});
+
+Deno.test("a retention question's note explains there is no opponent", () => {
+  const judge = { name: "Pat Judge", ballot_designation: null, incumbent: true };
+  const note = incumbencyNote({
+    candidates: [judge],
+    source_name: "x",
+    source_url: null,
+    order_basis: "official_ballot_order",
+    notes: null,
+    contest_kind: "retention",
+    retrieved_urls: [],
+  });
+  assertStringIncludes(note!, "yes/no retention question");
+  assert(!note!.includes("Challengers"));
 });
