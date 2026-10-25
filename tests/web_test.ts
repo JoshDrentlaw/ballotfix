@@ -178,6 +178,17 @@ function post(path: string, body: Record<string, string>, headers: Record<string
   });
 }
 
+/**
+ * Waits, by state rather than a fixed delay (CI runners are slow), until the race at
+ * `loc` reaches the gated candidate calls, i.e. its partial race has been saved.
+ */
+async function untilRunning(store: RunStore, loc: string) {
+  const id = loc.split("/").pop()!;
+  for (let i = 0; i < 500 && !(await store.get(id))?.race; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 const FORM = { city: "Fontana", state: "ca", office: "Mayor", election: "2026-11-03" };
 
 Deno.test("home page renders the form and a mobile viewport", async () => {
@@ -198,8 +209,7 @@ Deno.test("submitting a race redirects to it, shows progress, then the finished 
   const loc = res.headers.get("location")!;
   assertMatch(loc, /^\/races\/fontana-mayor-2026-11-03-\d{12}-[0-9a-f]{6}$/);
 
-  // Let the job reach the gated candidate calls.
-  await new Promise((r) => setTimeout(r, 20));
+  await untilRunning(store, loc);
   const running = await (await app(new Request(`http://app.test${loc}`))).text();
   assertStringIncludes(running, `http-equiv="refresh" content="10"`);
   assertStringIncludes(running, "Researching now");
@@ -232,7 +242,7 @@ Deno.test("submitting a race redirects to it, shows progress, then the finished 
 // Caddy switched to `handle` (which preserves the prefix) to match. This test pins both the
 // prefixed behavior and that unprefixed/direct access (no proxy in front) still works.
 Deno.test("basePath prefixes every generated link and redirect, and still accepts unprefixed paths", async () => {
-  const { app, port, jobs } = await setup({ basePath: "/ballotfix" });
+  const { app, port, jobs, store } = await setup({ basePath: "/ballotfix" });
 
   const home = await (await app(new Request("http://app.test/ballotfix/"))).text();
   assertStringIncludes(home, `action="/ballotfix/races"`);
@@ -243,7 +253,7 @@ Deno.test("basePath prefixes every generated link and redirect, and still accept
   const loc = res.headers.get("location")!;
   assertMatch(loc, /^\/ballotfix\/races\/fontana-mayor-2026-11-03-\d{12}-[0-9a-f]{6}$/);
 
-  await new Promise((r) => setTimeout(r, 20));
+  await untilRunning(store, loc);
   const running = await (await app(new Request(`http://app.test${loc}`))).text();
   assertStringIncludes(running, "Researching now");
 
