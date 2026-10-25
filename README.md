@@ -29,7 +29,8 @@ Under **Start from your ballot**, upload photos of your sample ballot or mail-in
 side), or the sample ballot PDF from your county's website. Claude reads the contests off it in
 about a minute, for a few cents. You then see every contest in the order your ballot prints it, fix
 any misread names, and tick the ones to research. Each one becomes a normal race whose candidate
-order is labeled as coming from your ballot. Measures are listed as not researched.
+order is labeled as coming from your ballot, unless you changed its list, in which case the order is
+labeled as entered by you. Measures are listed as not researched.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
   is saved (in `data/ballots/`).

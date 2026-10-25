@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertMatch,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import { BallotJobs, JobRunner, QueueFullError } from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
@@ -378,19 +384,204 @@ Deno.test("an uploaded ballot is read, reviewed, and the picked contest research
     // Renamed, so the designation read for the old spelling isn't carried over.
     { name: "Jose Sida", ballot_designation: null, incumbent: false },
   ]);
-  assertEquals(run.race!.listing.order_basis, "official_ballot_order");
-  assertEquals(run.race!.listing.source_name, "Your uploaded ballot");
+  // Edited, so the order is the user's, not confirmed as the ballot's (invariant 3).
+  assertEquals(run.race!.listing.order_basis, "unofficial");
+  assertEquals(run.race!.listing.source_name, "Your uploaded ballot, edited by you");
 
   const after = await (await app(new Request(`http://app.test${loc}`))).text();
   assertStringIncludes(after, `href="/races/${run.id}"`);
   assert(!after.includes(`name="pick" value="0"`), "a started contest can't be started twice");
 
-  // Rerunning keeps the ballot as the source.
+  // Rerunning keeps the edited-ballot source.
   const rerun = await app(post(`/races/${run.id}/rerun`, {}));
   assertEquals(rerun.status, 303);
   await jobs.idle();
-  const again = (await store.list())[0];
-  assertEquals(again.race!.listing.order_basis, "official_ballot_order");
+  assertEquals(
+    (await store.list())[0].race!.listing.source_name,
+    "Your uploaded ballot, edited by you",
+  );
+
+  // A contest researched exactly as read keeps the ballot's order label.
+  const asRead = await app(postForm(`${loc}/research`, [
+    ["pick", "1"],
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["office_1", "Member, City Council, District 2"],
+    ["city_1", "City of Fontana"],
+    ["candidates_1", "pat example"], // case differences aren't edits
+  ]));
+  assertEquals(asRead.status, 303);
+  await jobs.idle();
+  const council = (await store.list())[0];
+  assertEquals(council.race!.listing.order_basis, "official_ballot_order");
+  assertEquals(council.race!.listing.source_name, "Your uploaded ballot");
+});
+
+/** An uploaded, read ballot, ready for the review form. */
+async function readBallot(s: Awaited<ReturnType<typeof setup>>) {
+  const loc = (await s.app(upload([new File([JPEG], "a.jpg")]))).headers.get("location")!;
+  s.reader.release();
+  await s.ballots.idle();
+  return loc;
+}
+
+const MAYOR: [string, string][] = [
+  ["election", "2026-11-03"],
+  ["state", "CA"],
+  ["pick", "0"],
+  ["office_0", "Mayor"],
+  ["city_0", "City of Fontana"],
+  ["candidates_0", "Acquanetta Warren\nJoz Sida"],
+];
+
+// Regression: two simultaneous posts (double-click, two tabs) both saw the contest
+// unstarted and both started a paid race for it.
+Deno.test("a double-submitted review form starts each contest once", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const [a, b] = await Promise.all([
+    s.app(postForm(`${loc}/research`, MAYOR)),
+    s.app(postForm(`${loc}/research`, MAYOR)),
+  ]);
+  assertEquals([a.status, b.status].sort(), [303, 409]);
+  s.port.release();
+  await s.jobs.idle();
+  assertEquals((await s.store.list()).length, 1);
+  // And once it's recorded, posting again is refused rather than repeated.
+  const third = await s.app(postForm(`${loc}/research`, MAYOR));
+  assertEquals(third.status, 400);
+  assertEquals((await s.store.list()).length, 1);
+});
+
+// Regression: a non-queue error partway through left already-started races
+// unrecorded, so the page offered them again and a retry paid twice.
+Deno.test("races started before a failure are still recorded on the ballot", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const real = s.jobs.submit.bind(s.jobs);
+  let calls = 0;
+  s.jobs.submit = (...args: Parameters<typeof real>) =>
+    ++calls === 2 ? Promise.reject(new Error("disk full")) : real(...args);
+  const both: [string, string][] = [
+    ...MAYOR,
+    ["pick", "1"],
+    ["office_1", "Member, City Council, District 2"],
+    ["city_1", "City of Fontana"],
+    ["candidates_1", "Pat Example"],
+  ];
+  await assertRejects(() => s.app(postForm(`${loc}/research`, both)), Error, "disk full");
+  const saved = await s.ballotStore.get(loc.split("/").pop()!);
+  assertEquals(Object.keys(saved!.started), ["0"]);
+  s.port.release();
+  await s.jobs.idle();
+});
+
+// Regression: when the queue filled partway, the page re-rendered without the
+// user's corrections and with a stale "can be started" count.
+Deno.test("a queue that fills partway keeps the user's edits and an honest count", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const real = s.jobs.submit.bind(s.jobs);
+  let calls = 0;
+  s.jobs.submit = (...args: Parameters<typeof real>) =>
+    ++calls === 2 ? Promise.reject(new QueueFullError("queue is full")) : real(...args);
+  const res = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick", "1"],
+    ["office_1", "Member, City Council, District 2"],
+    ["city_1", "Fontana (corrected)"],
+    ["candidates_1", "Pat Example"],
+  ]));
+  assertEquals(res.status, 429);
+  const body = await res.text();
+  assertStringIncludes(body, "queue is full");
+  assertStringIncludes(body, `value="Fontana (corrected)"`);
+  assertStringIncludes(body, `name="pick" value="1" checked`);
+  assertStringIncludes(body, "Up to 3 contests can be started right now");
+  s.port.release();
+  await s.jobs.idle();
+});
+
+// Regression: "1" and "01" deduped as different strings but meant the same
+// contest, and "" became contest 0.
+Deno.test("pick values must be plain contest numbers", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  for (const bad of [["0", "00"], ["0", "0e0"], [""], ["-1"], ["1.0"]]) {
+    const res = await s.app(
+      postForm(`${loc}/research`, [
+        ...MAYOR.filter(([k]) => k !== "pick"),
+        ...bad.map((v): [
+          string,
+          string,
+        ] => ["pick", v]),
+      ]),
+    );
+    assertEquals(res.status, 400, bad.join(","));
+  }
+  assertEquals((await s.store.list()).length, 0);
+});
+
+// Regression: only the first flagged incumbent survived in multi-seat contests,
+// hiding the second one's incumbency (invariant 2).
+Deno.test("multi-seat contests keep every incumbent", async () => {
+  const two = parseRaceForm({
+    ...DEFAULT_FORM,
+    city: "Fontana",
+    candidates: "A\nB\nC",
+    incumbent: "a; C",
+  });
+  assert(two.ok);
+  assertEquals(two.candidates!.map((c) => c.incumbent), [true, false, true]);
+  assertEquals(
+    parseRaceForm({ ...DEFAULT_FORM, city: "F", candidates: "A", incumbent: "A; Z" }).ok,
+    false,
+  );
+
+  const s = await setup();
+  const reading: BallotReading = {
+    ...READING,
+    contests: [{
+      office: "Governing Board Member",
+      jurisdiction: "Fontana Unified School District",
+      vote_for: 3,
+      candidates: [
+        { name: "Ann One", ballot_designation: "Incumbent", incumbent: true },
+        { name: "Bo Two", ballot_designation: "Parent", incumbent: false },
+        { name: "Cy Three", ballot_designation: "Incumbent", incumbent: true },
+      ],
+    }],
+  };
+  s.reader.readBallot = () => Promise.resolve(reading);
+  const loc = await readBallot(s);
+  const review = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  assertStringIncludes(review, `name="incumbent_0" maxlength="300" value="Ann One; Cy Three"`);
+});
+
+Deno.test("an app without a ballot reader doesn't offer uploads", async () => {
+  const dir = await Deno.makeTempDir();
+  const store = new RunStore(dir);
+  await store.init();
+  const app = createApp({
+    store,
+    jobs: new JobRunner(store, () => new GatedPort()),
+    canResearch: true,
+  });
+  const home = await (await app(new Request("http://app.test/"))).text();
+  assert(!home.includes(`action="/ballots"`));
+  assertStringIncludes(home, `action="/races"`);
+});
+
+Deno.test("uploads are refused before buffering when ballot reading is at capacity", async () => {
+  const s = await setup();
+  await s.app(upload([new File([JPEG], "a.jpg")]));
+  await s.app(upload([new File([JPEG], "b.jpg")]));
+  const third = await s.app(upload([new File([JPEG], "c.jpg")]));
+  assertEquals(third.status, 429);
+  assertStringIncludes(await third.text(), "Other ballots are being read");
+  assertEquals(s.reader.pages.length, 2);
+  s.reader.release();
+  await s.ballots.idle();
 });
 
 Deno.test("ballot uploads are refused when they aren't a supported, reasonably sized file", async () => {

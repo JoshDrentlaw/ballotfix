@@ -147,9 +147,16 @@ export function parseRaceForm(v: FormValues): Parsed {
   if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) {
     return { ok: false, error: "A candidate is listed twice." };
   }
-  const inc = v.incumbent.toLowerCase();
-  if (inc && names.length && !names.some((n) => n.toLowerCase() === inc)) {
-    return { ok: false, error: "The current office holder must match one of the candidate names." };
+  // Several seats can mean several incumbents running: "A; B" or one per line.
+  const incs = new Set(
+    v.incumbent.split(/[\n;]/).map((n) => n.trim().toLowerCase()).filter(Boolean),
+  );
+  const lower = new Set(names.map((n) => n.toLowerCase()));
+  if (incs.size && names.length && [...incs].some((n) => !lower.has(n))) {
+    return {
+      ok: false,
+      error: "Each current office holder must match one of the candidate names.",
+    };
   }
   return {
     ok: true,
@@ -163,7 +170,7 @@ export function parseRaceForm(v: FormValues): Parsed {
       ? names.map((name) => ({
         name,
         ballot_designation: null,
-        incumbent: name.toLowerCase() === inc,
+        incumbent: incs.has(name.toLowerCase()),
       }))
       : null,
   };
@@ -185,17 +192,39 @@ export function sniffBallotType(b: Uint8Array): BallotMediaType | "heic" | null 
   return null;
 }
 
+/** Past this, an oversized upload is cut off rather than read to the end just to reply. */
+const MAX_DRAIN_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Reads and discards the rest of a body, so the browser finishes sending and
+ * shows the error page instead of a connection reset.
+ */
+async function drain(body: ReadableStream<Uint8Array>, alreadyRead: number): Promise<void> {
+  let size = alreadyRead;
+  try {
+    for await (const chunk of body) {
+      size += chunk.length;
+      if (size > MAX_DRAIN_BYTES) break;
+    }
+  } catch {
+    // The client went away; nothing to answer.
+  }
+}
+
 /** The request body, refusing to buffer more than `max` bytes. */
 async function readCapped(req: Request, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
-  const declared = Number(req.headers.get("content-length") ?? "0");
-  if (declared > max) return null;
   if (!req.body) return new Uint8Array();
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > max) {
+    await drain(req.body, 0);
+    return null;
+  }
   const chunks: Uint8Array[] = [];
   let size = 0;
   for await (const chunk of req.body) {
     size += chunk.length;
     if (size > max) {
-      await req.body.cancel().catch(() => {});
+      await drain(req.body, size);
       return null;
     }
     chunks.push(chunk);
@@ -210,6 +239,7 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array<ArrayBu
 }
 
 const MB = 1024 * 1024;
+const BALLOTS_BUSY = "Other ballots are being read right now. Try again in a minute.";
 
 export async function parseBallotUpload(
   form: FormData,
@@ -259,7 +289,7 @@ export async function parseBallotUpload(
   return { ok: true, pages };
 }
 
-/** Listing source for races started from an uploaded ballot. */
+/** Listing source for races started from an uploaded ballot, names and order as read. */
 export const UPLOADED_BALLOT_SOURCE: CandidateSource = {
   source_name: "Your uploaded ballot",
   order_basis: "official_ballot_order",
@@ -267,7 +297,24 @@ export const UPLOADED_BALLOT_SOURCE: CandidateSource = {
     "Names and order were read by AI from the ballot images you uploaded and checked by you before research. The images weren't kept, so this list can't be linked.",
 };
 
-type Picked = { index: number; query: RaceQuery; candidates: BallotCandidate[] };
+/**
+ * Listing source once the user changed the list read from the ballot. Any
+ * change (a respelling, an added, removed, or moved name) means the order is
+ * no longer confirmed as the ballot's, so it isn't labeled as ballot order.
+ */
+export const EDITED_BALLOT_SOURCE: CandidateSource = {
+  source_name: "Your uploaded ballot, edited by you",
+  order_basis: "unofficial",
+  notes:
+    "Read by AI from the ballot images you uploaded, then changed by you before research, so the order is as you entered it and not confirmed as the ballot's. The images weren't kept, so this list can't be linked.",
+};
+
+type Picked = {
+  index: number;
+  query: RaceQuery;
+  candidates: BallotCandidate[];
+  source: CandidateSource;
+};
 
 /** Validates the ballot review form: which contests to research, and the user's corrections. */
 export function parseBallotResearch(
@@ -276,11 +323,16 @@ export function parseBallotResearch(
 ): { ok: true; picks: Picked[] } | { ok: false; error: string } {
   const r = b.reading;
   if (!r) return { ok: false, error: "This ballot hasn't been read." };
-  const indexes = [...new Set(form.getAll("pick").map(String))].map(Number);
-  if (!indexes.length) return { ok: false, error: "Choose at least one contest to research." };
+  const raw = form.getAll("pick").map(String);
+  if (!raw.length) return { ok: false, error: "Choose at least one contest to research." };
+  // Only plain digits: "01", "1e0", or "" must not alias another contest.
+  if (raw.some((v) => !/^(0|[1-9]\d{0,3})$/.test(v))) {
+    return { ok: false, error: "That contest isn't available to research." };
+  }
+  const indexes = [...new Set(raw.map(Number))];
   const picks: Picked[] = [];
   for (const i of indexes) {
-    const contest = Number.isInteger(i) ? r.contests[i] : undefined;
+    const contest = r.contests[i];
     if (!contest || b.started[String(i)]) {
       return { ok: false, error: "That contest isn't available to research." };
     }
@@ -300,6 +352,10 @@ export function parseBallotResearch(
     }
     // Keep the designations read from the ballot for names the user didn't change.
     const read = new Map(contest.candidates.map((c) => [c.name.toLowerCase(), c]));
+    const edited = parsed.candidates.length !== contest.candidates.length ||
+      parsed.candidates.some((c, k) =>
+        c.name.toLowerCase() !== contest.candidates[k].name.toLowerCase()
+      );
     picks.push({
       index: i,
       query: parsed.query,
@@ -307,6 +363,7 @@ export function parseBallotResearch(
         ...c,
         ballot_designation: read.get(c.name.toLowerCase())?.ballot_designation ?? null,
       })),
+      source: edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE,
     });
   }
   return { ok: true, picks };
@@ -314,10 +371,13 @@ export function parseBallotResearch(
 
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
   const BASE = (o.basePath ?? "").replace(/\/+$/, "");
+  /** Ballot ids whose contests are being started right now. */
+  const starting = new Set<string>();
   const home = async (extra: Partial<HomeOptions> = {}) =>
     homePage({
       runs: await o.store.list(),
       ballots: o.ballots ? await o.ballots.store.list() : [],
+      canUpload: Boolean(o.ballots),
       canResearch: o.canResearch,
       base: BASE,
       ...extra,
@@ -345,6 +405,11 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
 
     if (path === "/ballots" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
+      // Refuse before buffering an upload that couldn't be read anyway. submit() checks again.
+      if (ballots.full) {
+        if (req.body) await drain(req.body, 0);
+        return html(await home({ ballotError: BALLOTS_BUSY }), 429);
+      }
       // Headroom over the file limit for multipart boundaries and headers.
       const body = await readCapped(req, MAX_BALLOT_TOTAL_BYTES + MB);
       if (!body) {
@@ -372,7 +437,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         return redirect(`${BASE}/ballots/${record.id}`);
       } catch (err) {
         if (!(err instanceof QueueFullError)) throw err;
-        return html(await home({ ballotError: err.message }), 429);
+        return html(await home({ ballotError: BALLOTS_BUSY }), 429);
       }
     }
 
@@ -383,42 +448,64 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     if (!b) {
       return html(messagePage("Not found", "There's no saved ballot at that address.", BASE), 404);
     }
-    const view = { canResearch: o.canResearch, available: o.jobs.available, base: BASE };
+    const view = () => ({ canResearch: o.canResearch, available: o.jobs.available, base: BASE });
 
-    if (!suffix && req.method === "GET") return html(ballotPage(b, view));
+    if (!suffix && req.method === "GET") return html(ballotPage(b, view()));
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
       const form = await req.formData();
-      const parsed = parseBallotResearch(b, form);
-      let error = parsed.ok ? null : parsed.error;
-      if (parsed.ok && parsed.picks.length > o.jobs.available) {
-        error = o.jobs.available
-          ? `Only ${o.jobs.available} more race${
-            o.jobs.available === 1 ? "" : "s"
-          } can be started right now. Choose fewer, then add the rest when those finish.`
-          : "Other races are researching right now. Try again when one finishes.";
+      // One start at a time per ballot, so a double-click or a second tab can't
+      // start (and pay for) the same contest twice. Checked and taken with no
+      // await in between; the record is re-read under the lock.
+      if (starting.has(b.id)) {
+        return html(
+          ballotPage(b, {
+            ...view(),
+            error: "These contests are already being started. Reload this page in a moment.",
+          }),
+          409,
+        );
       }
-      if (!parsed.ok || error) {
-        return html(ballotPage(b, { ...view, form, error: error ?? undefined }), 400);
-      }
-      const started = { ...b.started };
-      let last = "";
+      starting.add(b.id);
       try {
-        for (const p of parsed.picks) {
-          const run = await o.jobs.submit(p.query, p.candidates, UPLOADED_BALLOT_SOURCE);
-          started[String(p.index)] = run.id;
-          last = run.id;
+        const fresh = (await ballots.store.get(b.id)) ?? b;
+        const parsed = parseBallotResearch(fresh, form);
+        let error = parsed.ok ? null : parsed.error;
+        const available = o.jobs.available;
+        if (parsed.ok && parsed.picks.length > available) {
+          error = available
+            ? `Only ${available} more race${
+              available === 1 ? "" : "s"
+            } can be started right now. Choose fewer, then add the rest when those finish.`
+            : "Other races are researching right now. Try again when one finishes.";
         }
-      } catch (err) {
-        if (!(err instanceof QueueFullError)) throw err;
-        error = err.message;
+        if (!parsed.ok || error) {
+          return html(ballotPage(fresh, { ...view(), form, error: error ?? undefined }), 400);
+        }
+        const started = { ...fresh.started };
+        let last = "";
+        let updated = fresh;
+        try {
+          for (const p of parsed.picks) {
+            const run = await o.jobs.submit(p.query, p.candidates, p.source);
+            started[String(p.index)] = run.id;
+            last = run.id;
+          }
+        } catch (err) {
+          if (!(err instanceof QueueFullError)) throw err;
+          error = err.message;
+        } finally {
+          // Record whatever did start, even if a later submit failed, so a retry can't repeat it.
+          updated = { ...fresh, started, updated_at: new Date().toISOString() };
+          await ballots.store.save(updated);
+        }
+        if (error) return html(ballotPage(updated, { ...view(), form, error }), 429);
+        return redirect(
+          parsed.picks.length === 1 ? `${BASE}/races/${last}` : `${BASE}/ballots/${b.id}`,
+        );
+      } finally {
+        starting.delete(b.id);
       }
-      const updated = { ...b, started, updated_at: new Date().toISOString() };
-      await ballots.store.save(updated);
-      if (error) return html(ballotPage(updated, { ...view, error }), 429);
-      return redirect(
-        parsed.picks.length === 1 ? `${BASE}/races/${last}` : `${BASE}/ballots/${b.id}`,
-      );
     }
     return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
   };

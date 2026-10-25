@@ -57,6 +57,8 @@ export interface HomeOptions {
   values?: FormValues;
   error?: string;
   ballots?: BallotRecord[];
+  /** Show the ballot upload form. Only when the app has a ballot reader. */
+  canUpload?: boolean;
   /** Error from the ballot upload form. */
   ballotError?: string;
   /** Mount prefix (e.g. "/ballotfix") for generated links. Empty when served at root. */
@@ -100,20 +102,27 @@ export function homePage(o: HomeOptions): string {
     }</ul>`
     : "";
 
-  const body = `<h1>Who's on your ballot?</h1>
-<p class="sub">Upload your ballot, or name a city and an office. Ballot Fix finds the candidates and builds a sourced dossier on each one: background, record, accomplishments, criticisms, money, endorsements, and platform. It never ranks or recommends anyone.</p>
-${setup}
-<h2 id="upload">Start from your ballot</h2>
+  // Only offered when the app was given a ballot reader; otherwise /ballots is a 404.
+  const upload = o.canUpload
+    ? `<h2 id="upload">Start from your ballot</h2>
 ${ballotError}
 <form class="stack" method="post" action="${base}/ballots" enctype="multipart/form-data">
   <label>Photos or PDF of your ballot <span class="hint">Your sample ballot or mail-in ballot. Take one photo per side, flat and in good light, or upload the PDF from your county's website. Up to ${MAX_BALLOT_FILES} files.</span>
     <input type="file" name="pages" required multiple accept="${
-    BALLOT_MEDIA_TYPES.join(",")
-  }"></label>
+      BALLOT_MEDIA_TYPES.join(",")
+    }"></label>
   <button type="submit"${disabled}>Read my ballot</button>
   <p class="sub">Reading takes about a minute and costs a few cents. Then you choose which contests to research. The images are sent to Anthropic to be read and are not saved here; only the list of contests is kept. Leave out the return envelope, which has your signature. Marks on a filled-in ballot are ignored and never recorded.</p>
 </form>
-<h2>Or name one race</h2>
+<h2>Or name one race</h2>`
+    : "";
+
+  const body = `<h1>Who's on your ballot?</h1>
+<p class="sub">${
+    o.canUpload ? "Upload your ballot, or name" : "Name"
+  } a city and an office. Ballot Fix finds the candidates and builds a sourced dossier on each one: background, record, accomplishments, criticisms, money, endorsements, and platform. It never ranks or recommends anyone.</p>
+${setup}
+${upload}
 ${error}
 <form class="stack" id="new" method="post" action="${base}/races">
   <div class="row">
@@ -135,8 +144,8 @@ ${error}
   <details${v.candidates ? " open" : ""}><summary>Already know the candidates?</summary>
     <label>Candidates, one per line, in ballot order <span class="hint">Skips looking up the ballot. Leave empty to have it found for you.</span>
       <textarea name="candidates" maxlength="2000">${esc(v.candidates)}</textarea></label>
-    <label>Current office holder, if running <span class="hint">Exactly as written above.</span>
-      <input name="incumbent" maxlength="100" value="${esc(v.incumbent)}"></label>
+    <label>Current office holders, if running <span class="hint">Exactly as written above. Separate several with semicolons.</span>
+      <input name="incumbent" maxlength="300" value="${esc(v.incumbent)}"></label>
   </details>
   <button type="submit"${disabled}>Research this race</button>
   <p class="sub">Takes several minutes. Each candidate costs roughly one to two dollars of API use. You can leave this page and come back.</p>
@@ -231,13 +240,18 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   <label>City or district <input name="city_${i}" maxlength="80" value="${
         esc(posted(`city_${i}`, c.jurisdiction.slice(0, 80)))
       }"></label>
-  <label>Candidates, one per line, in ballot order
+  <label>Candidates, one per line, in ballot order <span class="hint">If you change this list, the race says its order was entered by you rather than taken from the ballot.</span>
     <textarea name="candidates_${i}" maxlength="2000">${
         esc(posted(`candidates_${i}`, c.candidates.map((p) => p.name).join("\n")))
       }</textarea></label>
-  <label>Current office holder, if running <span class="hint">Exactly as written above.</span>
-    <input name="incumbent_${i}" maxlength="100" value="${
-        esc(posted(`incumbent_${i}`, c.candidates.find((p) => p.incumbent)?.name ?? ""))
+  <label>Current office holders, if running <span class="hint">Exactly as written above. Separate several with semicolons.</span>
+    <input name="incumbent_${i}" maxlength="300" value="${
+        esc(
+          posted(
+            `incumbent_${i}`,
+            c.candidates.filter((p) => p.incumbent).map((p) => p.name).join("; "),
+          ),
+        )
       }"></label>
 </details>`
       : "";

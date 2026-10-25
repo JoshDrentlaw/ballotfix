@@ -156,8 +156,13 @@ export class BallotJobs {
     return this.#store;
   }
 
+  /** True when submit() would refuse; lets the server refuse before buffering an upload. */
+  get full(): boolean {
+    return this.#active.size >= this.#maxActive;
+  }
+
   async submit(pages: BallotPage[]): Promise<BallotRecord> {
-    if (this.#active.size >= this.#maxActive) {
+    if (this.full) {
       throw new QueueFullError(
         "Other ballots are being read right now. Try again in a minute.",
       );
@@ -176,9 +181,21 @@ export class BallotJobs {
       reading: null,
       started: {},
     };
-    await this.#store.save(record);
-    const job = this.#execute(record, pages).finally(() => this.#active.delete(job));
-    this.#active.add(job);
+    // Take the slot before the first await, so simultaneous uploads can't all pass the cap.
+    let release!: () => void;
+    const slot = new Promise<void>((r) => (release = r));
+    this.#active.add(slot);
+    const free = () => {
+      this.#active.delete(slot);
+      release();
+    };
+    try {
+      await this.#store.save(record);
+    } catch (err) {
+      free();
+      throw err;
+    }
+    this.#execute(record, pages).finally(free);
     return record;
   }
 
