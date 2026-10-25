@@ -82,6 +82,9 @@ label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .contest details { display: grid; gap: 10px; }
 .contest details label { margin-top: 10px; }
+.priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
+h5 { font-size: 1rem; margin: 16px 0 4px; }
+.measure-q { white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -95,6 +98,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 <div class="banner"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions. Each fact links to where it came from and is tagged by the kind of evidence behind it.</p>
 <details><summary>What this research can't see (5)</summary>
 <ul><li>Phase 0 researches with general web search only. It does not yet read campaign finance portals, council minutes, or budget documents directly, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details></div>
+
 
 <h2>Candidates</h2>
 <p class="sub">Listed in the order of the official candidate list, which may differ from the printed ballot. LAYOUT SAMPLE. Placeholder data, not research about real people.</p>
@@ -118,6 +122,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <h2>Sample Candidate A</h2>
   <p class="desig">Small Business Owner</p>
   
+  
   <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
@@ -127,7 +132,6 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -140,6 +144,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <h2>Sample Candidate B</h2>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
   <p class="note"><strong>Identity check.</strong> Placeholder: another person with this name serves on a county board.</p>
+  
   <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
@@ -149,8 +154,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section>
-  <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
+  <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span>
@@ -162,9 +166,9 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
   <h2>Sample Candidate C</h2>
   <p class="desig">Ballot designation not found</p>
   
+  
   <section class="sec"><h4>Who they are</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Criticisms and controversies</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
-  
   <p class="back"><a href="#top">Back to all candidates</a></p>
 </article>
 

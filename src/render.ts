@@ -6,8 +6,17 @@
  */
 
 import { coveredSections, incumbencyNote } from "./dossier.ts";
-import { SECTIONS } from "./template.ts";
-import type { CandidateDossier, EvidenceType, Fact, OrderBasis, RaceDossier } from "./types.ts";
+import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
+import type {
+  CandidateDossier,
+  EvidenceType,
+  Fact,
+  MeasureDossier,
+  OrderBasis,
+  PriorityResult,
+  RaceDossier,
+  SectionResult,
+} from "./types.ts";
 
 export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -82,6 +91,47 @@ function overviewCard(d: CandidateDossier): string {
 </li>`;
 }
 
+/** Runs saved before a section was added to the template don't have it. */
+const NOT_IN_THIS_RUN: SectionResult = {
+  facts: [],
+  searched: [],
+  gap_note: "This section was added after this run; research again to fill it.",
+};
+
+function sectionHtml(title: string, r: SectionResult | undefined, tag = "h4"): string {
+  r ??= NOT_IN_THIS_RUN;
+  const facts = r.facts.length ? `<ul class="facts">${r.facts.map(factItem).join("")}</ul>` : "";
+  const gap = r.gap_note ? `<p class="gap">${esc(r.gap_note)}</p>` : "";
+  const searched = r.searched.length
+    ? `<p class="searched">Looked at: ${r.searched.map(esc).join("; ")}</p>`
+    : "";
+  return `<section class="sec"><${tag}>${esc(title)}</${tag}>${facts}${gap}${searched}</section>`;
+}
+
+/** The voter's own issues, first, so what they asked about is what they see first. */
+function prioritiesHtml(p: readonly PriorityResult[] | undefined): string {
+  if (!p?.length) return "";
+  return `<section class="priorities"><h4>On what you said matters to you</h4>${
+    p.map((x) => sectionHtml(x.issue, x.result, "h5")).join("")
+  }</section>`;
+}
+
+function gapsAndUnverified(gaps: readonly string[], unverified: readonly Fact[]): string {
+  const g = gaps.length
+    ? `<section class="sec"><h4>What this run couldn't check</h4><ul class="gaps">${
+      gaps.map((x) => `<li>${esc(x)}</li>`).join("")
+    }</ul></section>`
+    : "";
+  const u = unverified.length
+    ? `<details class="unverified"><summary>${unverified.length} claim${
+      unverified.length === 1 ? "" : "s"
+    } not shown above because the cited page was never retrieved in this run</summary>
+<p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
+<ul class="facts">${unverified.map(factItem).join("")}</ul></details>`
+    : "";
+  return g + u;
+}
+
 function dossierSection(d: CandidateDossier): string {
   const c = d.candidate;
   if (d.status === "pending") {
@@ -90,30 +140,10 @@ function dossierSection(d: CandidateDossier): string {
   <p class="gap">Research on this candidate is still running. This page updates on its own.</p>
 </article>`;
   }
-  const sections = SECTIONS.map((s) => {
-    const r = d.sections[s.id];
-    const facts = r.facts.length ? `<ul class="facts">${r.facts.map(factItem).join("")}</ul>` : "";
-    const gap = r.gap_note ? `<p class="gap">${esc(r.gap_note)}</p>` : "";
-    const searched = r.searched.length
-      ? `<p class="searched">Looked at: ${r.searched.map(esc).join("; ")}</p>`
-      : "";
-    return `<section class="sec"><h4>${esc(s.title)}</h4>${facts}${gap}${searched}</section>`;
-  }).join("");
+  const sections = SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("");
 
   const identity = d.identity_note
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
-    : "";
-  const gaps = d.gaps.length
-    ? `<section class="sec"><h4>What this run couldn't check</h4><ul class="gaps">${
-      d.gaps.map((g) => `<li>${esc(g)}</li>`).join("")
-    }</ul></section>`
-    : "";
-  const unverified = d.unverified.length
-    ? `<details class="unverified"><summary>${d.unverified.length} claim${
-      d.unverified.length === 1 ? "" : "s"
-    } not shown above because the cited page was never retrieved in this run</summary>
-<p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
-<ul class="facts">${d.unverified.map(factItem).join("")}</ul></details>`
     : "";
 
   return `<article class="dossier" id="${slug(c.name)}">
@@ -122,9 +152,9 @@ function dossierSection(d: CandidateDossier): string {
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
   ${identity}
+  ${prioritiesHtml(d.priorities)}
   ${sections}
-  ${gaps}
-  ${unverified}
+  ${gapsAndUnverified(d.gaps, d.unverified)}
   <p class="back"><a href="#top">Back to all candidates</a></p>
 </article>`;
 }
@@ -204,6 +234,9 @@ label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .contest details { display: grid; gap: 10px; }
 .contest details label { margin-top: 10px; }
+.priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
+h5 { font-size: 1rem; margin: 16px 0 4px; }
+.measure-q { white-space: pre-line; }
 `;
 
 export interface PageOptions {
@@ -292,7 +325,8 @@ ${extra.actions ?? ""}
 <details><summary>What this research can't see (${r.standing_gaps.length})</summary>
 <ul>${r.standing_gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul></details></div>
 
-<h2>Candidates</h2>
+${askedAbout(r.priorities, "Every candidate was asked about the same issues, in the same words.")}
+<h2>${r.listing.contest_kind === "retention" ? "On the ballot" : "Candidates"}</h2>
 <p class="sub">${ORDER_LABEL[r.listing.order_basis]}${
     r.listing.notes ? ` ${esc(r.listing.notes)}` : ""
   }</p>
@@ -310,7 +344,76 @@ ${r.candidates.map(dossierSection).join("")}
 </footer>`;
 }
 
+function askedAbout(issues: readonly string[] | undefined, same: string): string {
+  if (!issues?.length) return "";
+  return `<p class="note"><strong>You asked about:</strong> ${
+    issues.map(esc).join("; ")
+  }. ${same} Findings on them come first in each dossier. They are what was found, not a measure of fit with your views.</p>`;
+}
+
 /** Standalone page for a finished race (CLI output and downloads). */
 export function renderRace(r: RaceDossier): string {
   return page(raceTitle(r), raceBody(r));
+}
+
+export function measureTitle(m: { label: string; jurisdiction: string; electionDate: string }) {
+  return [m.label, m.jurisdiction, readableDate(m.electionDate)].filter(Boolean).join(" · ");
+}
+
+/** One measure's page: the same template for every measure, both sides sought equally. */
+export function measureBody(
+  d: MeasureDossier,
+  extra: { status?: string; actions?: string } = {},
+): string {
+  const q = d.query;
+  const question = q.question
+    ? `<p class="note measure-q"><strong>Ballot question as read from your ballot.</strong> ${
+      esc(q.question)
+    }</p>`
+    : "";
+  const official = d.official_title
+    ? `<p class="sub">Official title: ${esc(d.official_title)}</p>`
+    : "";
+  const identity = d.identity_note
+    ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
+    : "";
+  const body = d.status === "pending"
+    ? `<p class="gap">Research on this measure is still running. This page updates on its own.</p>`
+    : `${prioritiesHtml(d.priorities)}
+${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("")}
+${gapsAndUnverified(d.gaps, d.unverified)}`;
+
+  return `<h1>${esc(measureTitle(q))}</h1>
+<p class="sub">${esc(q.jurisdiction || "Jurisdiction not read")}, ${esc(q.state)} · Researched ${
+    esc(d.generated_at.slice(0, 10))
+  }</p>
+${official}
+${extra.status ?? ""}
+${extra.actions ?? ""}
+
+<div class="banner"><p><strong>This page does not recommend a yes or no vote.</strong> Every measure gets the same sections, and the case for and the case against are researched with the same instructions. Each fact links to where it came from and is tagged by the kind of evidence behind it.</p>
+<details><summary>What this research can't see (${d.standing_gaps.length})</summary>
+<ul>${d.standing_gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul></details></div>
+${
+    askedAbout(
+      d.priority_issues,
+      "Supporters' and opponents' claims about them were sought equally.",
+    )
+  }
+${question}
+${identity}
+<article class="dossier">
+${body}
+</article>
+
+<footer>
+<p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, ballot arguments, and campaigns' own statements. <strong>Unsourced</strong> is asserted without support.</p>
+<p>Generated by Ballot Fix using AI-assisted web research${
+    d.model ? ` (${esc(d.model)})` : ""
+  }. It can be wrong. Check anything that matters to your vote at the linked source.</p>
+</footer>`;
+}
+
+export function renderMeasure(d: MeasureDossier): string {
+  return page(measureTitle(d.query), measureBody(d));
 }

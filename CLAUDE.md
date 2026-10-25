@@ -24,13 +24,18 @@ Inherited from Parallax Fix:
 
 Specific to elections:
 
-1. **Same template for every candidate.** `src/template.ts` is the single list of sections, and the
-   JSON schema requires every one. A section with nothing found says so.
+1. **Same template for every candidate, and for every measure.** `src/template.ts` holds the single
+   list of sections for each (`SECTIONS`, `MEASURE_SECTIONS`). A section with nothing found says so.
+   Runs saved before a section existed render it as "added after this run".
 2. **Incumbency asymmetry is disclosed**, not hidden (`incumbencyNote`).
 3. **Ballot order, never ranking.** Candidates appear in the official source's order, and the page
    says which kind of order it is (`order_basis`).
 4. **Positive and negative are both sought**, with the same instruction strength, for everyone.
-5. **No verdict, including implied ones.** No scores, grades, or "net" assessments.
+5. **No verdict, including implied ones.** No scores, grades, or "net" assessments. For measures, no
+   yes/no recommendation; `case_for` and `case_against` carry mirrored instructions.
+6. **The voter's issues are topics, not positions.** Optional `priorities` (up to 5) apply to every
+   candidate in a run in the same words, become extra section ids `priority_1..n` (enum values, not
+   extra schema), and are never used to judge fit with the voter.
 
 ## Provenance check
 
@@ -51,6 +56,11 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
   reviews and corrects the reading before any research starts. Races started from it carry
   `candidate_source` with `order_basis: "official_ballot_order"`.
+- Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
+  saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
+  `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
+  question becomes a one-candidate race with `contest_kind: "retention"`. Measure picks are keyed
+  `m<index>` in `BallotRecord.started`.
 - `src/dossier.ts`: validation and invariant enforcement. `src/race.ts`: orchestration, with
   `onUpdate` partial results (unfinished candidates have status "pending").
 - `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both
@@ -76,6 +86,6 @@ the unit tests missed: browsers can send `Origin: null` on the app's own form po
 
 ## Phases
 
-Phase 0 (this) is web research only. Later phases add primary-record adapters behind `ResearchPort`:
-city → ballot from the registrar, Form 460 campaign finance, council minutes, then budget/CIP
-extraction for a neighborhood-spending view.
+Phase 0 (this) is web research only, for candidates and ballot measures. Later phases add
+primary-record adapters behind `ResearchPort`: city → ballot from the registrar, Form 460 campaign
+finance, council minutes, then budget/CIP extraction for a neighborhood-spending view.

@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { renderRace, safeHref, slug } from "../src/render.ts";
-import { runRace } from "../src/race.ts";
+import { renderMeasure, renderRace, safeHref, slug } from "../src/render.ts";
+import { runMeasure, runRace } from "../src/race.ts";
 import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
 
 const hostile = {
@@ -89,4 +89,45 @@ Deno.test("unverified claims render in their own collapsed block, not among fact
   });
   const html = renderRace(await runRace(QUERY, port));
   assertStringIncludes(html, `1 claim not shown above because the cited page was never retrieved`);
+});
+
+Deno.test("the voter's issues render first in each dossier, escaped, and say they aren't a fit score", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const race = await runRace(QUERY, new FakeResearch(listing([c]), {}), {
+    priorities: [`<b>housing</b>`],
+  });
+  const html = renderRace(race);
+  assertStringIncludes(html, "On what you said matters to you");
+  assertStringIncludes(html, "&lt;b&gt;housing&lt;/b&gt;");
+  assert(!html.includes("<b>housing"));
+  assertStringIncludes(html, "not a measure of fit with your views");
+  assert(html.indexOf("On what you said matters") < html.indexOf("Who they are"));
+});
+
+Deno.test("a run saved before a section existed still renders, and says so", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const race = await runRace(QUERY, new FakeResearch(listing([c]), {}));
+  // deno-lint-ignore no-explicit-any
+  delete (race.candidates[0].sections as any).community;
+  delete race.candidates[0].priorities;
+  const html = renderRace(race);
+  assertStringIncludes(html, "This section was added after this run");
+});
+
+Deno.test("a measure page has every section, no recommendation, and escapes hostile content", async () => {
+  const d = await runMeasure({
+    label: `Measure <script>x</script>`,
+    jurisdiction: "City of Fontana",
+    question: `"><img src=x onerror=alert(1)>`,
+    state: "CA",
+    electionDate: "2026-11-03",
+  }, new FakeResearch(listing([]), {}));
+  const html = renderMeasure(d);
+  assert(!/<script/i.test(html.replace(/<style>[\s\S]*?<\/style>/, "")));
+  assert(!html.includes("<img"));
+  assertStringIncludes(html, "does not recommend a yes or no vote");
+  assertStringIncludes(html, "The case for, as supporters make it");
+  assertStringIncludes(html, "The case against, as opponents make it");
+  assertStringIncludes(html, "Who is for and against it");
+  assertStringIncludes(html, "Social media is not searched");
 });

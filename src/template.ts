@@ -68,3 +68,82 @@ export const SECTIONS = [
 export type SectionId = typeof SECTIONS[number]["id"];
 
 export const SECTION_IDS: readonly SectionId[] = SECTIONS.map((s) => s.id);
+
+/**
+ * The fixed template for ballot measures. Same rules as SECTIONS: every
+ * measure gets these, in this order. The case for and the case against carry
+ * mirrored instructions (election invariant 4).
+ */
+export const MEASURE_SECTIONS = [
+  {
+    id: "effect",
+    title: "What a yes or no vote does",
+    ask:
+      "What the measure would change if it passes, and what stays in place if it fails, from the official ballot label, the full text, and the impartial analysis (city attorney, county counsel, or for state measures the Legislative Analyst). Include its duration or sunset if any.",
+  },
+  {
+    id: "history",
+    title: "History",
+    ask:
+      "How it got on the ballot (council or board vote with the tally and date, citizen signature petition, or legislative vote), who drafted or sponsored it, the existing law or tax it changes, earlier versions or similar past measures here and how they did, and any litigation over it.",
+  },
+  {
+    id: "people",
+    title: "Who is for and against it",
+    ask:
+      "The proponents and the opponents: the people who signed the official ballot arguments on each side, the campaign committees, and the organizations behind each side. Say who each named person or group is (their role, office, employer, or affiliation) when a source says so. Search both sides with equal effort.",
+  },
+  {
+    id: "money",
+    title: "Money",
+    ask:
+      "Committees formed to support or oppose it, how much each has raised, and their largest contributors (California Form 410, 460, and 497 or local equivalent). Who would pay and who would receive money if it passes, when a source documents it.",
+  },
+  {
+    id: "fiscal",
+    title: "Cost and fiscal effect",
+    ask:
+      "The official fiscal analysis: cost or revenue estimates, tax rate and who pays it, where the money would go, and any oversight, audit, or spending restrictions written into it.",
+  },
+  {
+    id: "case_for",
+    title: "The case for, as supporters make it",
+    ask:
+      "The arguments supporters make, in their words where possible: the official argument in favor and rebuttal, campaign materials, and supporters quoted in coverage. Report who makes each argument. Tag these as opinion.",
+  },
+  {
+    id: "case_against",
+    title: "The case against, as opponents make it",
+    ask:
+      "The arguments opponents make, in their words where possible: the official argument against and rebuttal, campaign materials, and opponents quoted in coverage. Report who makes each argument. Tag these as opinion.",
+  },
+  {
+    id: "coverage",
+    title: "Endorsements and local coverage",
+    ask:
+      "Endorsements on each side (organizations, officials, editorial boards) and what local outlets have reported about the measure.",
+  },
+] as const satisfies readonly SectionSpec[];
+
+export type MeasureSectionId = typeof MEASURE_SECTIONS[number]["id"];
+
+export const MEASURE_SECTION_IDS: readonly MeasureSectionId[] = MEASURE_SECTIONS.map((s) => s.id);
+
+/**
+ * Issues the voter said matter most. Optional, and the same list applies to
+ * every candidate in a race, so it never favors one of them. Each issue is
+ * reported as its own section, with ids priority_1, priority_2, ...
+ */
+export const MAX_PRIORITIES = 5;
+export const MAX_PRIORITY_LENGTH = 120;
+
+export function priorityId(index: number): string {
+  return `priority_${index + 1}`;
+}
+
+/** Shared by both templates: how to report on the voter's issues without judging fit. */
+export function priorityAsk(subject: "candidate" | "measure"): string {
+  return subject === "candidate"
+    ? "What this candidate has done, voted for, funded, said, or been endorsed or criticized for that bears on this issue, with the same effort for every candidate. The issue is a topic, not a position: the voter's wording does not tell you which side they are on, so do not say whether the candidate agrees with them or would be good for them."
+    : "How this measure bears on this issue, as documented by the official analysis and as each side describes it, with equal effort for supporters' and opponents' claims. The issue is a topic, not a position: the voter's wording does not tell you which side they are on, so do not say whether the measure would be good for them.";
+}

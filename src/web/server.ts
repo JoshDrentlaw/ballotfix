@@ -11,19 +11,22 @@
  *   GET  /races/:id.json        raw run record
  *   POST /ballots               upload photos/PDF of a ballot, then redirect to it
  *   GET  /ballots/:id           reading progress, then the contests found, for review
- *   POST /ballots/:id/research  start races for the contests the user picked
+ *   POST /ballots/:id/research  start races and measures the user picked
  *   GET  /healthz
  */
 
-import { renderRace, slug } from "../render.ts";
+import { measuresOf } from "../dossier.ts";
+import { renderMeasure, renderRace, slug } from "../render.ts";
+import { MAX_PRIORITIES, MAX_PRIORITY_LENGTH } from "../template.ts";
 import type {
   BallotCandidate,
   BallotMediaType,
   BallotPage,
   CandidateSource,
+  MeasureQuery,
   RaceQuery,
 } from "../types.ts";
-import { type BallotJobs, type JobRunner, QueueFullError } from "./jobs.ts";
+import { type BallotJobs, type JobRunner, QueueFullError, type SubmitExtras } from "./jobs.ts";
 import {
   ballotPage,
   DEFAULT_FORM,
@@ -177,6 +180,34 @@ export function parseRaceForm(v: FormValues): Parsed {
 }
 
 /**
+ * The optional "what matters most to you" list: one issue per line (or
+ * semicolon). Each becomes the same extra question for every candidate.
+ */
+export function parsePriorities(text: string): { ok: true; issues: string[] } | {
+  ok: false;
+  error: string;
+} {
+  const issues = text.split(/[\n;]/)
+    // deno-lint-ignore no-control-regex
+    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (issues.length > MAX_PRIORITIES) {
+    return { ok: false, error: `Name up to ${MAX_PRIORITIES} issues that matter most to you.` };
+  }
+  if (issues.some((s) => s.length > MAX_PRIORITY_LENGTH)) {
+    return {
+      ok: false,
+      error: `Keep each issue to ${MAX_PRIORITY_LENGTH} characters, like "housing costs".`,
+    };
+  }
+  const seen = new Set<string>();
+  return {
+    ok: true,
+    issues: issues.filter((s) => !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase())),
+  };
+}
+
+/**
  * The file's real type from its first bytes; the browser's claimed type isn't
  * trusted. "heic" is recognized only to explain how to send a JPEG instead.
  */
@@ -309,32 +340,49 @@ export const EDITED_BALLOT_SOURCE: CandidateSource = {
     "Read by AI from the ballot images you uploaded, then changed by you before research, so the order is as you entered it and not confirmed as the ballot's. The images weren't kept, so this list can't be linked.",
 };
 
+/** Key in BallotRecord.started for a measure; contests use their bare index. */
+export function measureKey(index: number): string {
+  return `m${index}`;
+}
+
 type Picked = {
-  index: number;
+  /** Key in BallotRecord.started. */
+  key: string;
   query: RaceQuery;
-  candidates: BallotCandidate[];
-  source: CandidateSource;
+  candidates: BallotCandidate[] | null;
+  source: CandidateSource | null;
+  measure?: MeasureQuery;
 };
 
-/** Validates the ballot review form: which contests to research, and the user's corrections. */
+/** Only plain digits: "01", "1e0", or "" must not alias another item. */
+function pickIndexes(form: FormData, name: string): number[] | null {
+  const raw = form.getAll(name).map(String);
+  if (raw.some((v) => !/^(0|[1-9]\d{0,3})$/.test(v))) return null;
+  return [...new Set(raw.map(Number))];
+}
+
+/** Validates the ballot review form: what to research, and the user's corrections. */
 export function parseBallotResearch(
   b: BallotRecord,
   form: FormData,
-): { ok: true; picks: Picked[] } | { ok: false; error: string } {
+): { ok: true; picks: Picked[]; priorities: string[] } | { ok: false; error: string } {
   const r = b.reading;
   if (!r) return { ok: false, error: "This ballot hasn't been read." };
-  const raw = form.getAll("pick").map(String);
-  if (!raw.length) return { ok: false, error: "Choose at least one contest to research." };
-  // Only plain digits: "01", "1e0", or "" must not alias another contest.
-  if (raw.some((v) => !/^(0|[1-9]\d{0,3})$/.test(v))) {
-    return { ok: false, error: "That contest isn't available to research." };
+  const indexes = pickIndexes(form, "pick");
+  const measureIndexes = pickIndexes(form, "pick_measure");
+  if (!indexes || !measureIndexes) {
+    return { ok: false, error: "That item isn't available to research." };
   }
-  const indexes = [...new Set(raw.map(Number))];
+  if (!indexes.length && !measureIndexes.length) {
+    return { ok: false, error: "Choose at least one contest or measure to research." };
+  }
+  const priorities = parsePriorities(field(form, "priorities"));
+  if (!priorities.ok) return priorities;
   const picks: Picked[] = [];
   for (const i of indexes) {
     const contest = r.contests[i];
     if (!contest || b.started[String(i)]) {
-      return { ok: false, error: "That contest isn't available to research." };
+      return { ok: false, error: "That item isn't available to research." };
     }
     const values: FormValues = {
       city: field(form, `city_${i}`),
@@ -357,7 +405,7 @@ export function parseBallotResearch(
         c.name.toLowerCase() !== contest.candidates[k].name.toLowerCase()
       );
     picks.push({
-      index: i,
+      key: String(i),
       query: parsed.query,
       candidates: parsed.candidates.map((c) => ({
         ...c,
@@ -366,7 +414,80 @@ export function parseBallotResearch(
       source: edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE,
     });
   }
-  return { ok: true, picks };
+
+  const measures = measuresOf(r);
+  for (const i of measureIndexes) {
+    const m = measures[i];
+    if (!m || b.started[measureKey(i)]) {
+      return { ok: false, error: "That item isn't available to research." };
+    }
+    const label = field(form, `mlabel_${i}`);
+    const jurisdiction = field(form, `mjur_${i}`);
+    const name = label || m.label || "A measure";
+    if (m.kind === "retention") {
+      // A retention question is research on one person: a one-candidate race.
+      const person = field(form, `mperson_${i}`);
+      const parsed = parseRaceForm({
+        city: jurisdiction,
+        state: field(form, "state"),
+        office: label,
+        election: field(form, "election"),
+        candidates: person,
+        incumbent: person,
+      });
+      if (!parsed.ok) return { ok: false, error: `${name}: ${parsed.error}` };
+      if (parsed.candidates?.length !== 1) {
+        return { ok: false, error: `${name}: enter the judge's name.` };
+      }
+      const edited = person.toLowerCase() !== m.person.toLowerCase();
+      picks.push({
+        key: measureKey(i),
+        query: parsed.query,
+        candidates: parsed.candidates,
+        source: {
+          ...(edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE),
+          contest_kind: "retention",
+        },
+      });
+      continue;
+    }
+    if (!label || label.length > 80) {
+      return {
+        ok: false,
+        error: `${name}: enter the measure's letter or number (up to 80 characters).`,
+      };
+    }
+    if (!jurisdiction || jurisdiction.length > 80) {
+      return {
+        ok: false,
+        error: `${name}: enter the city, county, district, or state that put it on the ballot.`,
+      };
+    }
+    const base = parseRaceForm({
+      city: jurisdiction,
+      state: field(form, "state"),
+      office: label,
+      election: field(form, "election"),
+      candidates: "",
+      incumbent: "",
+    });
+    if (!base.ok) return { ok: false, error: `${name}: ${base.error}` };
+    picks.push({
+      key: measureKey(i),
+      query: base.query,
+      candidates: null,
+      source: null,
+      measure: {
+        label,
+        jurisdiction,
+        // The question as read stays attached unless the user re-labeled it as a different measure.
+        question: label.toLowerCase() === m.label.toLowerCase() ? m.question : "",
+        state: base.query.state,
+        electionDate: base.query.electionDate,
+      },
+    });
+  }
+  return { ok: true, picks, priorities: priorities.issues };
 }
 
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
@@ -387,9 +508,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     candidates: BallotCandidate[] | null,
     values: FormValues,
     source: CandidateSource | null = null,
+    extras: SubmitExtras = {},
   ) => {
     try {
-      const run = await o.jobs.submit(query, candidates, source);
+      const run = await o.jobs.submit(query, candidates, source, extras);
       return redirect(`${BASE}/races/${run.id}`);
     } catch (err) {
       if (!(err instanceof QueueFullError)) throw err;
@@ -487,8 +609,11 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         let updated = fresh;
         try {
           for (const p of parsed.picks) {
-            const run = await o.jobs.submit(p.query, p.candidates, p.source);
-            started[String(p.index)] = run.id;
+            const run = await o.jobs.submit(p.query, p.candidates, p.source, {
+              priorities: parsed.priorities,
+              measure: p.measure,
+            });
+            started[p.key] = run.id;
             last = run.id;
           }
         } catch (err) {
@@ -554,10 +679,15 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         election: field(form, "election"),
         candidates: field(form, "candidates"),
         incumbent: field(form, "incumbent"),
+        priorities: field(form, "priorities"),
       };
       const parsed = parseRaceForm(values);
       if (!parsed.ok) return html(await home({ values, error: parsed.error }), 400);
-      return await start(parsed.query, parsed.candidates, values);
+      const priorities = parsePriorities(values.priorities ?? "");
+      if (!priorities.ok) return html(await home({ values, error: priorities.error }), 400);
+      return await start(parsed.query, parsed.candidates, values, null, {
+        priorities: priorities.issues,
+      });
     }
 
     const m = path.match(/^\/races\/([^/]+?)(\.json|\/rerun|\/download)?$/);
@@ -575,14 +705,18 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         });
       }
       if (suffix === "/download" && req.method === "GET") {
-        if (!run.race || run.status !== "done") {
+        const ready = run.status === "done" && (run.measure ? run.measure_result : run.race);
+        if (!ready) {
           return html(
-            messagePage("Not ready", "This race hasn't finished researching yet.", BASE),
+            messagePage("Not ready", "This hasn't finished researching yet.", BASE),
             409,
           );
         }
         const name = slug(`${run.query.city}-${run.query.office}-${run.query.electionDate}`);
-        return html(renderRace(run.race), 200, {
+        const file = run.measure && run.measure_result
+          ? renderMeasure(run.measure_result)
+          : renderRace(run.race!);
+        return html(file, 200, {
           "content-disposition": `attachment; filename="${name}.html"`,
         });
       }
@@ -595,7 +729,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           office: run.query.office,
           election: run.query.electionDate,
         };
-        return await start(run.query, run.candidates, values, run.candidate_source ?? null);
+        return await start(run.query, run.candidates, values, run.candidate_source ?? null, {
+          priorities: run.priorities,
+          measure: run.measure ?? undefined,
+        });
       }
       return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
     }

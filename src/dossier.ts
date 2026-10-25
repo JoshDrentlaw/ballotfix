@@ -9,16 +9,30 @@
  * - Unknown evidence types collapse to "unsourced", the least trusted tag.
  */
 
-import { SECTION_IDS, SECTIONS } from "./template.ts";
+import {
+  MEASURE_SECTION_IDS,
+  MEASURE_SECTIONS,
+  priorityId,
+  SECTION_IDS,
+  SECTIONS,
+} from "./template.ts";
 import {
   type BallotCandidate,
   type BallotListing,
+  type BallotMeasure,
+  type BallotReading,
   type CandidateDossier,
   EVIDENCE_TYPES,
   type EvidenceType,
   type Fact,
+  type MeasureDossier,
+  type MeasureQuery,
+  type MeasureSectionId,
+  type PriorityResult,
   type RawCandidateResearch,
   type RawFact,
+  type RawMeasureResearch,
+  type RawSection,
   type SectionId,
   type SectionResult,
 } from "./types.ts";
@@ -82,33 +96,70 @@ function emptySection(gap: string): SectionResult {
   return { facts: [], searched: [], gap_note: gap };
 }
 
+const NOTHING_FOUND = "This run found nothing it could source for this section.";
+
+/**
+ * Validates one section and runs the provenance check: facts citing a page
+ * the session never retrieved are moved to `unverified`.
+ */
+function assembleSection(
+  rs: RawSection | undefined,
+  retrieved: ReadonlySet<string>,
+  unverified: Fact[],
+  emptyNote: string,
+): SectionResult {
+  const facts: Fact[] = [];
+  for (const rf of rs?.facts ?? []) {
+    const f = toFact(rf);
+    if (!f) continue;
+    if (retrieved.has(normalizeUrl(f.source_url)!)) facts.push(f);
+    else unverified.push(f);
+  }
+  const searched = (rs?.searched ?? []).map(clean).filter(Boolean);
+  const gap_note = cleanOrNull(rs?.gap_note) ?? (facts.length ? null : emptyNote);
+  return { facts, searched, gap_note };
+}
+
+function retrievedSet(urls: readonly string[]): Set<string> {
+  return new Set(urls.map(normalizeUrl).filter((u): u is string => u !== null));
+}
+
+/** The voter's issues, each as its own section, in their order. */
+function assemblePriorities(
+  issues: readonly string[],
+  sections: Record<string, RawSection | undefined>,
+  retrieved: ReadonlySet<string>,
+  unverified: Fact[],
+): PriorityResult[] {
+  return issues.map((issue, i) => ({
+    issue,
+    result: assembleSection(sections[priorityId(i)], retrieved, unverified, NOTHING_FOUND),
+  }));
+}
+
+/** Same placeholder for every issue, for failed and pending results. */
+function placeholderPriorities(issues: readonly string[], note: string): PriorityResult[] {
+  return issues.map((issue) => ({ issue, result: emptySection(note) }));
+}
+
 export function assembleCandidate(
   candidate: BallotCandidate,
   raw: RawCandidateResearch,
+  priorities: readonly string[] = [],
 ): CandidateDossier {
-  const retrieved = new Set(
-    raw.retrieved_urls.map(normalizeUrl).filter((u): u is string => u !== null),
-  );
+  const retrieved = retrievedSet(raw.retrieved_urls);
   const unverified: Fact[] = [];
   const sections = {} as Record<SectionId, SectionResult>;
 
   for (const spec of SECTIONS) {
-    const rs = raw.sections[spec.id];
-    const facts: Fact[] = [];
-    for (const rf of rs?.facts ?? []) {
-      const f = toFact(rf);
-      if (!f) continue;
-      if (retrieved.has(normalizeUrl(f.source_url)!)) facts.push(f);
-      else unverified.push(f);
-    }
-    const searched = (rs?.searched ?? []).map(clean).filter(Boolean);
-    let gap_note = cleanOrNull(rs?.gap_note);
-    if (facts.length === 0 && !gap_note) {
-      gap_note = "incumbentOnly" in spec && spec.incumbentOnly && !candidate.incumbent
+    sections[spec.id] = assembleSection(
+      raw.sections[spec.id],
+      retrieved,
+      unverified,
+      "incumbentOnly" in spec && spec.incumbentOnly && !candidate.incumbent
         ? "Not the incumbent in this office, so there is no record in it to report."
-        : "This run found nothing it could source for this section.";
-    }
-    sections[spec.id] = { facts, searched, gap_note };
+        : NOTHING_FOUND,
+    );
   }
 
   return {
@@ -117,6 +168,7 @@ export function assembleCandidate(
     sections,
     unverified,
     identity_note: cleanOrNull(raw.identity_note),
+    priorities: assemblePriorities(priorities, raw.sections, retrieved, unverified),
     gaps: raw.gaps.map(clean).filter(Boolean),
     model: raw.model,
     error: null,
@@ -124,19 +176,21 @@ export function assembleCandidate(
 }
 
 /** A failed candidate still gets the full template, so the page never silently drops anyone. */
-export function failedCandidate(candidate: BallotCandidate, error: string): CandidateDossier {
+export function failedCandidate(
+  candidate: BallotCandidate,
+  error: string,
+  priorities: readonly string[] = [],
+): CandidateDossier {
+  const note = "Research for this candidate failed in this run; nothing was checked.";
   const sections = {} as Record<SectionId, SectionResult>;
-  for (const id of SECTION_IDS) {
-    sections[id] = emptySection(
-      "Research for this candidate failed in this run; nothing was checked.",
-    );
-  }
+  for (const id of SECTION_IDS) sections[id] = emptySection(note);
   return {
     candidate,
     status: "failed",
     sections,
     unverified: [],
     identity_note: null,
+    priorities: placeholderPriorities(priorities, note),
     gaps: [`Research failed: ${error}`],
     model: null,
     error,
@@ -144,7 +198,10 @@ export function failedCandidate(candidate: BallotCandidate, error: string): Cand
 }
 
 /** Placeholder for a candidate still being researched; replaced when their research finishes. */
-export function pendingCandidate(candidate: BallotCandidate): CandidateDossier {
+export function pendingCandidate(
+  candidate: BallotCandidate,
+  priorities: readonly string[] = [],
+): CandidateDossier {
   const sections = {} as Record<SectionId, SectionResult>;
   for (const id of SECTION_IDS) sections[id] = emptySection("Still researching.");
   return {
@@ -153,6 +210,7 @@ export function pendingCandidate(candidate: BallotCandidate): CandidateDossier {
     sections,
     unverified: [],
     identity_note: null,
+    priorities: placeholderPriorities(priorities, "Still researching."),
     gaps: [],
     model: null,
     error: null,
@@ -161,7 +219,84 @@ export function pendingCandidate(candidate: BallotCandidate): CandidateDossier {
 
 /** Sections with at least one verified fact. Drives the overview's coverage line. */
 export function coveredSections(d: CandidateDossier): number {
-  return SECTION_IDS.filter((id) => d.sections[id].facts.length > 0).length;
+  // Runs saved before a section existed don't have it; they count it as not covered.
+  return SECTION_IDS.filter((id) => (d.sections[id]?.facts.length ?? 0) > 0).length;
+}
+
+export function assembleMeasure(
+  query: MeasureQuery,
+  raw: RawMeasureResearch,
+  priorities: readonly string[],
+  now: Date,
+): MeasureDossier {
+  const retrieved = retrievedSet(raw.retrieved_urls);
+  const unverified: Fact[] = [];
+  const sections = {} as Record<MeasureSectionId, SectionResult>;
+  for (const spec of MEASURE_SECTIONS) {
+    sections[spec.id] = assembleSection(
+      raw.sections[spec.id],
+      retrieved,
+      unverified,
+      NOTHING_FOUND,
+    );
+  }
+  return {
+    query,
+    status: "ok",
+    official_title: cleanOrNull(raw.official_title),
+    sections,
+    priorities: assemblePriorities(priorities, raw.sections, retrieved, unverified),
+    priority_issues: [...priorities],
+    unverified,
+    identity_note: cleanOrNull(raw.identity_note),
+    gaps: raw.gaps.map(clean).filter(Boolean),
+    standing_gaps: [...STANDING_GAPS],
+    model: raw.model,
+    error: null,
+    generated_at: now.toISOString(),
+  };
+}
+
+/** A measure whose research failed or hasn't finished still shows the whole template. */
+export function placeholderMeasure(
+  query: MeasureQuery,
+  priorities: readonly string[],
+  now: Date,
+  error: string | null,
+): MeasureDossier {
+  const note = error
+    ? "Research for this measure failed in this run; nothing was checked."
+    : "Still researching.";
+  const sections = {} as Record<MeasureSectionId, SectionResult>;
+  for (const id of MEASURE_SECTION_IDS) sections[id] = emptySection(note);
+  return {
+    query,
+    status: error ? "failed" : "pending",
+    official_title: null,
+    sections,
+    priorities: placeholderPriorities(priorities, note),
+    priority_issues: [...priorities],
+    unverified: [],
+    identity_note: null,
+    gaps: error ? [`Research failed: ${error}`] : [],
+    standing_gaps: [...STANDING_GAPS],
+    model: null,
+    error,
+    generated_at: now.toISOString(),
+  };
+}
+
+/**
+ * The yes/no items on a reading. Readings saved before measures were
+ * researched hold bare strings; those come back as measures with the string
+ * as their label, since there is no telling them apart from retention reliably.
+ */
+export function measuresOf(r: BallotReading): BallotMeasure[] {
+  return r.measures.map((m) =>
+    typeof m === "string"
+      ? { kind: "measure", label: m, jurisdiction: "", question: "", person: "" }
+      : m
+  );
 }
 
 /**
@@ -169,6 +304,12 @@ export function coveredSections(d: CandidateDossier): number {
  * the note to show on the race overview, or null when nobody is an incumbent.
  */
 export function incumbencyNote(listing: BallotListing): string | null {
+  if (listing.contest_kind === "retention") {
+    const names = listing.candidates.map((c) => c.name).join(" and ");
+    return `This is a yes/no retention question: voters decide whether ${
+      names || "the judge"
+    } keeps the seat, so there is no opponent to compare with. Judicial conduct rules limit what judges can say about issues, so a short platform section is expected.`;
+  }
   const incumbents = listing.candidates.filter((c) => c.incumbent).map((c) => c.name);
   if (incumbents.length === 0) return null;
   return `${incumbents.join(" and ")} ${

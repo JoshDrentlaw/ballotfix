@@ -30,7 +30,26 @@ side), or the sample ballot PDF from your county's website. Claude reads the con
 about a minute, for a few cents. You then see every contest in the order your ballot prints it, fix
 any misread names, and tick the ones to research. Each one becomes a normal race whose candidate
 order is labeled as coming from your ballot, unless you changed its list, in which case the order is
-labeled as entered by you. Measures are listed as not researched.
+labeled as entered by you.
+
+Measures, propositions, and judicial retention questions are listed too, in printed order, and can
+be ticked the same way:
+
+- A **measure** gets one page with the same sections every time: what a yes or no vote does, its
+  history (how it got on the ballot, earlier versions, the law it changes), who is for and against
+  it and who those people and groups are, the money on each side, its cost, the case for and the
+  case against (with mirrored instructions), and endorsements and coverage. The ballot question as
+  printed goes along, so the right "Measure X" is found.
+- A **judge on a retention question** gets the same dossier as a candidate, as a one-person race,
+  with the page explaining there is no opponent to compare with.
+
+### What matters most to you (optional)
+
+On the race form and the ballot review, you can list up to five issues, one per line ("housing
+costs", "police oversight"). Each becomes an extra section, shown first, on every candidate and
+measure in that run. Every candidate is asked about the same issues in the same words. The issue is
+treated as a topic, not a position: the page reports what was found and never says whether anyone
+fits your views. Re-running keeps the same issues.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
   is saved (in `data/ballots/`).
@@ -63,8 +82,11 @@ The same research is available without the app:
 ```sh
 deno task dossier --city Fontana --office Mayor
 deno task dossier --city Fontana --office Mayor \
-  --candidates "Jackie Heredia;Acquanetta Warren;Sal Casillas" --incumbent "Acquanetta Warren"
+  --candidates "Jackie Heredia;Acquanetta Warren;Sal Casillas" --incumbent "Acquanetta Warren" \
+  --priorities "housing costs;public safety"
 ```
+
+Measures are researched from the app (via an uploaded ballot), not the CLI.
 
 Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`,
 `--concurrency` (default 3), `--out` (default `out`). Re-render a saved run without calling the API:
@@ -86,8 +108,8 @@ Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `-
 
 ## Cost
 
-Each candidate is one research session with up to 15 searches and 10 page fetches on
-`claude-opus-5`. Expect roughly a dollar or two per candidate at `high` effort. Use
+Each candidate, and each measure, is one research session with up to 15 searches and 10 page fetches
+on `claude-opus-5`. Expect roughly a dollar or two per candidate or measure at `high` effort. Use
 `--effort
 medium` or `--model` to trade depth for cost.
 

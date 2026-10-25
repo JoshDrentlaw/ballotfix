@@ -10,11 +10,13 @@ import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
+import { MAX_PRIORITIES } from "./template.ts";
 import type { BallotCandidate, RaceDossier, RaceQuery } from "./types.ts";
 
 const USAGE = `Usage:
   deno task dossier --city <city> [--state CA] [--office Mayor] [--election 2026-11-03]
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
+                    [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
   deno task dossier --render <saved.json> [--out out]
 
@@ -49,6 +51,7 @@ async function main(): Promise<number> {
       "election",
       "candidates",
       "incumbent",
+      "priorities",
       "model",
       "effort",
       "concurrency",
@@ -102,6 +105,8 @@ async function main(): Promise<number> {
 
   const race = await runRace(query, researcher, {
     candidates: args.candidates ? parseCandidates(args.candidates, args.incumbent) : undefined,
+    priorities: (args.priorities ?? "").split(";").map((p) => p.trim()).filter(Boolean)
+      .slice(0, MAX_PRIORITIES),
     concurrency,
     onProgress: (m) => console.error(m),
   });
