@@ -78,7 +78,11 @@ function when(iso: string): string {
 
 function progress(run: RunRecord): string {
   if (run.measure) {
-    return run.status === "done" ? "Measure researched" : "Researching the measure";
+    return run.status === "done"
+      ? "Measure researched"
+      : run.status === "queued" || run.status === "running"
+      ? "Researching the measure"
+      : "Measure not researched";
   }
   const cands = run.race?.candidates ?? [];
   if (!cands.length) return run.status === "done" ? "No candidates found" : "Finding the ballot";
@@ -423,13 +427,22 @@ function pickText(picks: readonly string[] | undefined): string {
   return picks?.length ? esc(picks.join(", ")) : `<span class="undecided">Undecided</span>`;
 }
 
+/**
+ * What can be picked, plus any saved pick that is no longer listed (say, a
+ * name corrected after it was picked), so saving the form never erases it.
+ */
+export function withSaved(options: readonly string[], saved: readonly string[] = []): string[] {
+  return [...options, ...saved.filter((p) => !options.includes(p))];
+}
+
 /** Radio buttons (or checkboxes for vote-for-several) for a pick, with "Undecided". */
 function choiceInputs(
   name: string,
-  options: readonly string[],
+  listed: readonly string[],
   max: number,
   current: readonly string[],
 ): string {
+  const options = withSaved(listed, current);
   const picked = new Set(current);
   return max > 1
     ? options.map((o) =>
@@ -564,7 +577,7 @@ ${mine}`;
     }
     return page(
       measureTitle(run.measure),
-      measureBody(run.measure_result, { status, actions, mine }),
+      measureBody(run.measure_result, { status, actions, mine, stopped: !active }),
       { nav: true, base, ...refresh },
     );
   }
@@ -602,7 +615,6 @@ export interface PickItem {
   choiceId: string;
 }
 
-/** Everything the voter has leaned toward, in ballot order, to fill in the ballot from. */
 /**
  * Everything the voter has leaned toward, in ballot order, to fill in the
  * ballot from. One form, so every pick and note can be changed in place.
@@ -631,6 +643,7 @@ export function picksPage(
       : "";
     return `<li><h3>${esc(x.heading)}</h3><p class="desig">${esc(x.detail)}</p>${pick}${notes}
 <div class="noprint">${inputs}
+<input type="hidden" name="seen_${esc(x.key)}" value="${esc(x.choice?.updated_at ?? "")}">
 <label>Notes <textarea name="notes_${esc(x.key)}" maxlength="${MAX_NOTES}">${
       esc(notesValue)
     }</textarea></label>
@@ -639,7 +652,7 @@ export function picksPage(
   const body = `<h1>${title}</h1>
 <p class="sub">From the ballot uploaded ${
     esc(when(b.created_at))
-  } · ${decided} of ${items.length} decided. In the order your ballot prints them.</p>
+  } · ${decided} of ${items.length} decided. Contests in the order your ballot prints them, then measures in theirs; your ballot may mix the two.</p>
 <p class="note noprint">These are your own preliminary picks and notes, saved on this server. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
 ${o.saved ? `<p class="note noprint" role="status">Saved.</p>` : ""}
 ${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}

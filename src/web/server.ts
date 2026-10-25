@@ -17,9 +17,9 @@
  *   GET  /healthz
  */
 
-import { measuresOf } from "../dossier.ts";
+import { measuresOf, parsePriorities } from "../dossier.ts";
 import { renderMeasure, renderRace, slug } from "../render.ts";
-import { MAX_PRIORITIES, MAX_PRIORITIES_PER_LIST, MAX_PRIORITY_LENGTH } from "../template.ts";
+import { MAX_PRIORITIES } from "../template.ts";
 import type {
   BallotCandidate,
   BallotMediaType,
@@ -44,6 +44,7 @@ import {
   type PickItem,
   picksPage,
   runPage,
+  withSaved,
 } from "./pages.ts";
 import {
   type BallotRecord,
@@ -195,37 +196,6 @@ export function parseRaceForm(v: FormValues): Parsed {
 }
 
 /**
- * The optional "what matters most to you" list: one issue per line (or
- * semicolon). Each becomes the same extra question for every candidate.
- */
-export function parsePriorities(text: string): { ok: true; issues: string[] } | {
-  ok: false;
-  error: string;
-} {
-  const issues = text.split(/[\n;]/)
-    // deno-lint-ignore no-control-regex
-    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-  if (issues.length > MAX_PRIORITIES_PER_LIST) {
-    return {
-      ok: false,
-      error: `Name up to ${MAX_PRIORITIES_PER_LIST} issues that matter most to you in each list.`,
-    };
-  }
-  if (issues.some((s) => s.length > MAX_PRIORITY_LENGTH)) {
-    return {
-      ok: false,
-      error: `Keep each issue to ${MAX_PRIORITY_LENGTH} characters, like "housing costs".`,
-    };
-  }
-  const seen = new Set<string>();
-  return {
-    ok: true,
-    issues: issues.filter((s) => !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase())),
-  };
-}
-
-/**
  * The ballot-wide issues followed by one contest's own, repeats dropped. Every
  * candidate in that contest gets the combined list in the same words.
  */
@@ -309,6 +279,8 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array<ArrayBu
 
 const MB = 1024 * 1024;
 const BALLOTS_BUSY = "Other ballots are being read right now. Try again in a minute.";
+
+export { parsePriorities };
 
 export async function parseBallotUpload(
   form: FormData,
@@ -731,20 +703,33 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       // Validate everything before saving anything, so an error never half-saves the sheet.
       const parsed = [];
       for (const it of items) {
-        const p = parseChoice(it, form, `_${it.key}`);
+        const p = parseChoice(
+          { options: withSaved(it.options, it.choice?.picks), max: it.max },
+          form,
+          `_${it.key}`,
+        );
         if (!p.ok) {
           return html(
             picksPage(b, items, BASE, { error: `${it.heading}: ${p.error}`, form }),
             400,
           );
         }
-        parsed.push({ it, p });
-      }
-      for (const { it, p } of parsed) {
         const same = (it.choice?.notes ?? "") === p.notes &&
           JSON.stringify(it.choice?.picks ?? []) === JSON.stringify(p.picks);
-        if (!same) await saveChoice(o.choices, it.choiceId, p);
+        // Saved elsewhere (a research page, another tab) since this sheet was loaded:
+        // writing this sheet's older copy back would undo that.
+        if (!same && field(form, `seen_${it.key}`) !== (it.choice?.updated_at ?? "")) {
+          return html(
+            picksPage(b, items, BASE, {
+              error:
+                `${it.heading} was changed somewhere else after you opened this page. Nothing was saved; here is the current version, so redo your changes.`,
+            }),
+            409,
+          );
+        }
+        if (!same) parsed.push({ it, p });
       }
+      for (const { it, p } of parsed) await saveChoice(o.choices, it.choiceId, p);
       return redirect(`${BASE}/ballots/${b.id}/picks?saved=1`);
     }
     if (suffix === "/research" && req.method === "POST") {
@@ -884,7 +869,12 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         return html(await view({ saved: url.searchParams.has("saved") }));
       }
       if (suffix === "/choice" && req.method === "POST" && o.choices) {
-        const parsed = parseChoice(choiceOptions(run), await req.formData());
+        const { options, max } = choiceOptions(run);
+        const prev = await choiceFor(run);
+        const parsed = parseChoice(
+          { options: withSaved(options, prev?.picks), max },
+          await req.formData(),
+        );
         if (!parsed.ok) {
           return html(messagePage("Not saved", parsed.error, BASE), 400);
         }
@@ -930,6 +920,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         // Point the ballot (and its picks sheet) at the new run.
         const next = res.headers.get("location")?.split("/").pop();
         const link = run.ballot;
+        // Wait out a contest start on the same ballot (it holds the lock only briefly).
+        for (let i = 0; link && starting.has(link.id) && i < 100; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
         if (res.status === 303 && next && link && o.ballots && !starting.has(link.id)) {
           // Same per-ballot lock as starting contests, so neither write loses the other's.
           starting.add(link.id);

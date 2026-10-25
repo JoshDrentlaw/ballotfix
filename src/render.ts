@@ -122,12 +122,12 @@ type Subject = "candidate" | "measure";
 
 /** Labels for the stance on a voter's issue. Undefined for topic-only issues and old runs. */
 function stanceLabel(st: Stance | undefined, subject: Subject): string | null {
-  const yes = subject === "measure" ? "A yes vote " : "";
+  const measure = subject === "measure";
   switch (st) {
     case "conflicts":
-      return subject === "measure" ? `${yes}conflicts with your view` : "Conflicts with your view";
+      return measure ? "A yes vote conflicts with your view" : "Conflicts with your view";
     case "aligns":
-      return subject === "measure" ? `${yes}matches your view` : "Matches your view";
+      return measure ? "A yes vote matches your view" : "Matches your view";
     case "mixed":
       return "Mixed record on your view";
     case "unclear":
@@ -437,7 +437,7 @@ export function measureTitle(m: { label: string; jurisdiction: string; electionD
 /** One measure's page: the same template for every measure, both sides sought equally. */
 export function measureBody(
   d: MeasureDossier,
-  extra: { status?: string; actions?: string; mine?: string } = {},
+  extra: { status?: string; actions?: string; mine?: string; stopped?: boolean } = {},
 ): string {
   const q = d.query;
   const question = q.question
@@ -452,7 +452,11 @@ export function measureBody(
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
     : "";
   const body = d.status === "pending"
-    ? `<p class="gap">Research on this measure is still running. This page updates on its own.</p>`
+    ? `<p class="gap">${
+      extra.stopped
+        ? "Research on this measure stopped before it finished. Research it again to fill this in."
+        : "Research on this measure is still running. This page updates on its own."
+    }</p>`
     : `${prioritiesHtml(d.priorities, "measure")}
 ${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("")}
 ${gapsAndUnverified(d.gaps, d.unverified)}`;

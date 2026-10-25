@@ -996,8 +996,57 @@ Deno.test("the picks sheet changes every pick and note in place, researched or n
   const run = (await s.store.list())[0];
   const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
   assertStringIncludes(page, "Known quantity");
-  await s.app(postForm(`${loc}/picks`, [["pick_0", "Joz Sida"], ["notes_0", "Changed my mind"]]));
+  const fresh = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  const seen = fresh.match(/name="seen_0" value="([^"]*)"/)![1];
+  const seenM0 = fresh.match(/name="seen_m0" value="([^"]*)"/)![1];
+  assert(seen && seenM0, "the sheet carries each item's version");
+  // As a browser posts it: every item, including the measure left as it was.
+  const edit = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Joz Sida"],
+    ["notes_0", "Changed my mind"],
+    ["seen_0", seen],
+    ["pick_m0", "No"],
+    ["seen_m0", seenM0],
+  ]));
+  assertEquals(edit.status, 303);
   const again = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
   assertStringIncludes(again, `value="Joz Sida" checked`);
   assertStringIncludes(again, "Changed my mind");
+
+  // A sheet loaded before that edit can't write its older copy back over it.
+  const stale = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["seen_0", seen],
+    ["pick_m0", "Yes"],
+    ["seen_m0", seenM0],
+  ]));
+  assertEquals(stale.status, 409);
+  assertStringIncludes(await stale.text(), "changed somewhere else");
+  const kept = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(kept, "Changed my mind");
+  // All or nothing: the measure in that same post wasn't saved either.
+  assertEquals((await s.choices.get(`${loc.split("/").pop()}-m0`))!.picks, ["No"]);
+});
+
+Deno.test("a saved pick that is no longer listed survives saving the form", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  // Picked as read, then the name was corrected when research started.
+  await s.choices.save({
+    id: `${id}-0`,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+    picks: ["Joz Sda"],
+    notes: "",
+  });
+  await s.app(postForm(`${loc}/research`, MAYOR));
+  s.port.release();
+  await s.jobs.idle();
+  const run = (await s.store.list())[0];
+  const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(page, `value="Joz Sda" checked`);
+  await s.app(postForm(`/races/${run.id}/choice`, [["pick", "Joz Sda"], ["notes", "typo?"]]));
+  assertEquals((await s.choices.get(`${id}-0`))!.picks, ["Joz Sda"]);
 });

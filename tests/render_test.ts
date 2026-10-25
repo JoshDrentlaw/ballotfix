@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { renderMeasure, renderRace, safeHref, slug } from "../src/render.ts";
+import { measureBody, renderMeasure, renderRace, safeHref, slug } from "../src/render.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
 
@@ -177,4 +177,51 @@ Deno.test("stances show on the card and the issue, conflicts first, only when a 
   assert(!card.includes("Seems supportive"));
   assertStringIncludes(html, "Voted against tenant protections.");
   assertStringIncludes(html, "Not enough on record to say");
+});
+
+Deno.test("a stance resting only on advocacy says so; one on unsourced claims is unclear", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const f = (evidence_type: string) => ({
+    facts: [{
+      statement: "Said X.",
+      source_name: "Mailer",
+      source_url: "https://a.example/m",
+      author: null,
+      published: null,
+      evidence_type,
+    }],
+    searched: [],
+    gap_note: null,
+  });
+  const race = await runRace(
+    QUERY,
+    new FakeResearch(listing([c]), {
+      "Joz Sida": raw({
+        sections: { priority_1: f("opinion"), priority_2: f("unsourced") },
+        stances: {
+          priority_1: { stance: "conflicts", basis: "Mailer says so." },
+          priority_2: { stance: "aligns", basis: "Blog says so." },
+        },
+        retrieved_urls: ["https://a.example/m"],
+      }),
+    }),
+    { priorities: ["a", "b"] },
+  );
+  const [p1, p2] = race.candidates[0].priorities!;
+  assertEquals(p1.stance, "conflicts");
+  assertStringIncludes(p1.stance_basis!, "Rests only on statements");
+  assertEquals(p2.stance, "unclear");
+});
+
+Deno.test("an interrupted measure doesn't claim it is still running", async () => {
+  const d = await runMeasure({
+    label: "Measure X",
+    jurisdiction: "City",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  }, new FakeResearch(listing([]), {}));
+  const pending = { ...d, status: "pending" as const };
+  assertStringIncludes(measureBody(pending, { stopped: true }), "stopped before it finished");
+  assertStringIncludes(measureBody(pending), "still running");
 });

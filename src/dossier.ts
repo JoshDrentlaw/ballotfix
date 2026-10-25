@@ -10,6 +10,8 @@
  */
 
 import {
+  MAX_PRIORITIES_PER_LIST,
+  MAX_PRIORITY_LENGTH,
   MEASURE_SECTION_IDS,
   MEASURE_SECTIONS,
   priorityId,
@@ -149,9 +151,17 @@ function assemblePriorities(
       ? rs.stance as Stance
       : "unclear";
     let stance_basis = cleanOrNull(rs?.basis);
-    if (stance !== "no_position" && stance !== "unclear" && result.facts.length === 0) {
-      stance = "unclear";
-      stance_basis = "No verified source in this run supports a stance on this.";
+    const usable = result.facts.filter((f) => f.evidence_type !== "unsourced");
+    if (stance !== "no_position" && stance !== "unclear") {
+      if (usable.length === 0) {
+        stance = "unclear";
+        stance_basis = "No verified source in this run supports a stance on this.";
+      } else if (usable.every((f) => f.evidence_type === "opinion")) {
+        // Candidates' own statements count, but say so: no record or reporting backs it.
+        stance_basis = `${
+          stance_basis ? `${stance_basis} ` : ""
+        }(Rests only on statements, endorsements, or advocacy, not records or reporting.)`;
+      }
     }
     return { issue, result, stance, stance_basis };
   });
@@ -335,4 +345,35 @@ export function incumbencyNote(listing: BallotListing): string | null {
   return `${incumbents.join(" and ")} ${
     incumbents.length === 1 ? "holds" : "hold"
   } this office now, so there is a public record in it to research. Challengers usually have far less. A shorter dossier is not a cleaner one, and a longer one is not a worse one.`;
+}
+
+/**
+ * The optional "what matters most to you" list: one issue per line (or
+ * semicolon). Each becomes the same extra question for every candidate.
+ */
+export function parsePriorities(text: string): { ok: true; issues: string[] } | {
+  ok: false;
+  error: string;
+} {
+  const issues = text.split(/[\n;]/)
+    // deno-lint-ignore no-control-regex
+    .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (issues.length > MAX_PRIORITIES_PER_LIST) {
+    return {
+      ok: false,
+      error: `Name up to ${MAX_PRIORITIES_PER_LIST} issues that matter most to you in each list.`,
+    };
+  }
+  if (issues.some((s) => s.length > MAX_PRIORITY_LENGTH)) {
+    return {
+      ok: false,
+      error: `Keep each issue to ${MAX_PRIORITY_LENGTH} characters, like "housing costs".`,
+    };
+  }
+  const seen = new Set<string>();
+  return {
+    ok: true,
+    issues: issues.filter((s) => !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase())),
+  };
 }

@@ -10,7 +10,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
-import { MAX_PRIORITIES } from "./template.ts";
+import { parsePriorities } from "./dossier.ts";
 import type { BallotCandidate, RaceDossier, RaceQuery } from "./types.ts";
 
 const USAGE = `Usage:
@@ -92,6 +92,13 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  const parsed = parsePriorities(args.priorities ?? "");
+  if (!parsed.ok) {
+    console.error(`--priorities: ${parsed.error}`);
+    return 2;
+  }
+  const priorities = parsed.issues;
+
   const query: RaceQuery = {
     city: args.city,
     state: args.state.toUpperCase(),
@@ -105,8 +112,7 @@ async function main(): Promise<number> {
 
   const race = await runRace(query, researcher, {
     candidates: args.candidates ? parseCandidates(args.candidates, args.incumbent) : undefined,
-    priorities: (args.priorities ?? "").split(";").map((p) => p.trim()).filter(Boolean)
-      .slice(0, MAX_PRIORITIES),
+    priorities,
     concurrency,
     onProgress: (m) => console.error(m),
   });
