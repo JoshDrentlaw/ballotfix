@@ -27,7 +27,10 @@ Starting research spends money on the operator's API key, so the app:
   refused);
 - validates every form field, caps candidates at 20, and queues at most three races behind the
   running one;
-- only opens run files whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`.
+- only opens run and ballot files whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`;
+- for ballot uploads, stops reading the body past 23 MB, decides each file's type from its bytes
+  (JPEG, PNG, WebP, PDF only), caps files at 8 and 7 MB each, reads at most two ballots at once, and
+  never writes the images to disk. Only the contests read from them are saved.
 
 Responses carry the same CSP as the page (plus `form-action 'self'`), `X-Frame-Options: DENY`,
 `X-Content-Type-Options: nosniff`, and `Referrer-Policy: same-origin`.

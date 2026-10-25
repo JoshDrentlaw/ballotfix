@@ -4,7 +4,13 @@
  * written a handful of times.
  */
 
-import type { BallotCandidate, RaceDossier, RaceQuery } from "../types.ts";
+import type {
+  BallotCandidate,
+  BallotReading,
+  CandidateSource,
+  RaceDossier,
+  RaceQuery,
+} from "../types.ts";
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "interrupted";
 
@@ -13,6 +19,8 @@ export interface RunRecord {
   query: RaceQuery;
   /** Candidate list the user supplied, if any; null means ballot discovery. */
   candidates: BallotCandidate[] | null;
+  /** Where `candidates` came from; absent or null means typed in by the user. */
+  candidate_source?: CandidateSource | null;
   status: RunStatus;
   created_at: string;
   updated_at: string;
@@ -28,11 +36,12 @@ export function isRunId(id: string): boolean {
   return ID_RE.test(id);
 }
 
-export class RunStore {
+/** One JSON file per record in a directory, keyed by a validated id. Shared by runs and ballots. */
+class JsonDir<T extends { id: string; created_at: string }> {
   constructor(readonly dir: string) {}
 
   #path(id: string): string {
-    if (!isRunId(id)) throw new Error(`invalid run id: ${id}`);
+    if (!isRunId(id)) throw new Error(`invalid id: ${id}`);
     return `${this.dir}/${id}.json`;
   }
 
@@ -41,38 +50,40 @@ export class RunStore {
   }
 
   /** Atomic save: write a temp file, then rename over the old one. */
-  async save(run: RunRecord): Promise<void> {
-    const path = this.#path(run.id);
+  async save(record: T): Promise<void> {
+    const path = this.#path(record.id);
     const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-    await Deno.writeTextFile(tmp, JSON.stringify(run));
+    await Deno.writeTextFile(tmp, JSON.stringify(record));
     await Deno.rename(tmp, path);
   }
 
-  async get(id: string): Promise<RunRecord | null> {
+  async get(id: string): Promise<T | null> {
     if (!isRunId(id)) return null;
     try {
-      return JSON.parse(await Deno.readTextFile(this.#path(id))) as RunRecord;
+      return JSON.parse(await Deno.readTextFile(this.#path(id))) as T;
     } catch (err) {
       if (err instanceof Deno.errors.NotFound || err instanceof SyntaxError) return null;
       throw err;
     }
   }
 
-  /** All runs, newest first. Unreadable files are skipped, not fatal. */
-  async list(): Promise<RunRecord[]> {
-    const runs: RunRecord[] = [];
+  /** All records, newest first. Unreadable files are skipped, not fatal. */
+  async list(): Promise<T[]> {
+    const out: T[] = [];
     try {
       for await (const e of Deno.readDir(this.dir)) {
         if (!e.isFile || !e.name.endsWith(".json")) continue;
-        const run = await this.get(e.name.slice(0, -5));
-        if (run) runs.push(run);
+        const r = await this.get(e.name.slice(0, -5));
+        if (r) out.push(r);
       }
     } catch (err) {
       if (!(err instanceof Deno.errors.NotFound)) throw err;
     }
-    return runs.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
+}
 
+export class RunStore extends JsonDir<RunRecord> {
   /**
    * A run that was queued or running when the server stopped will never
    * finish. Say so rather than leaving it spinning forever.
@@ -86,6 +97,47 @@ export class RunStore {
         status: "interrupted",
         updated_at: now,
         error: "The server restarted before this research finished.",
+      });
+      n++;
+    }
+    return n;
+  }
+}
+
+export type BallotStatus = "reading" | "read" | "failed" | "interrupted";
+
+/**
+ * An uploaded ballot. Only what was read from it is kept: the photos and
+ * PDFs themselves are never written to disk.
+ */
+export interface BallotRecord {
+  id: string;
+  status: BallotStatus;
+  created_at: string;
+  updated_at: string;
+  error: string | null;
+  /** How many photos or PDFs were uploaded. */
+  pages: number;
+  reading: BallotReading | null;
+  /** Race runs started from this ballot, by contest index. */
+  started: Record<string, string>;
+}
+
+/** Ballots live in a subdirectory of the run directory, so RunStore.list() never sees them. */
+export class BallotStore extends JsonDir<BallotRecord> {
+  constructor(runDir: string) {
+    super(`${runDir}/ballots`);
+  }
+
+  async markInterrupted(now: string): Promise<number> {
+    let n = 0;
+    for (const b of await this.list()) {
+      if (b.status !== "reading") continue;
+      await this.save({
+        ...b,
+        status: "interrupted",
+        updated_at: now,
+        error: "The server restarted before this ballot was read. Upload it again.",
       });
       n++;
     }

@@ -2,7 +2,13 @@
  * Placeholder data for the layout sample and the demo server. Not research
  * about real people: every name and statement is labeled as a placeholder.
  */
-import type { BallotListing, RawCandidateResearch, ResearchPort } from "../src/types.ts";
+import type {
+  BallotListing,
+  BallotReader,
+  BallotReading,
+  RawCandidateResearch,
+  ResearchPort,
+} from "../src/types.ts";
 
 export const listing: BallotListing = {
   candidates: [
@@ -58,6 +64,50 @@ export const withFacts: RawCandidateResearch = {
   retrieved_urls: ["https://example.org/mayor", "https://example.org/news/1"],
   model: "layout-sample",
 };
+
+export const sampleReading: BallotReading = {
+  election_date: "2026-11-03",
+  state: "CA",
+  county: "Example County (placeholder)",
+  contests: [
+    {
+      office: "Mayor",
+      jurisdiction: "City of Example",
+      vote_for: 1,
+      candidates: listing.candidates,
+    },
+    {
+      office: "Member, City Council, District 2",
+      jurisdiction: "City of Example",
+      vote_for: 1,
+      candidates: [
+        { name: "Sample Candidate D", ballot_designation: "Councilmember", incumbent: true },
+        { name: "Sample Candidate E", ballot_designation: "Teacher", incumbent: false },
+      ],
+    },
+    {
+      office: "Governing Board Member, Trustee Area 4",
+      jurisdiction: "Example Unified School District",
+      vote_for: 1,
+      candidates: [
+        { name: "Sample Candidate F", ballot_designation: "Parent", incumbent: false },
+      ],
+    },
+  ],
+  measures: ["Measure X (placeholder): sales tax for parks"],
+  notes: "LAYOUT SAMPLE. Placeholder contests, not read from your upload.",
+  model: "layout-sample",
+};
+
+/** Fake ballot reader: ignores the upload and returns the placeholder ballot. */
+export function sampleBallotReader(delayMs = 0): BallotReader {
+  return {
+    readBallot: async () => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return sampleReading;
+    },
+  };
+}
 
 /** Fake research port; delayMs simulates how long real research takes. */
 export function samplePort(delayMs = 0): ResearchPort {

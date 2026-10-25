@@ -43,7 +43,14 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - `src/types.ts`: core types and `ResearchPort`. No vendor imports.
 - `src/research/anthropic.ts`: the only adapter. Claude with server-side `web_search` and
   `web_fetch`, JSON-schema output, `pause_turn` resumption, `fallbacks: "default"`. Searches run on
-  Anthropic's side, so the process only needs `api.anthropic.com`.
+  Anthropic's side, so the process only needs `api.anthropic.com`. It also implements `BallotReader`
+  (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed order out, with no
+  web tools.
+- Ballot upload: images are held in memory for the one read call and never written to disk; only the
+  `BallotReading` is saved (`data/ballots/`). The reader must never report the voter's name,
+  address, ballot id, or which choices are marked, and its schema has no field for them. The user
+  reviews and corrects the reading before any research starts. Races started from it carry
+  `candidate_source` with `order_basis: "official_ballot_order"`.
 - `src/dossier.ts`: validation and invariant enforcement. `src/race.ts`: orchestration, with
   `onUpdate` partial results (unfinished candidates have status "pending").
 - `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both

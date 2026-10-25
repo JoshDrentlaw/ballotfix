@@ -5,6 +5,7 @@ import type {
   BallotCandidate,
   BallotListing,
   CandidateDossier,
+  CandidateSource,
   RaceDossier,
   RaceQuery,
   ResearchPort,
@@ -13,6 +14,8 @@ import type {
 export interface RunRaceOptions {
   /** Skip ballot discovery and use this list, in this order. */
   candidates?: BallotCandidate[];
+  /** Where `candidates` came from. Defaults to "supplied by the user", unofficial order. */
+  candidateSource?: CandidateSource;
   concurrency?: number;
   onProgress?: (msg: string) => void;
   /**
@@ -51,11 +54,13 @@ export async function runRace(
   if (opts.candidates?.length) {
     listing = {
       candidates: opts.candidates,
-      source_name: "Candidate list supplied by the user",
+      ...(opts.candidateSource ?? {
+        source_name: "Candidate list supplied by the user",
+        order_basis: "unofficial",
+        notes:
+          "Ballot discovery was skipped. Order is as supplied, not verified against an official source.",
+      }),
       source_url: null,
-      order_basis: "unofficial",
-      notes:
-        "Ballot discovery was skipped. Order is as supplied, not verified against an official source.",
       retrieved_urls: [],
     };
   } else {

@@ -194,6 +194,16 @@ form.inline { display: inline; margin: 0; }
 .pill-failed, .pill-interrupted { color: var(--ev-unsourced); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
+input[type=file] { padding: 10px; }
+.contests { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.contest { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+.contest p { margin: 0; }
+.names { margin: 0; padding-left: 22px; }
+.names .desig { font-size: .85rem; }
+label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
+.contest details { display: grid; gap: 10px; }
+.contest details label { margin-top: 10px; }
 `;
 
 export interface PageOptions {

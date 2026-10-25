@@ -10,14 +10,14 @@
  *                        (see tower-expert's main.ts for the same convention). Requests
  *                        work with or without it, so direct access is unaffected.
  *   BALLOTFIX_PASSWORD  require this password (HTTP Basic auth, any username)
- *   BALLOTFIX_DATA_DIR  where runs are saved (default data)
+ *   BALLOTFIX_DATA_DIR  where runs are saved (default data); ballot readings go in its ballots/
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
-import { JobRunner } from "./web/jobs.ts";
+import { BallotJobs, JobRunner } from "./web/jobs.ts";
 import { createApp } from "./web/server.ts";
-import { RunStore } from "./web/store.ts";
+import { BallotStore, RunStore } from "./web/store.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = typeof EFFORTS[number];
@@ -42,16 +42,23 @@ if (host !== "127.0.0.1" && host !== "localhost" && !password) {
   );
 }
 
-const store = new RunStore(env("BALLOTFIX_DATA_DIR") ?? "data");
+const dataDir = env("BALLOTFIX_DATA_DIR") ?? "data";
+const store = new RunStore(dataDir);
 await store.init();
-const interrupted = await store.markInterrupted(new Date().toISOString());
+const ballotStore = new BallotStore(dataDir);
+await ballotStore.init();
+const now = new Date().toISOString();
+const interrupted = await store.markInterrupted(now);
 if (interrupted) console.log(`Marked ${interrupted} unfinished run(s) as interrupted.`);
+await ballotStore.markInterrupted(now);
 
-const jobs = new JobRunner(
-  store,
-  () => new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), effort: effort as Effort }),
-  { log: (m) => console.log(m) },
-);
+const researcher = () =>
+  new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), effort: effort as Effort });
+const jobs = new JobRunner(store, researcher, { log: (m) => console.log(m) });
+const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
-Deno.serve({ hostname: host, port }, createApp({ store, jobs, canResearch, password, basePath }));
+Deno.serve(
+  { hostname: host, port },
+  createApp({ store, jobs, ballots, canResearch, password, basePath }),
+);
