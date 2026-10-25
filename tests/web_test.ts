@@ -903,7 +903,7 @@ Deno.test("notes and a pick are saved apart from the run, kept on rerun, and lis
     sheet.indexOf("Joz Sida") < sheet.indexOf(">No<"),
     "ballot order: contests, then measures",
   );
-  assertStringIncludes(sheet, `href="${loc}/items/1">Add a note or pick`);
+  assertStringIncludes(sheet, `name="pick_1"`);
 
   // A rerun keeps the notes and pick, and the sheet follows the new run.
   await s.app(post(`/races/${mayor.id}/rerun`, {}));
@@ -951,33 +951,53 @@ Deno.test("each contest can add its own issues to the ballot-wide ones", async (
   await s.jobs.idle();
 });
 
-Deno.test("an item not researched can still get a note and pick, which stays with it if researched later", async () => {
+Deno.test("the picks sheet changes every pick and note in place, researched or not", async () => {
   const s = await setup();
   const loc = await readBallot(s);
-  const form = await (await s.app(new Request(`http://app.test${loc}/items/m1`))).text();
-  assertStringIncludes(form, "Pat Judge (retention)");
-  assertStringIncludes(form, `value="Yes"`);
-  assertEquals((await s.app(new Request(`http://app.test${loc}/items/m9`))).status, 404);
-  assertEquals((await s.app(new Request(`http://app.test${loc}/items/01`))).status, 404);
+  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  assertStringIncludes(sheet, "Pat Judge (retention)");
+  assertStringIncludes(sheet, `name="pick_m1" value="Yes"`);
+  assertStringIncludes(sheet, `type="radio" name="pick_0"`);
 
-  // Vote for 2: two picks are fine, three aren't.
-  assertEquals((await s.app(postForm(`${loc}/items/2`, [["pick", "Nobody"]]))).status, 400);
-  const save = await s.app(postForm(`${loc}/items/0`, [
-    ["pick", "Acquanetta Warren"],
-    ["notes", "Known quantity"],
+  // One bad item refuses the whole sheet and keeps what was typed.
+  const bad = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["pick_m0", "Maybe"],
+  ]));
+  assertEquals(bad.status, 400);
+  const badPage = await bad.text();
+  assertStringIncludes(badPage, "Measure X: That pick isn&#39;t one of the choices");
+  assertStringIncludes(badPage, "Known quantity");
+  assertEquals(await s.choices.list(), []);
+  const tooMany = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["pick_0", "Joz Sida"],
+  ]));
+  assertEquals(tooMany.status, 400);
+
+  const save = await s.app(postForm(`${loc}/picks`, [
+    ["pick_0", "Acquanetta Warren"],
+    ["notes_0", "Known quantity"],
+    ["pick_m0", "No"],
   ]));
   assertEquals(save.status, 303);
-  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
-  assertStringIncludes(sheet, "Known quantity");
+  assertEquals(save.headers.get("location"), `${loc}/picks?saved=1`);
+  assertEquals((await s.choices.list()).length, 2, "unchanged items aren't written");
+  const after = await (await s.app(new Request(`http://app.test${loc}/picks?saved=1`))).text();
+  assertStringIncludes(after, "2 of 5 decided");
+  assertStringIncludes(after, `value="Acquanetta Warren" checked`);
 
-  // Researching it later shows the same note on the research page.
+  // Researching it later shows the same note on the research page, and the sheet
+  // then edits that same record.
   await s.app(postForm(`${loc}/research`, MAYOR));
   s.port.release();
   await s.jobs.idle();
   const run = (await s.store.list())[0];
   const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
   assertStringIncludes(page, "Known quantity");
-  const moved = await s.app(new Request(`http://app.test${loc}/items/0`));
-  assertEquals(moved.status, 303);
-  assertEquals(moved.headers.get("location"), `/races/${run.id}#mine`);
+  await s.app(postForm(`${loc}/picks`, [["pick_0", "Joz Sida"], ["notes_0", "Changed my mind"]]));
+  const again = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(again, `value="Joz Sida" checked`);
+  assertStringIncludes(again, "Changed my mind");
 });

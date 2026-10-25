@@ -36,7 +36,6 @@ import {
   type FormValues,
   type HomeOptions,
   homePage,
-  itemChoicePage,
   MAX_BALLOT_FILE_BYTES,
   MAX_BALLOT_FILES,
   MAX_BALLOT_TOTAL_BYTES,
@@ -552,15 +551,16 @@ export function parseBallotResearch(
 export function parseChoice(
   { options, max }: { options: readonly string[]; max: number },
   form: FormData,
+  suffix = "",
 ): { ok: true; picks: string[]; notes: string } | { ok: false; error: string } {
-  const picks = [...new Set(form.getAll("pick").map(String).filter(Boolean))];
+  const picks = [...new Set(form.getAll(`pick${suffix}`).map(String).filter(Boolean))];
   if (picks.some((p) => !options.includes(p))) {
     return { ok: false, error: "That pick isn't one of the choices for this." };
   }
   if (picks.length > max) {
     return { ok: false, error: `This one is vote for ${max}; pick up to ${max}.` };
   }
-  const raw = form.get("notes");
+  const raw = form.get(`notes${suffix}`);
   const notes = (typeof raw === "string" ? raw : "").replace(/\r\n/g, "\n").trim();
   if (notes.length > MAX_NOTES) {
     return { ok: false, error: `Notes can be up to ${MAX_NOTES} characters.` };
@@ -652,15 +652,14 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       ...measuresOf(r).map((_, i) => measureKey(i)),
     ];
     return await Promise.all(keys.map(async (key): Promise<PickItem> => {
-      const { heading, detail } = ballotItem(b, key)!;
+      const it = ballotItem(b, key)!;
       const id = b.started[key];
       const run = id ? await o.store.get(id) : null;
-      const choice = run
-        ? await choiceFor(run)
-        : o.choices
-        ? await o.choices.get(ballotChoiceId(b.id, key))
-        : null;
-      return { key, heading, detail, run, choice };
+      const choiceId = run ? run.choice_id ?? run.id : ballotChoiceId(b.id, key);
+      const choice = o.choices ? await o.choices.get(choiceId) : null;
+      // A researched contest may have a corrected candidate list; pick from that.
+      const { options, max } = run ? choiceOptions(run) : it;
+      return { key, heading: it.heading, detail: it.detail, options, max, run, choice, choiceId };
     }));
   };
 
@@ -713,10 +712,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
     }
 
-    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/picks|\/items\/(m?\d{1,4}))?$/);
+    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/picks)?$/);
     if (!m) return null;
-    const [, id, , itemKey] = m;
-    const suffix = itemKey ? "/items" : m[2];
+    const [, id, suffix] = m;
     const b = isRunId(id) ? await ballots.store.get(id) : null;
     if (!b) {
       return html(messagePage("Not found", "There's no saved ballot at that address.", BASE), 404);
@@ -725,26 +723,29 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
 
     if (!suffix && req.method === "GET") return html(ballotPage(b, view()));
     if (suffix === "/picks" && req.method === "GET") {
-      return html(picksPage(b, await pickItems(b), BASE));
+      return html(picksPage(b, await pickItems(b), BASE, { saved: url.searchParams.has("saved") }));
     }
-    if (suffix === "/items" && o.choices) {
-      const item = ballotItem(b, itemKey);
-      if (!item) return html(messagePage("Not found", "That isn't on this ballot.", BASE), 404);
-      // Once researched, notes live on the research page (the same record, by id).
-      const runId = b.started[itemKey];
-      if (runId) return redirect(`${BASE}/races/${runId}#mine`);
-      const choiceId = ballotChoiceId(b.id, itemKey);
-      if (req.method === "GET") {
-        const choice = await o.choices.get(choiceId);
-        const saved = url.searchParams.has("saved");
-        return html(itemChoicePage(b, itemKey, item, choice, BASE, saved));
+    if (suffix === "/picks" && req.method === "POST" && o.choices) {
+      const form = await req.formData();
+      const items = await pickItems(b);
+      // Validate everything before saving anything, so an error never half-saves the sheet.
+      const parsed = [];
+      for (const it of items) {
+        const p = parseChoice(it, form, `_${it.key}`);
+        if (!p.ok) {
+          return html(
+            picksPage(b, items, BASE, { error: `${it.heading}: ${p.error}`, form }),
+            400,
+          );
+        }
+        parsed.push({ it, p });
       }
-      if (req.method === "POST") {
-        const parsed = parseChoice(item, await req.formData());
-        if (!parsed.ok) return html(messagePage("Not saved", parsed.error, BASE), 400);
-        await saveChoice(o.choices, choiceId, parsed);
-        return redirect(`${BASE}/ballots/${b.id}/items/${itemKey}?saved=1#mine`);
+      for (const { it, p } of parsed) {
+        const same = (it.choice?.notes ?? "") === p.notes &&
+          JSON.stringify(it.choice?.picks ?? []) === JSON.stringify(p.picks);
+        if (!same) await saveChoice(o.choices, it.choiceId, p);
       }
+      return redirect(`${BASE}/ballots/${b.id}/picks?saved=1`);
     }
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();

@@ -70,7 +70,8 @@ button.secondary, .button.secondary { background: transparent; color: var(--acce
 .picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
 .picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
 .picks .notes { white-space: pre-line; margin: 4px 0 0; }
-@media print { nav.top, .actions, .noprint { display: none; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+.printonly { display: none; }
+.picks fieldset, .picks label { margin-top: 8px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -101,6 +102,8 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
 .stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
 .stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
+/* Last, so it wins over the screen rules above. */
+@media print { nav.top, .actions, .noprint { display: none; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 </style>
 </head>
 <body>

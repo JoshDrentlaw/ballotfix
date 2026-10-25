@@ -61,10 +61,10 @@ vote would do. Re-running keeps the same issues.
 
 Once a race or measure finishes, its page has **Your notes and pick**: a preliminary choice (radio
 buttons, or checkboxes for vote-for-two contests; Yes or No for measures and judges) and free-form
-notes. **Your picks** on the ballot page lists every contest and measure in ballot order with your
-pick and notes, ready to print or keep open while you fill in your ballot. Items you didn't research
-can still get a note and pick from there. Notes and picks are saved in `data/choices/`, kept when
-you research again, and never included in downloaded pages.
+notes. **Your picks** on the ballot page lists every contest and measure in ballot order, and you
+can change any pick or note right there, researched or not, with one Save. It prints as a clean
+cheat sheet to keep beside you while you fill in your ballot. Notes and picks are saved in
+`data/choices/`, kept when you research again, and never included in downloaded pages.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
   is saved (in `data/ballots/`).

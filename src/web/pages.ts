@@ -423,6 +423,27 @@ function pickText(picks: readonly string[] | undefined): string {
   return picks?.length ? esc(picks.join(", ")) : `<span class="undecided">Undecided</span>`;
 }
 
+/** Radio buttons (or checkboxes for vote-for-several) for a pick, with "Undecided". */
+function choiceInputs(
+  name: string,
+  options: readonly string[],
+  max: number,
+  current: readonly string[],
+): string {
+  const picked = new Set(current);
+  return max > 1
+    ? options.map((o) =>
+      `<label class="check"><input type="checkbox" name="${name}" value="${esc(o)}"${
+        picked.has(o) ? " checked" : ""
+      }> ${esc(o)}</label>`
+    ).join("")
+    : [...options, ""].map((o) =>
+      `<label class="check"><input type="radio" name="${name}" value="${esc(o)}"${
+        (o ? picked.has(o) : picked.size === 0) ? " checked" : ""
+      }> ${o ? esc(o) : "Undecided"}</label>`
+    ).join("");
+}
+
 /** The notes-and-pick form, for a researched run or a ballot item researched or not. */
 function choiceForm(
   action: string,
@@ -432,18 +453,7 @@ function choiceForm(
   saved: boolean,
   sheet: string | null,
 ): string {
-  const picked = new Set(choice?.picks ?? []);
-  const inputs = max > 1
-    ? options.map((o) =>
-      `<label class="check"><input type="checkbox" name="pick" value="${esc(o)}"${
-        picked.has(o) ? " checked" : ""
-      }> ${esc(o)}</label>`
-    ).join("")
-    : [...options, ""].map((o) =>
-      `<label class="check"><input type="radio" name="pick" value="${esc(o)}"${
-        (o ? picked.has(o) : picked.size === 0) ? " checked" : ""
-      }> ${o ? esc(o) : "Undecided"}</label>`
-    ).join("");
+  const inputs = choiceInputs("pick", options, max, choice?.picks ?? []);
   return `${saved ? `<p class="note" role="status">Saved.</p>` : ""}
 <form class="stack" method="post" action="${action}">
   ${
@@ -491,31 +501,6 @@ function choicePanel(
       run.ballot ? `${base}/ballots/${esc(run.ballot.id)}/picks` : null,
     )
   }</section>`;
-}
-
-/** Notes and a pick for a ballot item that hasn't been researched. */
-export function itemChoicePage(
-  b: BallotRecord,
-  key: string,
-  item: { heading: string; detail: string; options: string[]; max: number },
-  choice: ChoiceRecord | null,
-  base = "",
-  saved = false,
-): string {
-  const body = `<h1>${esc(item.heading)}</h1>
-<p class="sub">${esc(item.detail)}</p>
-<p class="note">Not researched. Your notes and pick still go on your picks sheet, and stay with this if you research it later.</p>
-<section class="mine" id="mine"><h2>Your notes and pick</h2>${
-    choiceForm(
-      `${base}/ballots/${esc(b.id)}/items/${esc(key)}`,
-      item.options,
-      item.max,
-      choice,
-      saved,
-      `${base}/ballots/${esc(b.id)}/picks`,
-    )
-  }</section>`;
-  return page(item.heading, body, { nav: true, base });
 }
 
 export interface RunPageOptions {
@@ -606,36 +591,62 @@ ${mine}`;
 /** One line of the picks sheet: a contest or measure, in ballot order. */
 export interface PickItem {
   key: string;
+  /** What can be picked: from the research run if there is one, else from the reading. */
+  options: string[];
+  max: number;
   heading: string;
   detail: string;
   run: RunRecord | null;
   choice: ChoiceRecord | null;
+  /** Where this item's notes and pick are saved. */
+  choiceId: string;
 }
 
 /** Everything the voter has leaned toward, in ballot order, to fill in the ballot from. */
-export function picksPage(b: BallotRecord, items: PickItem[], base = ""): string {
+/**
+ * Everything the voter has leaned toward, in ballot order, to fill in the
+ * ballot from. One form, so every pick and note can be changed in place.
+ */
+export function picksPage(
+  b: BallotRecord,
+  items: PickItem[],
+  base = "",
+  o: { saved?: boolean; error?: string; form?: FormData } = {},
+): string {
   const title = "Your picks";
   const decided = items.filter((x) => x.choice?.picks.length).length;
+  const posted = (name: string) => o.form?.getAll(name).map(String);
   const list = items.map((x) => {
+    const current = posted(`pick_${x.key}`)?.filter(Boolean) ?? x.choice?.picks ?? [];
+    const notesValue = posted(`notes_${x.key}`)?.[0] ?? x.choice?.notes ?? "";
     const pick = `<p class="pick">${pickText(x.choice?.picks)}</p>`;
-    const notes = x.choice?.notes ? `<p class="notes">${esc(x.choice.notes)}</p>` : "";
-    const open = x.run
-      ? `<p class="noprint"><a href="${base}/races/${
-        esc(x.run.id)
-      }#mine">Research and notes</a></p>`
-      : `<p class="noprint">Not researched · <a href="${base}/ballots/${esc(b.id)}/items/${
-        esc(x.key)
-      }">Add a note or pick</a></p>`;
-    return `<li><h3>${esc(x.heading)}</h3><p class="desig">${
-      esc(x.detail)
-    }</p>${pick}${notes}${open}</li>`;
+    const notes = x.choice?.notes ? `<p class="notes printonly">${esc(x.choice.notes)}</p>` : "";
+    const research = x.run
+      ? `<a href="${base}/races/${esc(x.run.id)}">See the research</a>`
+      : "Not researched";
+    const inputs = x.options.length
+      ? `<fieldset class="plain"><legend>Change pick${
+        x.max > 1 ? ` (vote for up to ${x.max})` : ""
+      }</legend>${choiceInputs(`pick_${x.key}`, x.options, x.max, current)}</fieldset>`
+      : "";
+    return `<li><h3>${esc(x.heading)}</h3><p class="desig">${esc(x.detail)}</p>${pick}${notes}
+<div class="noprint">${inputs}
+<label>Notes <textarea name="notes_${esc(x.key)}" maxlength="${MAX_NOTES}">${
+      esc(notesValue)
+    }</textarea></label>
+<p class="sub">${research}</p></div></li>`;
   }).join("");
   const body = `<h1>${title}</h1>
 <p class="sub">From the ballot uploaded ${
     esc(when(b.created_at))
   } · ${decided} of ${items.length} decided. In the order your ballot prints them.</p>
 <p class="note noprint">These are your own preliminary picks and notes, saved on this server. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
+${o.saved ? `<p class="note noprint" role="status">Saved.</p>` : ""}
+${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
+<form method="post" action="${base}/ballots/${esc(b.id)}/picks">
 <ol class="picks">${list}</ol>
+<div class="actions noprint"><button type="submit">Save picks and notes</button></div>
+</form>
 <p class="noprint"><a href="${base}/ballots/${esc(b.id)}">Back to your ballot</a></p>`;
   return page(title, body, { nav: true, base });
 }
