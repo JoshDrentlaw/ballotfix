@@ -149,6 +149,8 @@ export interface RawSection {
 /** What a ResearchPort returns for one candidate: unvalidated. */
 export interface RawCandidateResearch {
   sections: Record<string, RawSection | undefined>;
+  /** Keyed by priority section id (priority_1, ...). */
+  stances?: Record<string, RawStance | undefined>;
   identity_note: string | null;
   gaps: string[];
   retrieved_urls: string[];
@@ -171,10 +173,28 @@ export interface SectionResult {
   gap_note: string | null;
 }
 
+/**
+ * How the sourced record on one of the voter's issues relates to the view
+ * they stated. For a measure, it is how a yes vote relates. "no_position"
+ * when the voter named only a topic. Never combined into an overall score.
+ */
+export const STANCES = ["conflicts", "aligns", "mixed", "unclear", "no_position"] as const;
+export type Stance = typeof STANCES[number];
+
 /** Findings on one issue the voter said matters to them. Same instruction for everyone. */
 export interface PriorityResult {
   issue: string;
   result: SectionResult;
+  /** Absent in runs saved before stances existed. */
+  stance?: Stance;
+  /** One sentence on what the stance rests on, in the researcher's words. */
+  stance_basis?: string | null;
+}
+
+/** The researcher's stance call for one issue, before validation. */
+export interface RawStance {
+  stance: string;
+  basis: string;
 }
 
 export interface CandidateDossier {
@@ -221,6 +241,8 @@ export interface MeasureQuery {
 /** What a ResearchPort returns for one measure: unvalidated. */
 export interface RawMeasureResearch {
   sections: Record<string, RawSection | undefined>;
+  /** Keyed by priority section id (priority_1, ...). */
+  stances?: Record<string, RawStance | undefined>;
   /** Official title or name the research found, e.g. "Fontana Parks Sales Tax Measure". */
   official_title: string | null;
   /** Caveats about which measure this is (same letter used elsewhere, renumbered, etc.). */

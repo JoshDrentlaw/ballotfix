@@ -33,9 +33,17 @@ Specific to elections:
 4. **Positive and negative are both sought**, with the same instruction strength, for everyone.
 5. **No verdict, including implied ones.** No scores, grades, or "net" assessments. For measures, no
    yes/no recommendation; `case_for` and `case_against` carry mirrored instructions.
-6. **The voter's issues are topics, not positions.** Optional `priorities` (up to 5) apply to every
-   candidate in a run in the same words, become extra section ids `priority_1..n` (enum values, not
-   extra schema), and are never used to judge fit with the voter.
+6. **The voter's issues are checked the same way for everyone.** Optional `priorities` (a
+   ballot-wide list plus a per-contest list, up to 8 combined) apply to every candidate in a run in
+   the same words and become extra section ids `priority_1..n` (enum values, not extra schema).
+   Where the voter states a view, each issue gets a `stance` (conflicts / aligns / mixed / unclear;
+   for a measure, how a yes vote relates). The voter asked for this to see quickly when someone is
+   egregiously against their views. A stance other than unclear stands only on verified facts
+   (`assemblePriorities` downgrades it otherwise), and stances are never combined into an overall
+   score or a recommendation.
+7. **The voter's notes and picks are theirs.** `ChoiceStore` (`data/choices/`), apart from runs so a
+   job's progress saves can't overwrite them. Never in downloads or a run's JSON. Ballot items use
+   choice id `<ballotId>-<key>`, so a note made before research stays with it, and reruns keep it.
 
 ## Provenance check
 

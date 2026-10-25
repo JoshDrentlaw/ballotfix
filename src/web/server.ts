@@ -7,17 +7,19 @@
  *   POST /races                 start a race, then redirect to it
  *   GET  /races/:id             race page (refreshes itself while running)
  *   POST /races/:id/rerun       research the same race again
+ *   POST /races/:id/choice      save the voter's notes and preliminary pick
  *   GET  /races/:id/download    standalone HTML file of a finished race
  *   GET  /races/:id.json        raw run record
  *   POST /ballots               upload photos/PDF of a ballot, then redirect to it
  *   GET  /ballots/:id           reading progress, then the contests found, for review
  *   POST /ballots/:id/research  start races and measures the user picked
+ *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
  *   GET  /healthz
  */
 
 import { measuresOf } from "../dossier.ts";
 import { renderMeasure, renderRace, slug } from "../render.ts";
-import { MAX_PRIORITIES, MAX_PRIORITY_LENGTH } from "../template.ts";
+import { MAX_PRIORITIES, MAX_PRIORITIES_PER_LIST, MAX_PRIORITY_LENGTH } from "../template.ts";
 import type {
   BallotCandidate,
   BallotMediaType,
@@ -29,23 +31,37 @@ import type {
 import { type BallotJobs, type JobRunner, QueueFullError, type SubmitExtras } from "./jobs.ts";
 import {
   ballotPage,
+  choiceOptions,
   DEFAULT_FORM,
   type FormValues,
   type HomeOptions,
   homePage,
+  itemChoicePage,
   MAX_BALLOT_FILE_BYTES,
   MAX_BALLOT_FILES,
   MAX_BALLOT_TOTAL_BYTES,
+  MAX_NOTES,
   messagePage,
+  type PickItem,
+  picksPage,
   runPage,
 } from "./pages.ts";
-import { type BallotRecord, isRunId, type RunStore } from "./store.ts";
+import {
+  type BallotRecord,
+  type ChoiceRecord,
+  type ChoiceStore,
+  isRunId,
+  type RunRecord,
+  type RunStore,
+} from "./store.ts";
 
 export interface AppOptions {
   store: RunStore;
   jobs: JobRunner;
   /** Reads uploaded ballots. Without it, the upload routes are 404s. */
   ballots?: BallotJobs;
+  /** Keeps the voter's notes and picks. Without it, there is no notes panel. */
+  choices?: ChoiceStore;
   /** False when no API key is configured: pages still work, research is disabled. */
   canResearch: boolean;
   /** When set, every request needs HTTP Basic auth with this password (any username). */
@@ -191,8 +207,11 @@ export function parsePriorities(text: string): { ok: true; issues: string[] } | 
     // deno-lint-ignore no-control-regex
     .map((s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
     .filter(Boolean);
-  if (issues.length > MAX_PRIORITIES) {
-    return { ok: false, error: `Name up to ${MAX_PRIORITIES} issues that matter most to you.` };
+  if (issues.length > MAX_PRIORITIES_PER_LIST) {
+    return {
+      ok: false,
+      error: `Name up to ${MAX_PRIORITIES_PER_LIST} issues that matter most to you in each list.`,
+    };
   }
   if (issues.some((s) => s.length > MAX_PRIORITY_LENGTH)) {
     return {
@@ -205,6 +224,26 @@ export function parsePriorities(text: string): { ok: true; issues: string[] } | 
     ok: true,
     issues: issues.filter((s) => !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase())),
   };
+}
+
+/**
+ * The ballot-wide issues followed by one contest's own, repeats dropped. Every
+ * candidate in that contest gets the combined list in the same words.
+ */
+export function combinePriorities(
+  shared: readonly string[],
+  own: readonly string[],
+  label: string,
+): { ok: true; issues: string[] } | { ok: false; error: string } {
+  const seen = new Set(shared.map((s) => s.toLowerCase()));
+  const issues = [...shared, ...own.filter((s) => !seen.has(s.toLowerCase()))];
+  return issues.length > MAX_PRIORITIES
+    ? {
+      ok: false,
+      error:
+        `${label}: up to ${MAX_PRIORITIES} issues in all, counting the ones for your whole ballot.`,
+    }
+    : { ok: true, issues };
 }
 
 /**
@@ -352,6 +391,9 @@ type Picked = {
   candidates: BallotCandidate[] | null;
   source: CandidateSource | null;
   measure?: MeasureQuery;
+  /** The ballot-wide issues plus this item's own. */
+  priorities: string[];
+  vote_for: number | null;
 };
 
 /** Only plain digits: "01", "1e0", or "" must not alias another item. */
@@ -365,7 +407,7 @@ function pickIndexes(form: FormData, name: string): number[] | null {
 export function parseBallotResearch(
   b: BallotRecord,
   form: FormData,
-): { ok: true; picks: Picked[]; priorities: string[] } | { ok: false; error: string } {
+): { ok: true; picks: Picked[] } | { ok: false; error: string } {
   const r = b.reading;
   if (!r) return { ok: false, error: "This ballot hasn't been read." };
   const indexes = pickIndexes(form, "pick");
@@ -376,8 +418,14 @@ export function parseBallotResearch(
   if (!indexes.length && !measureIndexes.length) {
     return { ok: false, error: "Choose at least one contest or measure to research." };
   }
-  const priorities = parsePriorities(field(form, "priorities"));
-  if (!priorities.ok) return priorities;
+  const shared = parsePriorities(field(form, "priorities"));
+  if (!shared.ok) return shared;
+  /** This item's issues on top of the ballot-wide ones. */
+  const issuesFor = (key: string, label: string) => {
+    const own = parsePriorities(field(form, `priorities_${key}`));
+    if (!own.ok) return { ok: false as const, error: `${label}: ${own.error}` };
+    return combinePriorities(shared.issues, own.issues, label);
+  };
   const picks: Picked[] = [];
   for (const i of indexes) {
     const contest = r.contests[i];
@@ -398,6 +446,8 @@ export function parseBallotResearch(
     if (!parsed.candidates) {
       return { ok: false, error: `${label}: list at least one candidate.` };
     }
+    const issues = issuesFor(String(i), label);
+    if (!issues.ok) return issues;
     // Keep the designations read from the ballot for names the user didn't change.
     const read = new Map(contest.candidates.map((c) => [c.name.toLowerCase(), c]));
     const edited = parsed.candidates.length !== contest.candidates.length ||
@@ -412,6 +462,8 @@ export function parseBallotResearch(
         ballot_designation: read.get(c.name.toLowerCase())?.ballot_designation ?? null,
       })),
       source: edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE,
+      priorities: issues.issues,
+      vote_for: contest.vote_for,
     });
   }
 
@@ -424,6 +476,8 @@ export function parseBallotResearch(
     const label = field(form, `mlabel_${i}`);
     const jurisdiction = field(form, `mjur_${i}`);
     const name = label || m.label || "A measure";
+    const issues = issuesFor(measureKey(i), name);
+    if (!issues.ok) return issues;
     if (m.kind === "retention") {
       // A retention question is research on one person: a one-candidate race.
       const person = field(form, `mperson_${i}`);
@@ -448,6 +502,8 @@ export function parseBallotResearch(
           ...(edited ? EDITED_BALLOT_SOURCE : UPLOADED_BALLOT_SOURCE),
           contest_kind: "retention",
         },
+        priorities: issues.issues,
+        vote_for: 1,
       });
       continue;
     }
@@ -485,9 +541,75 @@ export function parseBallotResearch(
         state: base.query.state,
         electionDate: base.query.electionDate,
       },
+      priorities: issues.issues,
+      vote_for: 1,
     });
   }
-  return { ok: true, picks, priorities: priorities.issues };
+  return { ok: true, picks };
+}
+
+/** Validates the notes-and-pick form against what can be picked. */
+export function parseChoice(
+  { options, max }: { options: readonly string[]; max: number },
+  form: FormData,
+): { ok: true; picks: string[]; notes: string } | { ok: false; error: string } {
+  const picks = [...new Set(form.getAll("pick").map(String).filter(Boolean))];
+  if (picks.some((p) => !options.includes(p))) {
+    return { ok: false, error: "That pick isn't one of the choices for this." };
+  }
+  if (picks.length > max) {
+    return { ok: false, error: `This one is vote for ${max}; pick up to ${max}.` };
+  }
+  const raw = form.get("notes");
+  const notes = (typeof raw === "string" ? raw : "").replace(/\r\n/g, "\n").trim();
+  if (notes.length > MAX_NOTES) {
+    return { ok: false, error: `Notes can be up to ${MAX_NOTES} characters.` };
+  }
+  return { ok: true, picks, notes };
+}
+
+async function saveChoice(
+  store: ChoiceStore,
+  id: string,
+  c: { picks: string[]; notes: string },
+): Promise<void> {
+  const prev = await store.get(id);
+  const at = new Date().toISOString();
+  await store.save({ id, created_at: prev?.created_at ?? at, updated_at: at, ...c });
+}
+
+/** What a ballot item is and what can be picked for it, from the reading. */
+export function ballotItem(
+  b: BallotRecord,
+  key: string,
+): { heading: string; detail: string; options: string[]; max: number } | null {
+  const r = b.reading;
+  if (!r || !/^m?(0|[1-9]\d{0,3})$/.test(key)) return null;
+  if (key.startsWith("m")) {
+    const m = measuresOf(r)[Number(key.slice(1))];
+    if (!m) return null;
+    return {
+      heading: m.kind === "retention" ? `${m.person || "Judge"} (retention)` : m.label,
+      detail: [m.jurisdiction, m.kind === "retention" ? m.label : ""].filter(Boolean).join(" · "),
+      options: ["Yes", "No"],
+      max: 1,
+    };
+  }
+  const c = r.contests[Number(key)];
+  if (!c) return null;
+  return {
+    heading: c.office,
+    detail: [c.jurisdiction, c.vote_for ? `vote for ${c.vote_for}` : ""].filter(Boolean).join(
+      " · ",
+    ),
+    options: c.candidates.map((x) => x.name),
+    max: Math.max(1, c.vote_for ?? 1),
+  };
+}
+
+/** Where notes and a pick for a ballot item live, whether or not it's researched. */
+export function ballotChoiceId(ballotId: string, key: string): string {
+  return `${ballotId}-${key}`;
 }
 
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
@@ -518,10 +640,38 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       return html(await home({ values, error: err.message }), 429);
     }
   };
+  const choiceFor = async (run: RunRecord): Promise<ChoiceRecord | null> =>
+    o.choices ? await o.choices.get(run.choice_id ?? run.id) : null;
+
+  /** Every contest and measure on a ballot, in printed order, with its run and the voter's pick. */
+  const pickItems = async (b: BallotRecord): Promise<PickItem[]> => {
+    const r = b.reading;
+    if (!r) return [];
+    const keys = [
+      ...r.contests.map((_, i) => String(i)),
+      ...measuresOf(r).map((_, i) => measureKey(i)),
+    ];
+    return await Promise.all(keys.map(async (key): Promise<PickItem> => {
+      const { heading, detail } = ballotItem(b, key)!;
+      const id = b.started[key];
+      const run = id ? await o.store.get(id) : null;
+      const choice = run
+        ? await choiceFor(run)
+        : o.choices
+        ? await o.choices.get(ballotChoiceId(b.id, key))
+        : null;
+      return { key, heading, detail, run, choice };
+    }));
+  };
+
   const researchOff = () =>
     html(messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE), 503);
 
-  const ballotRoutes = async (req: Request, path: string): Promise<Response | null> => {
+  const ballotRoutes = async (
+    req: Request,
+    path: string,
+    url: URL,
+  ): Promise<Response | null> => {
     const ballots = o.ballots;
     if (!ballots) return null;
 
@@ -563,9 +713,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
     }
 
-    const m = path.match(/^\/ballots\/([^/]+?)(\/research)?$/);
+    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/picks|\/items\/(m?\d{1,4}))?$/);
     if (!m) return null;
-    const [, id, suffix] = m;
+    const [, id, , itemKey] = m;
+    const suffix = itemKey ? "/items" : m[2];
     const b = isRunId(id) ? await ballots.store.get(id) : null;
     if (!b) {
       return html(messagePage("Not found", "There's no saved ballot at that address.", BASE), 404);
@@ -573,6 +724,28 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     const view = () => ({ canResearch: o.canResearch, available: o.jobs.available, base: BASE });
 
     if (!suffix && req.method === "GET") return html(ballotPage(b, view()));
+    if (suffix === "/picks" && req.method === "GET") {
+      return html(picksPage(b, await pickItems(b), BASE));
+    }
+    if (suffix === "/items" && o.choices) {
+      const item = ballotItem(b, itemKey);
+      if (!item) return html(messagePage("Not found", "That isn't on this ballot.", BASE), 404);
+      // Once researched, notes live on the research page (the same record, by id).
+      const runId = b.started[itemKey];
+      if (runId) return redirect(`${BASE}/races/${runId}#mine`);
+      const choiceId = ballotChoiceId(b.id, itemKey);
+      if (req.method === "GET") {
+        const choice = await o.choices.get(choiceId);
+        const saved = url.searchParams.has("saved");
+        return html(itemChoicePage(b, itemKey, item, choice, BASE, saved));
+      }
+      if (req.method === "POST") {
+        const parsed = parseChoice(item, await req.formData());
+        if (!parsed.ok) return html(messagePage("Not saved", parsed.error, BASE), 400);
+        await saveChoice(o.choices, choiceId, parsed);
+        return redirect(`${BASE}/ballots/${b.id}/items/${itemKey}?saved=1#mine`);
+      }
+    }
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
       const form = await req.formData();
@@ -610,8 +783,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         try {
           for (const p of parsed.picks) {
             const run = await o.jobs.submit(p.query, p.candidates, p.source, {
-              priorities: parsed.priorities,
+              priorities: p.priorities,
               measure: p.measure,
+              ballot: { id: fresh.id, key: p.key, vote_for: p.vote_for },
+              choiceId: ballotChoiceId(fresh.id, p.key),
             });
             started[p.key] = run.id;
             last = run.id;
@@ -666,7 +841,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
 
     if (path === "/" && req.method === "GET") return html(await home());
 
-    const ballotResponse = await ballotRoutes(req, path);
+    const ballotResponse = await ballotRoutes(req, path, url);
     if (ballotResponse) return ballotResponse;
 
     if (path === "/races" && req.method === "POST") {
@@ -690,7 +865,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       });
     }
 
-    const m = path.match(/^\/races\/([^/]+?)(\.json|\/rerun|\/download)?$/);
+    const m = path.match(/^\/races\/([^/]+?)(\.json|\/rerun|\/download|\/choice)?$/);
     if (m) {
       const [, id, suffix] = m;
       const run = isRunId(id) ? await o.store.get(id) : null;
@@ -698,7 +873,23 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         return html(messagePage("Not found", "There's no saved race at that address.", BASE), 404);
       }
 
-      if (!suffix && req.method === "GET") return html(runPage(run, o.canResearch, BASE));
+      const view = async (extra: { saved?: boolean } = {}) =>
+        runPage(run, o.canResearch, BASE, {
+          choices: Boolean(o.choices),
+          choice: await choiceFor(run),
+          ...extra,
+        });
+      if (!suffix && req.method === "GET") {
+        return html(await view({ saved: url.searchParams.has("saved") }));
+      }
+      if (suffix === "/choice" && req.method === "POST" && o.choices) {
+        const parsed = parseChoice(choiceOptions(run), await req.formData());
+        if (!parsed.ok) {
+          return html(messagePage("Not saved", parsed.error, BASE), 400);
+        }
+        await saveChoice(o.choices, run.choice_id ?? run.id, parsed);
+        return redirect(`${BASE}/races/${run.id}?saved=1#mine`);
+      }
       if (suffix === ".json" && req.method === "GET") {
         return new Response(JSON.stringify(run, null, 2), {
           headers: { "content-type": "application/json; charset=utf-8", ...SECURITY_HEADERS },
@@ -729,10 +920,32 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           office: run.query.office,
           election: run.query.electionDate,
         };
-        return await start(run.query, run.candidates, values, run.candidate_source ?? null, {
+        const res = await start(run.query, run.candidates, values, run.candidate_source ?? null, {
           priorities: run.priorities,
           measure: run.measure ?? undefined,
+          choiceId: run.choice_id ?? run.id,
+          ballot: run.ballot,
         });
+        // Point the ballot (and its picks sheet) at the new run.
+        const next = res.headers.get("location")?.split("/").pop();
+        const link = run.ballot;
+        if (res.status === 303 && next && link && o.ballots && !starting.has(link.id)) {
+          // Same per-ballot lock as starting contests, so neither write loses the other's.
+          starting.add(link.id);
+          try {
+            const b = await o.ballots.store.get(link.id);
+            if (b && b.started[link.key] === run.id) {
+              await o.ballots.store.save({
+                ...b,
+                started: { ...b.started, [link.key]: next },
+                updated_at: new Date().toISOString(),
+              });
+            }
+          } finally {
+            starting.delete(link.id);
+          }
+        }
+        return res;
       }
       return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
     }

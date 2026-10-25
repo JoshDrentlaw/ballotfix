@@ -130,20 +130,31 @@ export type MeasureSectionId = typeof MEASURE_SECTIONS[number]["id"];
 export const MEASURE_SECTION_IDS: readonly MeasureSectionId[] = MEASURE_SECTIONS.map((s) => s.id);
 
 /**
- * Issues the voter said matter most. Optional, and the same list applies to
- * every candidate in a race, so it never favors one of them. Each issue is
- * reported as its own section, with ids priority_1, priority_2, ...
+ * Issues the voter said matter most: a topic ("housing") or a stated view
+ * ("protect abortion access"). Optional, and the same list applies to every
+ * candidate in a race, so no one is checked against more than another. Each
+ * issue is reported as its own section, with ids priority_1, priority_2, ...
+ * A ballot-wide list and a per-contest list combine, up to MAX_PRIORITIES.
  */
-export const MAX_PRIORITIES = 5;
+export const MAX_PRIORITIES_PER_LIST = 5;
+export const MAX_PRIORITIES = 8;
 export const MAX_PRIORITY_LENGTH = 120;
 
 export function priorityId(index: number): string {
   return `priority_${index + 1}`;
 }
 
-/** Shared by both templates: how to report on the voter's issues without judging fit. */
+/** Shared by both templates: what to report for each issue, identically for everyone. */
 export function priorityAsk(subject: "candidate" | "measure"): string {
   return subject === "candidate"
-    ? "What this candidate has done, voted for, funded, said, or been endorsed or criticized for that bears on this issue, with the same effort for every candidate. The issue is a topic, not a position: the voter's wording does not tell you which side they are on, so do not say whether the candidate agrees with them or would be good for them."
-    : "How this measure bears on this issue, as documented by the official analysis and as each side describes it, with equal effort for supporters' and opponents' claims. The issue is a topic, not a position: the voter's wording does not tell you which side they are on, so do not say whether the measure would be good for them.";
+    ? "What this candidate has done, voted for, funded, said, or been endorsed or criticized for that bears on this issue, with the same effort for every candidate, and including anything that cuts against the stance you report."
+    : "How this measure bears on this issue, as documented by the official analysis and as each side describes it, with equal effort for supporters' and opponents' claims.";
+}
+
+/** How to judge a stance, identically for everyone. Kept here beside the template. */
+export function stanceAsk(subject: "candidate" | "measure"): string {
+  const whose = subject === "candidate"
+    ? "the candidate's documented record and statements"
+    : "what a yes vote would do";
+  return `Then judge the stance for each issue. If the voter's wording states a view (for example "protect abortion access" or "oppose new taxes"), compare ${whose} with that view: "conflicts" when the sourced facts clearly go against it, "aligns" when they clearly support it, "mixed" when they point both ways, "unclear" when the sourced facts are too thin to say. If the wording names only a topic with no view (for example "housing"), use "no_position". Base the stance only on facts you report in that issue's section, never on party labels, reputation, or guesses, and give a one-sentence basis that names those facts. Never combine stances into an overall judgment and never recommend a vote.`;
 }

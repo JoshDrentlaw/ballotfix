@@ -8,7 +8,7 @@ import {
 import { BallotJobs, JobRunner, QueueFullError } from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
-import { BallotStore, type RunRecord, RunStore } from "../src/web/store.ts";
+import { BallotStore, ChoiceStore, type RunRecord, RunStore } from "../src/web/store.ts";
 import type {
   BallotCandidate,
   BallotPage,
@@ -129,6 +129,8 @@ async function setup(
   await store.init();
   const ballotStore = new BallotStore(dir);
   await ballotStore.init();
+  const choices = new ChoiceStore(dir);
+  await choices.init();
   const port = new GatedPort();
   const reader = new GatedReader();
   const jobs = new JobRunner(store, () => port, { maxQueued: opts.maxQueued });
@@ -137,11 +139,12 @@ async function setup(
     store,
     jobs,
     ballots,
+    choices,
     canResearch: opts.canResearch ?? true,
     password: opts.password,
     basePath: opts.basePath,
   });
-  return { dir, store, ballotStore, port, reader, jobs, ballots, app };
+  return { dir, store, ballotStore, choices, port, reader, jobs, ballots, app };
 }
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
@@ -839,4 +842,142 @@ Deno.test("measure pick values must be plain numbers of measures that exist", as
     assertEquals(res.status, 400, v);
   }
   assertEquals((await s.store.list()).length, 0);
+});
+
+Deno.test("notes and a pick are saved apart from the run, kept on rerun, and listed on the picks sheet", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+  ]));
+  let runs = await s.store.list();
+  const mayor = runs.find((r) => !r.measure)!;
+  const measure = runs.find((r) => r.measure)!;
+  assertEquals(mayor.ballot, { id: loc.split("/").pop()!, key: "0", vote_for: 1 });
+
+  // While research runs, the page refreshes itself, so there's no form to lose typing in.
+  const running = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  assertStringIncludes(running, "once research finishes");
+  assert(!running.includes(`/choice"`));
+  s.port.release();
+  await s.jobs.idle();
+
+  const page = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  assertStringIncludes(page, `action="/races/${mayor.id}/choice"`);
+  assertStringIncludes(page, `type="radio" name="pick" value="Acquanetta Warren"`);
+
+  // Only real options, and no more than the ballot says to vote for.
+  const bogus = await s.app(postForm(`/races/${mayor.id}/choice`, [["pick", "Someone Else"]]));
+  assertEquals(bogus.status, 400);
+  const two = await s.app(postForm(`/races/${mayor.id}/choice`, [
+    ["pick", "Acquanetta Warren"],
+    ["pick", "Joz Sida"],
+  ]));
+  assertEquals(two.status, 400);
+
+  const save = await s.app(postForm(`/races/${mayor.id}/choice`, [
+    ["pick", "Joz Sida"],
+    ["notes", "Check the <warehouse> vote again"],
+  ]));
+  assertEquals(save.status, 303);
+  assertEquals(save.headers.get("location"), `/races/${mayor.id}?saved=1#mine`);
+  await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "No"]]));
+  assertEquals(
+    (await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "Maybe"]]))).status,
+    400,
+  );
+
+  // Never in downloads or the run's JSON.
+  const dl = await (await s.app(new Request(`http://app.test/races/${mayor.id}/download`))).text();
+  assert(!dl.includes("warehouse"));
+  const json = await (await s.app(new Request(`http://app.test/races/${mayor.id}.json`))).text();
+  assert(!json.includes("warehouse"));
+
+  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  assertStringIncludes(sheet, "2 of 5 decided");
+  assertStringIncludes(sheet, "Check the &lt;warehouse&gt; vote again");
+  assert(
+    sheet.indexOf("Joz Sida") < sheet.indexOf(">No<"),
+    "ballot order: contests, then measures",
+  );
+  assertStringIncludes(sheet, `href="${loc}/items/1">Add a note or pick`);
+
+  // A rerun keeps the notes and pick, and the sheet follows the new run.
+  await s.app(post(`/races/${mayor.id}/rerun`, {}));
+  await s.jobs.idle();
+  runs = await s.store.list();
+  const rerun = runs[0];
+  assert(rerun.id !== mayor.id);
+  assertEquals(rerun.choice_id, `${loc.split("/").pop()}-0`);
+  assertEquals(rerun.choice_id, mayor.choice_id);
+  const again = await (await s.app(new Request(`http://app.test/races/${rerun.id}`))).text();
+  assertStringIncludes(again, `value="Joz Sida" checked`);
+  const b = (await s.ballotStore.get(loc.split("/").pop()!))!;
+  assertEquals(b.started["0"], rerun.id);
+});
+
+Deno.test("each contest can add its own issues to the ballot-wide ones", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const res = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["priorities", "housing costs"],
+    ["priorities_0", "warehouses\nHousing costs"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+  ]));
+  assertEquals(res.status, 303);
+  const runs = await s.store.list();
+  assertEquals(runs.find((r) => !r.measure)!.priorities, ["housing costs", "warehouses"]);
+  assertEquals(runs.find((r) => r.measure)!.priorities, ["housing costs"]);
+
+  const tooMany = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick", "1"],
+    ["office_1", "Member, City Council, District 2"],
+    ["city_1", "City of Fontana"],
+    ["candidates_1", "Pat Example"],
+    ["priorities", "a\nb\nc\nd\ne"],
+    ["priorities_1", "f\ng\nh\ni"],
+  ]));
+  assertEquals(tooMany.status, 400);
+  assertStringIncludes(await tooMany.text(), "up to 8 issues in all");
+  s.port.release();
+  await s.jobs.idle();
+});
+
+Deno.test("an item not researched can still get a note and pick, which stays with it if researched later", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const form = await (await s.app(new Request(`http://app.test${loc}/items/m1`))).text();
+  assertStringIncludes(form, "Pat Judge (retention)");
+  assertStringIncludes(form, `value="Yes"`);
+  assertEquals((await s.app(new Request(`http://app.test${loc}/items/m9`))).status, 404);
+  assertEquals((await s.app(new Request(`http://app.test${loc}/items/01`))).status, 404);
+
+  // Vote for 2: two picks are fine, three aren't.
+  assertEquals((await s.app(postForm(`${loc}/items/2`, [["pick", "Nobody"]]))).status, 400);
+  const save = await s.app(postForm(`${loc}/items/0`, [
+    ["pick", "Acquanetta Warren"],
+    ["notes", "Known quantity"],
+  ]));
+  assertEquals(save.status, 303);
+  const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
+  assertStringIncludes(sheet, "Known quantity");
+
+  // Researching it later shows the same note on the research page.
+  await s.app(postForm(`${loc}/research`, MAYOR));
+  s.port.release();
+  await s.jobs.idle();
+  const run = (await s.store.list())[0];
+  const page = await (await s.app(new Request(`http://app.test/races/${run.id}`))).text();
+  assertStringIncludes(page, "Known quantity");
+  const moved = await s.app(new Request(`http://app.test${loc}/items/0`));
+  assertEquals(moved.status, 303);
+  assertEquals(moved.headers.get("location"), `/races/${run.id}#mine`);
 });

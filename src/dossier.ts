@@ -33,8 +33,11 @@ import {
   type RawFact,
   type RawMeasureResearch,
   type RawSection,
+  type RawStance,
   type SectionId,
   type SectionResult,
+  type Stance,
+  STANCES,
 } from "./types.ts";
 
 /** Phase 0's permanent blind spots. Shown on every page, every run. */
@@ -124,17 +127,34 @@ function retrievedSet(urls: readonly string[]): Set<string> {
   return new Set(urls.map(normalizeUrl).filter((u): u is string => u !== null));
 }
 
-/** The voter's issues, each as its own section, in their order. */
+/**
+ * The voter's issues, each as its own section, in their order. A stance
+ * other than "no_position" stands only on verified facts: with none, it is
+ * "unclear", whatever the researcher said.
+ */
 function assemblePriorities(
   issues: readonly string[],
-  sections: Record<string, RawSection | undefined>,
+  raw: {
+    sections: Record<string, RawSection | undefined>;
+    stances?: Record<string, RawStance | undefined>;
+  },
   retrieved: ReadonlySet<string>,
   unverified: Fact[],
 ): PriorityResult[] {
-  return issues.map((issue, i) => ({
-    issue,
-    result: assembleSection(sections[priorityId(i)], retrieved, unverified, NOTHING_FOUND),
-  }));
+  return issues.map((issue, i) => {
+    const id = priorityId(i);
+    const result = assembleSection(raw.sections[id], retrieved, unverified, NOTHING_FOUND);
+    const rs = raw.stances?.[id];
+    let stance: Stance = rs && (STANCES as readonly string[]).includes(rs.stance)
+      ? rs.stance as Stance
+      : "unclear";
+    let stance_basis = cleanOrNull(rs?.basis);
+    if (stance !== "no_position" && stance !== "unclear" && result.facts.length === 0) {
+      stance = "unclear";
+      stance_basis = "No verified source in this run supports a stance on this.";
+    }
+    return { issue, result, stance, stance_basis };
+  });
 }
 
 /** Same placeholder for every issue, for failed and pending results. */
@@ -168,7 +188,7 @@ export function assembleCandidate(
     sections,
     unverified,
     identity_note: cleanOrNull(raw.identity_note),
-    priorities: assemblePriorities(priorities, raw.sections, retrieved, unverified),
+    priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     gaps: raw.gaps.map(clean).filter(Boolean),
     model: raw.model,
     error: null,
@@ -245,7 +265,7 @@ export function assembleMeasure(
     status: "ok",
     official_title: cleanOrNull(raw.official_title),
     sections,
-    priorities: assemblePriorities(priorities, raw.sections, retrieved, unverified),
+    priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     priority_issues: [...priorities],
     unverified,
     identity_note: cleanOrNull(raw.identity_note),

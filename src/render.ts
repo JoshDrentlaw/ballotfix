@@ -16,6 +16,7 @@ import type {
   PriorityResult,
   RaceDossier,
   SectionResult,
+  Stance,
 } from "./types.ts";
 
 export function esc(s: string): string {
@@ -87,6 +88,7 @@ function overviewCard(d: CandidateDossier): string {
   <p class="desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
+  ${d.status === "ok" ? stanceSummary(d.priorities, "candidate") : ""}
   ${status}
 </li>`;
 }
@@ -98,22 +100,74 @@ const NOT_IN_THIS_RUN: SectionResult = {
   gap_note: "This section was added after this run; research again to fill it.",
 };
 
-function sectionHtml(title: string, r: SectionResult | undefined, tag = "h4"): string {
+/** A section's facts, gap note, and what was searched. `between` goes right under the heading. */
+function sectionHtml(
+  title: string,
+  r: SectionResult | undefined,
+  tag = "h4",
+  between = "",
+): string {
   r ??= NOT_IN_THIS_RUN;
   const facts = r.facts.length ? `<ul class="facts">${r.facts.map(factItem).join("")}</ul>` : "";
   const gap = r.gap_note ? `<p class="gap">${esc(r.gap_note)}</p>` : "";
   const searched = r.searched.length
     ? `<p class="searched">Looked at: ${r.searched.map(esc).join("; ")}</p>`
     : "";
-  return `<section class="sec"><${tag}>${esc(title)}</${tag}>${facts}${gap}${searched}</section>`;
+  return `<section class="sec"><${tag}>${
+    esc(title)
+  }</${tag}>${between}${facts}${gap}${searched}</section>`;
+}
+
+type Subject = "candidate" | "measure";
+
+/** Labels for the stance on a voter's issue. Undefined for topic-only issues and old runs. */
+function stanceLabel(st: Stance | undefined, subject: Subject): string | null {
+  const yes = subject === "measure" ? "A yes vote " : "";
+  switch (st) {
+    case "conflicts":
+      return subject === "measure" ? `${yes}conflicts with your view` : "Conflicts with your view";
+    case "aligns":
+      return subject === "measure" ? `${yes}matches your view` : "Matches your view";
+    case "mixed":
+      return "Mixed record on your view";
+    case "unclear":
+      return "Not enough on record to say";
+    default:
+      return null;
+  }
+}
+
+function stanceBadge(x: PriorityResult, subject: Subject): string {
+  const label = stanceLabel(x.stance, subject);
+  if (!label) return "";
+  const basis = x.stance_basis ? ` <span class="basis">${esc(x.stance_basis)}</span>` : "";
+  return `<p class="stance stance-${x.stance}"><strong>${esc(label)}.</strong>${basis}</p>`;
 }
 
 /** The voter's own issues, first, so what they asked about is what they see first. */
-function prioritiesHtml(p: readonly PriorityResult[] | undefined): string {
+function prioritiesHtml(p: readonly PriorityResult[] | undefined, subject: Subject): string {
   if (!p?.length) return "";
   return `<section class="priorities"><h4>On what you said matters to you</h4>${
-    p.map((x) => sectionHtml(x.issue, x.result, "h5")).join("")
+    p.map((x) => sectionHtml(x.issue, x.result, "h5", stanceBadge(x, subject))).join("")
   }</section>`;
+}
+
+/**
+ * The quick read on the overview: which of the voter's stated views the
+ * record conflicts with or matches, conflicts first. Same rule for everyone.
+ */
+function stanceSummary(p: readonly PriorityResult[] | undefined, subject: Subject): string {
+  const of = (st: Stance) => (p ?? []).filter((x) => x.stance === st).map((x) => esc(x.issue));
+  const lines: [Stance, string[]][] = [
+    ["conflicts", of("conflicts")],
+    ["mixed", of("mixed")],
+    ["aligns", of("aligns")],
+  ];
+  return lines.filter(([, issues]) => issues.length).map(([st, issues]) =>
+    `<p class="stance stance-${st}"><strong>${esc(stanceLabel(st, subject)!)}:</strong> ${
+      issues.join("; ")
+    }</p>`
+  ).join("");
 }
 
 function gapsAndUnverified(gaps: readonly string[], unverified: readonly Fact[]): string {
@@ -152,7 +206,7 @@ function dossierSection(d: CandidateDossier): string {
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
   ${identity}
-  ${prioritiesHtml(d.priorities)}
+  ${prioritiesHtml(d.priorities, "candidate")}
   ${sections}
   ${gapsAndUnverified(d.gaps, d.unverified)}
   <p class="back"><a href="#top">Back to all candidates</a></p>
@@ -213,7 +267,16 @@ textarea { min-height: 96px; }
 .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
 button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
+.mine h2 { margin: 0; }
+.mine p { margin: 0; }
+.picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.picks li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
+.picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
+.picks .notes { white-space: pre-line; margin: 4px 0 0; }
+@media print { nav.top, .actions, .noprint { display: none; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -230,12 +293,19 @@ input[type=file] { padding: 10px; }
 .contest p { margin: 0; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
+fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
+fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .contest details { display: grid; gap: 10px; }
 .contest details label { margin-top: 10px; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
+.stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
+.card .stance { font-size: .85rem; }
+.stance .basis { color: var(--fg); }
+.stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
+.stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 `;
 
@@ -300,7 +370,7 @@ export function raceTitle(r: RaceDossier): string {
 /** The race overview and every dossier: shared by the app and the static export. */
 export function raceBody(
   r: RaceDossier,
-  extra: { status?: string; actions?: string } = {},
+  extra: { status?: string; actions?: string; mine?: string } = {},
 ): string {
   const q = r.query;
   const inc = incumbencyNote(r.listing);
@@ -336,6 +406,7 @@ ${empty}
 
 ${r.candidates.map(dossierSection).join("")}
 
+${extra.mine ?? ""}
 <footer>
 <p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>
 <p>Generated by Ballot Fix using AI-assisted web research${
@@ -348,7 +419,7 @@ function askedAbout(issues: readonly string[] | undefined, same: string): string
   if (!issues?.length) return "";
   return `<p class="note"><strong>You asked about:</strong> ${
     issues.map(esc).join("; ")
-  }. ${same} Findings on them come first in each dossier. They are what was found, not a measure of fit with your views.</p>`;
+  }. ${same} Findings on them come first. Where your wording states a view, each issue is marked as conflicting with it, matching it, or mixed, but only when a verified source backs that up. That is a reading of the cited record, not a recommendation, and there is no overall score: open the sources before relying on it.</p>`;
 }
 
 /** Standalone page for a finished race (CLI output and downloads). */
@@ -363,7 +434,7 @@ export function measureTitle(m: { label: string; jurisdiction: string; electionD
 /** One measure's page: the same template for every measure, both sides sought equally. */
 export function measureBody(
   d: MeasureDossier,
-  extra: { status?: string; actions?: string } = {},
+  extra: { status?: string; actions?: string; mine?: string } = {},
 ): string {
   const q = d.query;
   const question = q.question
@@ -379,7 +450,7 @@ export function measureBody(
     : "";
   const body = d.status === "pending"
     ? `<p class="gap">Research on this measure is still running. This page updates on its own.</p>`
-    : `${prioritiesHtml(d.priorities)}
+    : `${prioritiesHtml(d.priorities, "measure")}
 ${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("")}
 ${gapsAndUnverified(d.gaps, d.unverified)}`;
 
@@ -400,12 +471,14 @@ ${
       "Supporters' and opponents' claims about them were sought equally.",
     )
   }
+${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
 ${question}
 ${identity}
 <article class="dossier">
 ${body}
 </article>
 
+${extra.mine ?? ""}
 <footer>
 <p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, ballot arguments, and campaigns' own statements. <strong>Unsourced</strong> is asserted without support.</p>
 <p>Generated by Ballot Fix using AI-assisted web research${

@@ -15,7 +15,7 @@ import type {
   RaceQuery,
   ResearchPort,
 } from "../types.ts";
-import type { BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
+import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
 
 export interface JobRunnerOptions {
   /** Candidates researched in parallel within one race. */
@@ -33,6 +33,10 @@ export interface SubmitExtras {
   priorities?: string[];
   /** Research this measure instead of a race. */
   measure?: MeasureQuery;
+  /** Keep using an earlier run's notes and pick (on rerun). Default: the new run's id. */
+  choiceId?: string;
+  /** The ballot item this comes from. */
+  ballot?: BallotLink | null;
 }
 
 export class JobRunner {
@@ -84,13 +88,16 @@ export class JobRunner {
       );
     }
     const at = this.#now().toISOString();
+    const id = this.#newId(query);
     const run: RunRecord = {
-      id: this.#newId(query),
+      id,
       query,
       candidates,
       candidate_source: candidateSource,
       ...(extras.measure ? { measure: extras.measure, measure_result: null } : {}),
       ...(extras.priorities?.length ? { priorities: extras.priorities } : {}),
+      choice_id: extras.choiceId ?? id,
+      ...(extras.ballot ? { ballot: extras.ballot } : {}),
       status: "queued",
       created_at: at,
       updated_at: at,

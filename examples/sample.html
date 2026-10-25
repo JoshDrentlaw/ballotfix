@@ -61,7 +61,16 @@ textarea { min-height: 96px; }
 .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
 button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
+.mine h2 { margin: 0; }
+.mine p { margin: 0; }
+.picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.picks li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
+.picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
+.picks .notes { white-space: pre-line; margin: 4px 0 0; }
+@media print { nav.top, .actions, .noprint { display: none; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -78,12 +87,19 @@ input[type=file] { padding: 10px; }
 .contest p { margin: 0; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
+fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
+fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .contest details { display: grid; gap: 10px; }
 .contest details label { margin-top: 10px; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
+.stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
+.card .stance { font-size: .85rem; }
+.stance .basis { color: var(--fg); }
+.stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
+.stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 </style>
 </head>
@@ -107,14 +123,17 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
 <ul class="cards"><li class="card">
   <h3><a href="#sample-candidate-a">Sample Candidate A</a></h3>
   <p class="desig">Small Business Owner</p>
+  
   <p class="cov">Sourced facts found in 2 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-b">Sample Candidate B</a></h3>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
+  
   <p class="cov">Sourced facts found in 2 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-c">Sample Candidate C</a></h3>
   <p class="desig">Ballot designation not found</p>
+  
   <p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>
 </li></ul>
 
@@ -171,6 +190,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
   <p class="back"><a href="#top">Back to all candidates</a></p>
 </article>
+
 
 <footer>
 <p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>

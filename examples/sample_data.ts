@@ -157,6 +157,12 @@ export const measureFacts: RawMeasureResearch = {
       gap_note: null,
     },
   },
+  stances: {
+    priority_1: {
+      stance: "aligns",
+      basis: "Placeholder: the analysis restricts the revenue to parks.",
+    },
+  },
   official_title: "Example City Parks Sales Tax Measure (placeholder)",
   identity_note: null,
   gaps: ["Placeholder: committee filings for the No side were not online."],
@@ -185,11 +191,22 @@ export function samplePort(delayMs = 0): ResearchPort {
       await wait();
       return listing;
     },
-    researchCandidate: async (_q, c) => {
+    researchCandidate: async (_q, c, _l, priorities = []) => {
       await wait();
       await wait();
       if (c.name.endsWith("C")) throw new Error("placeholder failure");
-      return c.incumbent ? withFacts : { ...withFacts, identity_note: null, gaps: [] };
+      const base = c.incumbent ? withFacts : { ...withFacts, identity_note: null, gaps: [] };
+      if (!priorities.length) return base;
+      // Placeholder stance on the first issue, backed by a retrieved page, so the layout shows.
+      return {
+        ...base,
+        sections: { ...base.sections, priority_1: base.sections.criticisms },
+        stances: {
+          priority_1: c.incumbent
+            ? { stance: "conflicts", basis: "Placeholder: the warehouse approval cited above." }
+            : { stance: "unclear", basis: "" },
+        },
+      };
     },
     researchMeasure: async () => {
       await wait();

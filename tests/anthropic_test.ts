@@ -153,7 +153,13 @@ Deno.test("the voter's issues become extra section ids and prompt lines, nothing
     "priority_2",
   ]);
   assertStringIncludes(req.messages[0].content, "- priority_1: housing costs");
-  assertStringIncludes(req.system, "The issue is a topic, not a position");
+  assertStringIncludes(req.system, "compare the candidate's documented record");
+  assertStringIncludes(req.system, "never recommend a vote");
+  // Stances are requested only alongside issues, one per priority id.
+  const props = (req.output_config.format.schema as unknown as {
+    properties: { stances: { items: { properties: { id: { enum: string[] } } } } };
+  }).properties;
+  assertEquals(props.stances.items.properties.id.enum, ["priority_1", "priority_2"]);
   assert(!req.messages[0].content.includes("retention question"));
 });
 
@@ -170,7 +176,8 @@ Deno.test("a retention question tells the researcher it is a yes/no on a sitting
   });
   const req = requests[0] as Req;
   assertStringIncludes(req.messages[0].content, "This is a retention question");
-  // Without issues, the schema is exactly the template.
+  // Without issues, the schema is exactly the template, and no stances are asked for.
+  assert(!req.output_config.format.schema.required.includes("stances"));
   assertEquals(req.output_config.format.schema.properties.sections.items.properties.id.enum, [
     ...SECTION_IDS,
   ]);

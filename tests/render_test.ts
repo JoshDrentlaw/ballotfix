@@ -91,7 +91,7 @@ Deno.test("unverified claims render in their own collapsed block, not among fact
   assertStringIncludes(html, `1 claim not shown above because the cited page was never retrieved`);
 });
 
-Deno.test("the voter's issues render first in each dossier, escaped, and say they aren't a fit score", async () => {
+Deno.test("the voter's issues render first in each dossier, escaped, with no overall score", async () => {
   const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
   const race = await runRace(QUERY, new FakeResearch(listing([c]), {}), {
     priorities: [`<b>housing</b>`],
@@ -100,7 +100,7 @@ Deno.test("the voter's issues render first in each dossier, escaped, and say the
   assertStringIncludes(html, "On what you said matters to you");
   assertStringIncludes(html, "&lt;b&gt;housing&lt;/b&gt;");
   assert(!html.includes("<b>housing"));
-  assertStringIncludes(html, "not a measure of fit with your views");
+  assertStringIncludes(html, "not a recommendation, and there is no overall score");
   assert(html.indexOf("On what you said matters") < html.indexOf("Who they are"));
 });
 
@@ -130,4 +130,51 @@ Deno.test("a measure page has every section, no recommendation, and escapes host
   assertStringIncludes(html, "The case against, as opponents make it");
   assertStringIncludes(html, "Who is for and against it");
   assertStringIncludes(html, "Social media is not searched");
+});
+
+Deno.test("stances show on the card and the issue, conflicts first, only when a verified source backs them", async () => {
+  const a = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const b = { name: "Pat Example", ballot_designation: null, incumbent: false };
+  const backed = {
+    facts: [{
+      statement: "Voted against the tenant protection ordinance.",
+      source_name: "Council minutes",
+      source_url: "https://city.example/minutes",
+      author: null,
+      published: null,
+      evidence_type: "primary_record",
+    }],
+    searched: [],
+    gap_note: null,
+  };
+  const port = new FakeResearch(listing([a, b]), {
+    "Joz Sida": raw({
+      sections: { priority_1: backed, priority_2: backed },
+      stances: {
+        priority_1: { stance: "conflicts", basis: "Voted against tenant protections." },
+        priority_2: { stance: "aligns", basis: "Same vote." },
+      },
+      retrieved_urls: ["https://city.example/minutes"],
+    }),
+    // Claims a match with nothing verified behind it: shown as unclear instead.
+    "Pat Example": raw({
+      stances: { priority_1: { stance: "aligns", basis: "Seems supportive." } },
+    }),
+  });
+  const race = await runRace(QUERY, port, {
+    priorities: ["protect renters", "keep taxes low"],
+  });
+  assertEquals(race.candidates[1].priorities![0].stance, "unclear");
+  assertEquals(race.candidates[1].priorities![1].stance, "unclear"); // nothing reported
+  const html = renderRace(race);
+  const card = html.slice(
+    html.indexOf('<ul class="cards">'),
+    html.indexOf("</ul>", html.indexOf('<ul class="cards">')),
+  );
+  assertStringIncludes(card, "Conflicts with your view:</strong> protect renters");
+  assertStringIncludes(card, "Matches your view:</strong> keep taxes low");
+  assert(card.indexOf("Conflicts") < card.indexOf("Matches"));
+  assert(!card.includes("Seems supportive"));
+  assertStringIncludes(html, "Voted against tenant protections.");
+  assertStringIncludes(html, "Not enough on record to say");
 });

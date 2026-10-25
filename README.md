@@ -45,11 +45,26 @@ be ticked the same way:
 
 ### What matters most to you (optional)
 
-On the race form and the ballot review, you can list up to five issues, one per line ("housing
-costs", "police oversight"). Each becomes an extra section, shown first, on every candidate and
-measure in that run. Every candidate is asked about the same issues in the same words. The issue is
-treated as a topic, not a position: the page reports what was found and never says whether anyone
-fits your views. Re-running keeps the same issues.
+On the race form and the ballot review, you can list up to five issues, one per line. On the ballot
+review that list covers everything you research, and each contest or measure can add more of its own
+(up to eight in all). Each issue becomes an extra section, shown first, for every candidate and
+measure, and every candidate in a contest is asked about the same issues in the same words.
+
+Name a topic ("housing costs") or state your view ("protect abortion access", "oppose new sales
+taxes"). For a stated view, each issue is marked **conflicts with your view**, **matches your
+view**, **mixed**, or **not enough on record**, with a one-line basis, and the candidate cards show
+the conflicts first. A conflict or match only shows when a source the research actually opened backs
+it. There is never an overall score or a recommendation. For a measure, the mark is about what a yes
+vote would do. Re-running keeps the same issues.
+
+### Notes and picks
+
+Once a race or measure finishes, its page has **Your notes and pick**: a preliminary choice (radio
+buttons, or checkboxes for vote-for-two contests; Yes or No for measures and judges) and free-form
+notes. **Your picks** on the ballot page lists every contest and measure in ballot order with your
+pick and notes, ready to print or keep open while you fill in your ballot. Items you didn't research
+can still get a note and pick from there. Notes and picks are saved in `data/choices/`, kept when
+you research again, and never included in downloaded pages.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
   is saved (in `data/ballots/`).
