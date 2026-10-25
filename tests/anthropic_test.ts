@@ -12,6 +12,7 @@ import {
   ResearchIncompleteError,
   ResearchRefusedError,
   ResearchUnavailableError,
+  toBase64,
 } from "../src/research/anthropic.ts";
 import { SECTION_IDS } from "../src/template.ts";
 import { listing, QUERY } from "./fakes.ts";
@@ -164,6 +165,66 @@ Deno.test("findBallot sanitizes order_basis and blank names", async () => {
   assertEquals(l.candidates, [{ name: "Joz Sida", ballot_designation: null, incumbent: false }]);
   assertEquals(l.order_basis, "unofficial");
   assertEquals(l.retrieved_urls, ["https://kvcrnews.org/a"]);
+});
+
+Deno.test("readBallot sends the pages without web tools and cleans what comes back", async () => {
+  const body = JSON.stringify({
+    election_date: "Nov 3, 2026",
+    state: "ca",
+    county: " San Bernardino ",
+    contests: [
+      {
+        office: " Mayor ",
+        jurisdiction: "City of Fontana",
+        vote_for: 1,
+        candidates: [
+          { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true },
+          { name: " ", ballot_designation: null, incumbent: false },
+        ],
+      },
+      { office: "", jurisdiction: "x", vote_for: 0, candidates: [] },
+    ],
+    measures: ["Measure X", ""],
+    notes: "",
+  });
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: body }],
+  }]);
+  const r = await new AnthropicResearcher({ client }).readBallot([
+    { media_type: "image/jpeg", data: new Uint8Array([1, 2, 3]) },
+    { media_type: "application/pdf", data: new TextEncoder().encode("%PDF-") },
+  ]);
+  assertEquals(r.election_date, null); // not ISO, so not trusted
+  assertEquals(r.state, "CA");
+  assertEquals(r.county, "San Bernardino");
+  assertEquals(r.contests.length, 1);
+  assertEquals(r.contests[0].office, "Mayor");
+  assertEquals(r.contests[0].candidates.map((c) => c.name), ["Acquanetta Warren"]);
+  assertEquals(r.measures, ["Measure X"]);
+  assertEquals(r.notes, null);
+
+  const req = requests[0] as {
+    tools?: unknown;
+    fallbacks: string;
+    messages: { content: { type: string; source?: { media_type: string; data: string } }[] }[];
+  };
+  assertEquals(req.tools, undefined);
+  assertEquals(req.fallbacks, "default");
+  const blocks = req.messages[0].content;
+  assertEquals(blocks.map((b) => b.type), ["text", "image", "text", "document", "text"]);
+  assertEquals(
+    blocks[1].source,
+    { type: "base64", media_type: "image/jpeg", data: "AQID" } as never,
+  );
+  assertEquals(blocks[3].source!.media_type, "application/pdf");
+});
+
+Deno.test("toBase64 matches btoa on inputs larger than one chunk", () => {
+  const bytes = new Uint8Array(100_000).map((_, i) => i % 256);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  assertEquals(toBase64(bytes), btoa(s));
 });
 
 Deno.test("SDK errors become plain-language messages for the app", async () => {

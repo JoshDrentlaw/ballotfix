@@ -42,6 +42,65 @@ export interface BallotListing {
   retrieved_urls: string[];
 }
 
+/**
+ * Where a supplied candidate list came from, when it wasn't found by ballot
+ * discovery: typed in by the user, or read from a ballot they uploaded.
+ */
+export interface CandidateSource {
+  source_name: string;
+  order_basis: OrderBasis;
+  notes: string | null;
+}
+
+/** File types a ballot can be uploaded as. Photos and PDFs go through the same reader. */
+export const BALLOT_MEDIA_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+] as const;
+export type BallotMediaType = typeof BALLOT_MEDIA_TYPES[number];
+
+/** One uploaded photo or PDF of a ballot. Held in memory only, never saved. */
+export interface BallotPage {
+  media_type: BallotMediaType;
+  data: Uint8Array;
+}
+
+/** One contest for an elected office, as printed on the voter's ballot. */
+export interface BallotContest {
+  /** Office title as printed, including district or seat, e.g. "Member, City Council, District 2". */
+  office: string;
+  /** Who the office belongs to, e.g. "City of Fontana" or "Fontana Unified School District". */
+  jurisdiction: string;
+  vote_for: number | null;
+  /** In the order printed on the ballot. */
+  candidates: BallotCandidate[];
+}
+
+/**
+ * What was read from an uploaded ballot. Deliberately has no field for the
+ * voter's name, address, ballot id, or any marks: the reader never reports them.
+ */
+export interface BallotReading {
+  /** ISO date printed on the ballot, when legible. */
+  election_date: string | null;
+  /** Two-letter state code, when the ballot shows it. */
+  state: string | null;
+  county: string | null;
+  contests: BallotContest[];
+  /** Measures and yes/no retention questions: listed so they aren't silently dropped, not researched. */
+  measures: string[];
+  /** Anything unreadable or uncertain. */
+  notes: string | null;
+  model: string;
+}
+
+/** Reads the contests off photos or PDFs of a voter's own ballot or sample ballot. */
+export interface BallotReader {
+  readBallot(pages: BallotPage[]): Promise<BallotReading>;
+}
+
 /** A fact as the model reported it, before provenance checks. */
 export interface RawFact {
   statement: string;

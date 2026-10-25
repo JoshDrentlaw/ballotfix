@@ -23,6 +23,23 @@ to share. Everything works on a phone.
 If you already know the candidates, open **Already know the candidates?** and list them one per line
 in ballot order. That skips the ballot lookup.
 
+### Start from your ballot
+
+Under **Start from your ballot**, upload photos of your sample ballot or mail-in ballot (one per
+side), or the sample ballot PDF from your county's website. Claude reads the contests off it in
+about a minute, for a few cents. You then see every contest in the order your ballot prints it, fix
+any misread names, and tick the ones to research. Each one becomes a normal race whose candidate
+order is labeled as coming from your ballot, unless you changed its list, in which case the order is
+labeled as entered by you. Measures are listed as not researched.
+
+- The images are sent to Anthropic to be read and never written to disk. Only the list of contests
+  is saved (in `data/ballots/`).
+- The reader is told never to transcribe your name, address, ballot id, or barcodes, and to ignore
+  any marks on a filled-in ballot. Still, leave the return envelope out of the photo, since it has
+  your signature.
+- JPEG, PNG, WebP, or PDF, up to 8 files, 7 MB each and 22 MB in total. iPhones convert photos to
+  JPEG when uploading through the browser; if one arrives as HEIC, the app says how to fix it.
+
 To try the app without an API key or any cost, run `deno task demo` (port 8788). It is the real app
 with placeholder research.
 
@@ -58,7 +75,8 @@ Other options: `--state` (default `CA`), `--election` (default `2026-11-03`), `-
 ## How it works
 
 1. **Ballot.** Claude searches for the official candidate list (county registrar, city clerk) and
-   records which kind of source set the order.
+   records which kind of source set the order. Or, if you uploaded your ballot, the list comes from
+   that, after you've checked it.
 2. **Research.** One research session per candidate, a few at a time, with server-side web search
    and page fetch. Output is JSON constrained to the fixed template.
 3. **Provenance check.** Facts are shown only if their URL was actually retrieved in that session.
