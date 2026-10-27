@@ -74,15 +74,20 @@ function factItem(f: Fact): string {
 </li>`;
 }
 
+/** How much of the template a finished candidate's research found sources for. */
+export function coverageLine(d: CandidateDossier): string {
+  return `<p class="cov">Sourced facts found in ${
+    coveredSections(d)
+  } of ${SECTIONS.length} sections.</p>`;
+}
+
 function overviewCard(d: CandidateDossier): string {
   const c = d.candidate;
-  const covered = coveredSections(d);
-  const total = SECTIONS.length;
   const status = d.status === "failed"
     ? `<p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>`
     : d.status === "pending"
     ? `<p class="cov cov-pending">Researching now…</p>`
-    : `<p class="cov">Sourced facts found in ${covered} of ${total} sections.</p>`;
+    : coverageLine(d);
   return `<li class="card">
   <h3><a href="#${slug(c.name)}">${esc(c.name)}</a></h3>
   <p class="desig">${
@@ -384,7 +389,7 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
   const base = opts.base ?? "";
   const back = opts.back ?? { href: `${base}/#new`, label: "New race" };
   const nav = opts.nav
-    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${back.href}">${
+    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${esc(back.href)}">${
       esc(back.label)
     }</a></nav>`
     : "";

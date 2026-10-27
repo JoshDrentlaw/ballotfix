@@ -2,6 +2,7 @@
 
 import { measuresOf } from "../dossier.ts";
 import {
+  coverageLine,
   esc,
   measureBody,
   measureTitle,
@@ -257,12 +258,15 @@ function ballotTabs(b: BallotRecord, items: readonly PickItem[], at: BallotTab, 
   }</nav>`;
 }
 
+/** "Your pick: <strong>…</strong>", or "" when there's no pick yet. */
+function yourPick(choice: ChoiceRecord | null): string {
+  return choice?.picks.length ? `Your pick: <strong>${esc(choice.picks.join(", "))}</strong>` : "";
+}
+
 function leanLine(choice: ChoiceRecord | null): string {
-  return `<span class="item-lean">${
-    choice?.picks.length
-      ? `Your pick: <strong>${esc(choice.picks.join(", "))}</strong>`
-      : "Undecided"
-  }${choice?.notes ? " · has notes" : ""}</span>`;
+  return `<span class="item-lean">${yourPick(choice) || "Undecided"}${
+    choice?.notes ? " · has notes" : ""
+  }</span>`;
 }
 
 export interface BallotPageOptions {
@@ -356,10 +360,10 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
       ]),
     );
     const choice = choiceFields(String(i), describe);
-    // Without a picks store, the names are listed on their own.
+    // Without pick inputs (no picks store), the names are listed on their own.
     const names = !c.candidates.length
       ? `<p class="gap">No candidate names could be read for this contest, so it can't be researched from here. You can still name it as one race on the home page.</p>`
-      : choice.includes("<fieldset")
+      : o.choices && byKey.get(String(i))?.options.length
       ? ""
       : `<ol class="names">${
         c.candidates.map((p) =>
@@ -613,7 +617,7 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
             ? `<p class="cov cov-pending">Researching now…</p>`
             : d.status === "failed"
             ? `<p class="cov cov-fail">Research failed for this candidate.</p>`
-            : stanceSummary(d.priorities, "candidate");
+            : `${stanceSummary(d.priorities, "candidate")}${coverageLine(d)}`;
           return `<li><a class="who-name" href="${href}#${slug(c.name)}">${esc(c.name)}${
             desig ? ` <span class="desig">${desig}</span>` : ""
           }</a>${state}</li>`;
@@ -625,15 +629,13 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
     }</a></h3>${pill(run.status)}</div>
 <p class="desig">${esc(x.detail)}</p>
 <p class="item-lean"><a href="${href}#mine">${
-      x.choice?.picks.length
-        ? `Your pick: <strong>${esc(x.choice.picks.join(", "))}</strong>`
-        : `Undecided · <span class="link">set your pick</span>`
+      yourPick(x.choice) || `Undecided · <span class="link">set your pick</span>`
     }</a></p>
 ${who}
 <div class="actions"><a class="button secondary" href="${href}">Open the research</a></div></li>`;
   }).join("");
   const asked = done.some((x) => (x.run!.priorities?.length ?? 0) > 0)
-    ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Every candidate was checked against the same issues. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`
+    ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Within each contest every candidate was checked against the same issues, but the issues can differ from one contest or measure to the next. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`
     : "";
   const body = `<h1>${title}</h1>
 <p class="sub">From the ballot uploaded ${esc(when(b.created_at))}, in ballot order.</p>
@@ -790,13 +792,13 @@ export interface BallotWalk {
 function walkNav(w: BallotWalk): string {
   const side = (s: WalkStep | null, cls: string, arrow: string) =>
     s
-      ? `<a class="${cls}" href="${s.href}">${cls === "prev" ? `${arrow} ` : ""}<span>${
+      ? `<a class="${cls}" href="${esc(s.href)}">${cls === "prev" ? `${arrow} ` : ""}<span>${
         esc(s.label)
       }</span>${cls === "next" ? ` ${arrow}` : ""}</a>`
       : `<span class="${cls}"></span>`;
   return `<nav class="walk" aria-label="Your ballot">${
     side(w.prev, "prev", "←")
-  }<a class="mid" href="${w.href}">${
+  }<a class="mid" href="${esc(w.href)}">${
     w.position ? `${w.position} of ${w.total}` : "Your ballot"
   }</a>${side(w.next, "next", "→")}</nav>`;
 }
@@ -827,11 +829,11 @@ export function runPage(
   const download = (run.measure ? run.measure_result : run.race) && run.status === "done"
     ? `<a class="button secondary" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
+  const walk = opts.walk ? walkNav(opts.walk) : "";
   const mine = `${
     opts.choices ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false) : ""
-  }${opts.walk ? walkNav(opts.walk) : ""}`;
+  }${walk}`;
   const jump = opts.choices ? `<a class="button" href="#mine">Your pick and notes</a>` : "";
-  const walk = opts.walk ? walkNav(opts.walk) : "";
   // Started from a ballot: the top bar leads back to it rather than to a new race.
   const back = opts.walk ? { href: opts.walk.href, label: "Your ballot" } : undefined;
   const actions = `${walk}${
@@ -933,8 +935,11 @@ export function picksPage(
         x.max > 1 ? ` (vote for up to ${x.max})` : ""
       }</legend>${choiceInputs(`pick_${x.key}`, x.options, x.max, current)}</fieldset>`
       : "";
-    // Open the one with an error in it, and any with typing to keep.
-    const open = o.form && (posted(`notes_${x.key}`)?.[0] ?? "") !== (x.choice?.notes ?? "");
+    // Open the one with an error in it, and any with typing to keep. Browsers post
+    // textarea newlines as CRLF, so compare the way parseChoice saves notes.
+    const typed = notesValue.replace(/\r\n/g, "\n").trim();
+    const open = o.form && (typed !== (x.choice?.notes ?? "") ||
+      JSON.stringify(current) !== JSON.stringify(x.choice?.picks ?? []));
     return `<li id="item-${esc(x.key)}"><details${
       open ? " open" : ""
     }><summary><span class="item-title">${esc(x.heading)}</span><span class="item-meta">${

@@ -755,12 +755,12 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     if (!b) {
       return html(messagePage("Not found", "There's no saved ballot at that address.", BASE), 404);
     }
-    const view = async (rec: BallotRecord = b) => ({
+    const view = async (rec: BallotRecord = b, items?: PickItem[]) => ({
       canResearch: o.canResearch,
       available: o.jobs.available,
       base: BASE,
       choices: Boolean(o.choices),
-      items: await pickItems(rec),
+      items: items ?? await pickItems(rec),
     });
 
     if (!suffix && req.method === "GET") {
@@ -784,7 +784,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         const keep = parsed.status === 409 ? undefined : form;
         return html(
           fromBallot
-            ? ballotPage(b, { ...await view(), form: keep, error: parsed.error })
+            ? ballotPage(b, { ...await view(b, items), form: keep, error: parsed.error })
             : picksPage(b, items, BASE, { error: parsed.error, form: keep }),
           parsed.status,
         );
@@ -821,12 +821,19 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
             : "Other races are researching right now. Try again when one finishes.";
         }
         // Picks and notes typed on the same page are saved along with starting research.
-        const items = await pickItems(fresh);
-        const sheet = o.choices ? parseSheet(items, form) : { ok: true as const, changes: [] };
+        const items = o.choices ? await pickItems(fresh) : undefined;
+        const sheet = o.choices && items
+          ? parseSheet(items, form)
+          : { ok: true as const, changes: [] };
+        if (!sheet.ok && sheet.status === 409) {
+          // Same as the picks page: show the current version, not the stale typing,
+          // or resubmitting it would overwrite what was saved elsewhere.
+          return html(ballotPage(fresh, { ...await view(fresh, items), error: sheet.error }), 409);
+        }
         if (!sheet.ok) error ??= sheet.error;
         if (!parsed.ok || error) {
           return html(
-            ballotPage(fresh, { ...await view(fresh), form, error: error ?? undefined }),
+            ballotPage(fresh, { ...await view(fresh, items), form, error: error ?? undefined }),
             400,
           );
         }

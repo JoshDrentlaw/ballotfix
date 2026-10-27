@@ -1137,6 +1137,21 @@ Deno.test("picks typed on the ballot page are saved when research starts", async
   assertEquals(bad.status, 400);
   assertEquals((await s.store.list()).length, 1);
   assertEquals(await s.choices.get(`${id}-m0`), null);
+
+  // Saved elsewhere since the page loaded: show the saved version, not the stale typing,
+  // so resubmitting can't overwrite it.
+  const stale = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+    ["notes_m0", "typed before"],
+    ["seen_m0", "2000-01-01T00:00:00.000Z"],
+  ]));
+  assertEquals(stale.status, 409);
+  assert(!(await stale.text()).includes("typed before"));
+  assertEquals((await s.store.list()).length, 1);
   s.port.release();
   await s.jobs.idle();
 });
