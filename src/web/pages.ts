@@ -2,6 +2,7 @@
 
 import { measuresOf } from "../dossier.ts";
 import {
+  candidateAnchors,
   coverageLine,
   type EntityLinks,
   esc,
@@ -11,7 +12,6 @@ import {
   raceBody,
   raceTitle,
   readableDate,
-  slug,
   stanceSummary,
   titleFor,
 } from "../render.ts";
@@ -614,8 +614,9 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
       const d = run.measure_result;
       who = d?.status === "ok" ? stanceSummary(d.priorities, "measure") : "";
     } else if (run.race) {
+      const anchors = candidateAnchors(run.race.candidates.map((d) => d.candidate.name));
       who = `<ul class="who">${
-        run.race.candidates.map((d) => {
+        run.race.candidates.map((d, i) => {
           const c = d.candidate;
           const desig = [c.ballot_designation ?? "", c.incumbent ? "Incumbent" : ""]
             .filter(Boolean).map(esc).join(" · ");
@@ -624,7 +625,7 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
             : d.status === "failed"
             ? `<p class="cov cov-fail">Research failed for this candidate.</p>`
             : `${stanceSummary(d.priorities, "candidate")}${coverageLine(d)}`;
-          return `<li><a class="who-name" href="${href}#${slug(c.name)}">${esc(c.name)}${
+          return `<li><a class="who-name" href="${href}#${anchors[i]}">${esc(c.name)}${
             desig ? ` <span class="desig">${desig}</span>` : ""
           }</a>${state}</li>`;
         }).join("")
