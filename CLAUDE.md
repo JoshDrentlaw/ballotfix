@@ -68,7 +68,8 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   each also taking a pick and notes), Researched (`/researched`, each started item with its per-name
   stance lines), and Picks (`/picks`). A page saving picks only touches the items it posted
   (`parseSheet`). Race pages started from a ballot get prev/next links through its researched items
-  in ballot order (`walkFor`).
+  in ballot order (`walkFor`). The checked-to-research highlight and the count on the research
+  button are CSS only (`:has()` and a CSS counter), so they need no script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention

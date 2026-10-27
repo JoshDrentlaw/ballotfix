@@ -74,8 +74,19 @@ function pill(status: RunStatus): string {
   return `<span class="pill pill-${cls}">${STATUS_LABEL[status]}</span>`;
 }
 
+/** "2026-10-27T06:38:00Z" -> "Oct 27, 2026, 6:38 AM UTC". */
 function when(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : `${
+    d.toLocaleString("en-US", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  } UTC`;
 }
 
 function progress(run: RunRecord): string {
@@ -501,7 +512,9 @@ ${prioritiesField(ballotIssues, true)}</details>`
 <div class="bar-buttons">
 ${
       canStart
-        ? `<button type="submit"${o.canResearch ? "" : " disabled"}>Research checked</button>`
+        ? `<button class="go" type="submit"${
+          o.canResearch ? "" : " disabled"
+        }>Research checked</button>`
         : ""
     }
 ${
@@ -564,7 +577,7 @@ function itemCard(
   return `<li class="item" id="item-${esc(key)}"><details${open ? " open" : ""}><summary>
 <span class="item-title">${heading}</span><span class="item-meta">${where}</span>${
     leanLine(choice)
-  }</summary>
+  }${outside ? `<span class="will" aria-hidden="true">Checked to research</span>` : ""}</summary>
 <div class="item-body">${inside}</div></details>${outside}</li>`;
 }
 
@@ -601,9 +614,9 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
             : d.status === "failed"
             ? `<p class="cov cov-fail">Research failed for this candidate.</p>`
             : stanceSummary(d.priorities, "candidate");
-          return `<li><a href="${href}#${slug(c.name)}">${esc(c.name)}</a>${
+          return `<li><a class="who-name" href="${href}#${slug(c.name)}">${esc(c.name)}${
             desig ? ` <span class="desig">${desig}</span>` : ""
-          }${state}</li>`;
+          }</a>${state}</li>`;
         }).join("")
       }</ul>`;
     }
@@ -819,6 +832,8 @@ export function runPage(
   }${opts.walk ? walkNav(opts.walk) : ""}`;
   const jump = opts.choices ? `<a class="button" href="#mine">Your pick and notes</a>` : "";
   const walk = opts.walk ? walkNav(opts.walk) : "";
+  // Started from a ballot: the top bar leads back to it rather than to a new race.
+  const back = opts.walk ? { href: opts.walk.href, label: "Your ballot" } : undefined;
   const actions = `${walk}${
     rerun || download || jump ? `<div class="actions">${jump}${download}${rerun}</div>` : ""
   }`;
@@ -846,12 +861,12 @@ export function runPage(
 ${status || `<p class="sub">No results were saved for this run.</p>`}
 ${actions}
 ${mine}`;
-      return page(title, body, { nav: true, base, ...refresh });
+      return page(title, body, { nav: true, base, back, ...refresh });
     }
     return page(
       measureTitle(run.measure),
       measureBody(run.measure_result, { status, actions, mine, stopped: !active }),
-      { nav: true, base, ...refresh },
+      { nav: true, base, back, ...refresh },
     );
   }
   if (!run.race) {
@@ -865,11 +880,12 @@ ${
     }
 ${actions}
 ${mine}`;
-    return page(title, body, { nav: true, base, ...refresh });
+    return page(title, body, { nav: true, base, back, ...refresh });
   }
   return page(raceTitle(run.race), raceBody(run.race, { status, actions, mine }), {
     nav: true,
     base,
+    back,
     ...refresh,
   });
 }

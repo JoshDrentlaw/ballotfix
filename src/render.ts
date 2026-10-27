@@ -329,6 +329,16 @@ details.settings[open] > div.row { margin-bottom: 14px; }
 details.banner > summary { color: var(--warn-fg); padding: 0; }
 details.banner > p { margin-top: 8px; }
 .item-lean a { display: inline-block; min-height: 44px; padding: 10px 0; text-decoration: none; color: var(--muted); }
+.item .will { display: none; grid-column: 1 / -1; color: var(--accent); font-weight: 600; font-size: .88rem; }
+.item:has(> label.research input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item:has(> label.research input:checked) .will { display: block; }
+.item:has(> label.research input:checked) .will::before { content: "✓ "; }
+/* A live count of what's checked, with no script: counters run in document order, and the bar comes last. */
+form.ballot { counter-reset: checked; }
+label.research input:checked { counter-increment: checked; }
+form.ballot:has(label.research input:checked) .bar button.go::after { content: " (" counter(checked) ")"; }
+.who a.who-name { display: block; min-height: 44px; padding: 10px 0; text-decoration: none; font-weight: 600; }
+.who a.who-name .desig { font-weight: 400; }
 .item-lean .link { color: var(--accent); text-decoration: underline; }
 .picks .pick .label { color: var(--muted); font-weight: 400; font-size: .9rem; }
 .mine form.stack { border: 0; padding: 0; margin: 0; background: transparent; }
@@ -362,6 +372,8 @@ export interface PageOptions {
   nav?: boolean;
   /** Mount prefix (e.g. "/ballotfix") for the nav's home links. Empty when served at root. */
   base?: string;
+  /** The top bar's right-hand link, already prefixed. Default: "New race". */
+  back?: { href: string; label: string };
 }
 
 /** Full HTML document with a strict CSP: no scripts, no external resources. */
@@ -370,8 +382,11 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
     ? `<meta http-equiv="refresh" content="${Math.max(2, Math.floor(opts.refreshSeconds))}">`
     : "";
   const base = opts.base ?? "";
+  const back = opts.back ?? { href: `${base}/#new`, label: "New race" };
   const nav = opts.nav
-    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${base}/#new">New race</a></nav>`
+    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${back.href}">${
+      esc(back.label)
+    }</a></nav>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -432,7 +447,7 @@ export function raceBody(
 
   return `<h1>${esc(raceTitle(r))}</h1>
 <p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
-    esc(r.generated_at.slice(0, 10))
+    esc(readableDate(r.generated_at.slice(0, 10)))
   }</p>
 ${extra.status ?? ""}
 ${extra.actions ?? ""}
@@ -506,7 +521,7 @@ ${gapsAndUnverified(d.gaps, d.unverified)}`;
 
   return `<h1>${esc(measureTitle(q))}</h1>
 <p class="sub">${esc(q.jurisdiction || "Jurisdiction not read")}, ${esc(q.state)} · Researched ${
-    esc(d.generated_at.slice(0, 10))
+    esc(readableDate(d.generated_at.slice(0, 10)))
   }</p>
 ${official}
 ${extra.status ?? ""}

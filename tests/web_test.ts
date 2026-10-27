@@ -1177,6 +1177,8 @@ Deno.test("researched items get their own tab and can be read one after another"
   const second = await (await s.app(new Request(`http://app.test/races/${measure.id}`))).text();
   assertStringIncludes(second, `class="prev" href="/races/${mayor.id}"`);
   assertStringIncludes(second, "2 of 2");
+  // The top bar leads back to the ballot instead of to a new race.
+  assertStringIncludes(second, `<a href="/ballots/${id}/researched#item-m0">Your ballot</a></nav>`);
   // A race not started from a ballot has no walk.
   const plain = await s.app(post("/races", {
     city: "Fontana",
@@ -1190,4 +1192,5 @@ Deno.test("researched items get their own tab and can be read one after another"
   const solo = await (await s.app(new Request(`http://app.test${plain.headers.get("location")}`)))
     .text();
   assert(!solo.includes(`class="walk"`));
+  assertStringIncludes(solo, `<a href="/#new">New race</a></nav>`);
 });
