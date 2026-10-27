@@ -154,6 +154,20 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   `contributed_to` relation with the filing's words as detail and its page in `relation_citations`;
   a measure's two sides are `side` entities its case for/against are also about;
   `KnowledgeBase.sharedBetween` answers what two entities share.
+- Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
+  network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
+  one person, organization, office, measure, or side: facts about it in its kind's fixed sections
+  (newest run first, every citation, evidence tag, and the run with when it was researched, marked
+  when a newer finished run of the same race exists, `RunStore.newerDone`), facts that name it,
+  contributions made and received (alphabetical, never summed), ballot relations, and the runs it
+  comes from. Unverified claims stay collapsed. A candidate or side gets a collapsed "Shared with
+  others in <place>": every other candidate and side in the same scope (`peersOf`), one block each,
+  alphabetical, via `KnowledgeBase.between`. Near misses come from `nearMisses` in
+  `src/knowledge.ts`, shared with the page view in `src/finance.ts`. `/entities` searches names in
+  one place (`scope`), alphabetical. Keys mark kept-apart entities with `~run`/`~donor` parts
+  (`keptApart`), which no normalized name can contain. App-served race and measure pages link to
+  entity pages (`EntityLinks`, only entities their own run holds, `slugsOfRun`); downloads and CLI
+  exports never do, and stay self-contained.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at

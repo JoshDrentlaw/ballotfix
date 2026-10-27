@@ -310,7 +310,14 @@ Deno.test("contributors match only by kind, place, and exact name; near misses a
   ]);
   const page = renderRace(dossier);
   assertStringIncludes(page, "Possibly the same, kept separate");
-  assertStringIncludes(page, "Acquanetta Warren and Third Person; Joz Sida and Third Person");
+  // Every pair has its own block in ballot order, whether or not it shares anyone.
+  const heads = [...page.matchAll(/<section class="pair"><h5>([^<]+)<\/h5>/g)].map((m) => m[1]);
+  assertEquals(heads, [
+    "Acquanetta Warren and Joz Sida",
+    "Acquanetta Warren and Third Person",
+    "Joz Sida and Third Person",
+  ]);
+  assertEquals(page.split("No shared contributors or endorsers found.").length - 1, 2);
 });
 
 Deno.test("an individual without identifying work is never one entity across rows", () => {

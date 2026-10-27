@@ -122,6 +122,30 @@ const MIGRATIONS = [
   ) STRICT;
   CREATE INDEX relation_citations_by_source ON relation_citations (source_id);
   `,
+  `
+  -- Entity pages (/entities/:slug) need an address that survives a rebuild, which
+  -- renumbers ids: the slug is a hash of the key. Lookups stay in one place, so the
+  -- key's scope (state and jurisdiction) gets its own column, with the place as written.
+  -- The graph is derived data and is rebuilt after this (KNOWLEDGE_VERSION 6), so the
+  -- old rows, which have no slug, can go.
+  DELETE FROM claim_entities;
+  DELETE FROM citations;
+  DELETE FROM relation_citations;
+  DELETE FROM claims;
+  DELETE FROM relations;
+  DELETE FROM sources;
+  DELETE FROM entities;
+  ALTER TABLE entities ADD COLUMN slug TEXT NOT NULL DEFAULT '';
+  ALTER TABLE entities ADD COLUMN scope TEXT NOT NULL DEFAULT '';
+  ALTER TABLE entities ADD COLUMN place TEXT NOT NULL DEFAULT '';
+  CREATE UNIQUE INDEX entities_by_slug ON entities (slug);
+  CREATE INDEX entities_by_scope ON entities (scope, kind);
+
+  -- "Researched again since": the newer finished run of the same race or measure.
+  -- json_valid first, so a corrupt row (which the store skips) can still be written.
+  CREATE INDEX runs_by_choice
+    ON runs (coalesce(CASE WHEN json_valid(body) THEN json_extract(body, '$.choice_id') END, id), created_at);
+  `,
 ];
 
 export type Row = Record<string, unknown>;

@@ -269,8 +269,8 @@ Deno.test("a person whose research flagged a name ambiguity isn't merged across 
     .map((e) => String(e.key));
   assertEquals(keys, [
     "person:ca|fontana|acquanetta warren",
-    "person:ca|fontana|joz sida|run r-1",
-    "person:ca|fontana|joz sida|run r-2",
+    "person:ca|fontana|joz sida|~run r-1",
+    "person:ca|fontana|joz sida|~run r-2",
   ]);
   s.db.close();
 });

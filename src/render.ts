@@ -14,7 +14,7 @@ import {
   SIDE_LABEL,
   type Tie,
 } from "./finance.ts";
-import { nameKey } from "./knowledge.ts";
+import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
 import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
@@ -49,7 +49,7 @@ export function safeHref(url: string | null): string | null {
   }
 }
 
-function link(url: string | null, text: string): string {
+export function link(url: string | null, text: string): string {
   const href = safeHref(url);
   return href
     ? `<a href="${esc(href)}" rel="noopener noreferrer nofollow" target="_blank">${esc(text)}</a>`
@@ -61,7 +61,7 @@ export function slug(s: string): string {
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
 }
 
-const EVIDENCE_LABEL: Record<EvidenceType, string> = {
+export const EVIDENCE_LABEL: Record<EvidenceType, string> = {
   primary_record: "Primary record",
   reported: "Reported",
   opinion: "Opinion / claim",
@@ -75,16 +75,58 @@ const ORDER_LABEL: Record<OrderBasis, string> = {
   unofficial: "Order is not from an official ballot. It is not a ranking.",
 };
 
-function factMeta(f: Fact): string {
+/** Source, author, and date, each said to be missing when it is. */
+export function sourceMeta(
+  c: { url: string; source_name: string; author: string | null; published: string | null },
+): string {
   return [
-    link(f.source_url, f.source_name),
-    f.author ? `by ${esc(f.author)}` : "author not stated",
-    f.published ? esc(f.published) : "date not stated",
+    link(c.url, c.source_name),
+    c.author ? `by ${esc(c.author)}` : "author not stated",
+    c.published ? esc(c.published) : "date not stated",
   ].join(" · ");
 }
 
-/** Context notes the page shows next to names; [] for runs without them. */
-type Notes = readonly ContextNote[];
+function factMeta(f: Fact): string {
+  return sourceMeta({ ...f, url: f.source_url });
+}
+
+/**
+ * Links from a page the app serves into its entity pages. `href` answers
+ * only for entities the run's own graph contribution holds. Exported and
+ * downloaded pages never get one, so they stay self-contained.
+ */
+export interface EntityLinks {
+  /** The run the page shows: part of some entity keys (personRef, contributorRef). */
+  runId: string;
+  href(key: string): string | null;
+}
+
+/**
+ * Context notes the page shows next to names ([] for runs without them), and
+ * where a named entity's page is, when the app serves the page.
+ */
+interface Notes {
+  list: readonly ContextNote[];
+  href?: (n: ContextNote) => string | null;
+}
+
+const NO_NOTES: Notes = { list: [] };
+
+function notesFor(
+  context: ContextResult | undefined,
+  state: string,
+  jurisdiction: string,
+  links?: EntityLinks,
+): Notes {
+  const list = context?.notes ?? [];
+  return links ? { list, href: (n) => links.href(noteRef(n, state, jurisdiction).key) } : { list };
+}
+
+/** The entity's name, linked to its page when there is one. */
+function entityName(text: string, ref: EntityRef | null, links?: EntityLinks): string {
+  const href = ref && links?.href(ref.key);
+  return href ? `<a href="${esc(href)}">${esc(text)}</a>` : esc(text);
+}
 
 function noteMeta(n: ContextNote): string {
   return [
@@ -100,7 +142,7 @@ function noteMeta(n: ContextNote): string {
  * with them it is a div, since a <details> can't sit inside a <p>.
  */
 function statementHtml(statement: string, notes: Notes): string {
-  const pieces = attachNotes(statement, notes);
+  const pieces = attachNotes(statement, notes.list);
   if (pieces.every((p) => typeof p === "string")) return `<p>${esc(statement)}</p>`;
   // Punctuation right after a name stays with it, not alone under an open note.
   const stuck = (i: number) => {
@@ -112,7 +154,7 @@ function statementHtml(statement: string, notes: Notes): string {
       typeof p === "string"
         ? esc(i > 0 ? p.slice(stuck(i - 1).length) : p)
         : `<span class="named">${
-          esc(p.text + stuck(i))
+          namedText(p.text, p.note, notes) + esc(stuck(i))
         }</span><details class="ctx"><summary aria-label="${
           p.note.kind === "person" ? "Who is" : "What is"
         } ${esc(p.text)}?">${
@@ -124,11 +166,17 @@ function statementHtml(statement: string, notes: Notes): string {
   }</div>`;
 }
 
+/** A name with a note: a link to its entity page when the app serves the page and has one. */
+function namedText(text: string, n: ContextNote, notes: Notes): string {
+  const href = notes.href?.(n);
+  return href ? `<a href="${esc(href)}">${esc(text)}</a>` : esc(text);
+}
+
 /**
  * One fact. A merged one (src/merge.ts) shows once, with every outlet that
  * reported it and, collapsed, how each of the others worded it.
  */
-function factItem(f: Fact, notes: Notes = []): string {
+function factItem(f: Fact, notes: Notes = NO_NOTES): string {
   const also = f.also ?? [];
   const tag = `<span class="ev ev-${f.evidence_type}">${EVIDENCE_LABEL[f.evidence_type]}</span>`;
   if (!also.length) {
@@ -370,12 +418,11 @@ function moneyHtml(
   finance: FinanceResult | undefined,
   s: FinanceSubjectResult | undefined,
   title: string,
+  titleHtml = esc(title),
 ): string {
   if (!finance) return "";
   if (!s) {
-    return `<section class="sec money"><h4>${
-      esc(title)
-    }</h4><p class="gap">Not looked up in this run.</p></section>`;
+    return `<section class="sec money"><h4>${titleHtml}</h4><p class="gap">Not looked up in this run.</p></section>`;
   }
   const totals = s.totals.length
     ? `<ul class="meta totals">${
@@ -414,7 +461,7 @@ function moneyHtml(
       alphabetical(s.unverified).map(giftItem).join("")
     }</ul></details>`
     : "";
-  return `<section class="sec money"><h4>${esc(title)}</h4>
+  return `<section class="sec money"><h4>${titleHtml}</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
 ${totals}${gifts}${notes}${unverified}</section>`;
 }
@@ -439,7 +486,7 @@ function portalGapsHtml(finance: FinanceResult | undefined): string {
     : "";
 }
 
-const SUPPORT_TITLE: Record<string, string> = {
+export const SUPPORT_TITLE: Record<string, string> = {
   endorsements: "Endorsements and affiliations",
   case_for: "The case for",
   case_against: "The case against",
@@ -462,7 +509,8 @@ function tieHtml(label: string, t: Tie): string {
 }
 
 function kindLabel(key: string, kind: string): string {
-  return key.includes("|donor ") ? "individual" : kind;
+  const kept = keptApart(key);
+  return kept === "row" || kept === "work" ? "individual" : kind;
 }
 
 function possibleHtml(p: PairConnections): string {
@@ -475,8 +523,9 @@ function possibleHtml(p: PairConnections): string {
 
 /**
  * Who each pair shares as a contributor or endorser, each tie with its
- * source. Collapsed. Every pair is accounted for: one with nothing shared
- * is named as such. Nothing is scored or ranked.
+ * source. Collapsed. Every pair gets its own block in ballot order, one with
+ * nothing shared saying so: pairs are never grouped or ordered by what they
+ * share. Nothing is scored or ranked.
  */
 function sharedHtml(
   pairs: readonly PairConnections[],
@@ -484,6 +533,7 @@ function sharedHtml(
   context: ContextResult | undefined,
   place: string,
   single: string,
+  links?: EntityLinks,
 ): string {
   const caveats = [
     !finance
@@ -495,32 +545,22 @@ function sharedHtml(
       ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
       : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
-  const found = pairs.filter((p) => p.shared.length || p.possible.length);
-  const none = pairs.filter((p) => !p.shared.length);
-  const blocks = found.map((p) =>
+  const blocks = pairs.map((p) =>
     `<section class="pair"><h5>${esc(p.a)} and ${esc(p.b)}</h5>${
       p.shared.length
         ? `<ul class="shared-list">${
           p.shared.map((x) =>
-            `<li><strong>${esc(x.ref.name)}</strong> <span class="desig">${
+            `<li><strong>${entityName(x.ref.name, x.ref, links)}</strong> <span class="desig">${
               kindLabel(x.ref.key, x.ref.kind)
             }</span><ul class="ties">${x.a.map((t) => tieHtml(p.a, t)).join("")}${
               x.b.map((t) => tieHtml(p.b, t)).join("")
             }</ul></li>`
           ).join("")
         }</ul>`
-        : ""
+        : `<p class="gap">No shared contributors or endorsers found.</p>`
     }${possibleHtml(p)}</section>`
   ).join("");
-  const body = pairs.length
-    ? `${blocks}${
-      none.length
-        ? `<p><strong>No shared contributors or endorsers found:</strong> ${
-          none.map((p) => `${esc(p.a)} and ${esc(p.b)}`).join("; ")
-        }.</p>`
-        : ""
-    }`
-    : `<p class="gap">${esc(single)}</p>`;
+  const body = pairs.length ? blocks : `<p class="gap">${esc(single)}</p>`;
   const sharing = pairs.filter((p) => p.shared.length).length;
   return `<details class="shared sec"><summary>Shared connections (${
     sharing
@@ -541,6 +581,7 @@ function dossierSection(
   next?: CandidateDossier,
   finance?: FinanceResult,
   money?: FinanceSubjectResult,
+  person?: { ref: EntityRef; links: EntityLinks },
 ): string {
   const c = d.candidate;
   if (d.status === "pending") {
@@ -556,7 +597,7 @@ function dossierSection(
     : "";
 
   return `<article class="dossier" id="${slug(c.name)}">
-  <h2>${esc(c.name)}</h2>
+  <h2>${entityName(c.name, person?.ref ?? null, person?.links)}</h2>
   <p class="desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
@@ -627,7 +668,7 @@ nav.top a { text-decoration: none; font-weight: 700; padding: 8px 0; }
 form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
 label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
 label .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
-input, textarea { font: inherit; font-size: 16px; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+input, textarea, select { font: inherit; font-size: 16px; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
 textarea { min-height: 96px; }
 .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
@@ -745,6 +786,9 @@ details.shared[open] { padding-bottom: 12px; }
 .ties { margin: 4px 0 0; padding-left: 18px; font-size: .9rem; }
 .ties li { margin: 4px 0; }
 .who-tag { font-weight: 600; }
+.ballot-lines, .runs-from { margin: 0; padding-left: 20px; }
+.ballot-lines li, .runs-from li { margin: 6px 0; }
+.from { font-style: italic; }
 /* Last, so it wins over the screen rules above. */
 @media print { nav.top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 `;
@@ -854,7 +898,7 @@ export function raceTitle(r: RaceDossier): string {
 /** The race overview and every dossier: shared by the app and the static export. */
 export function raceBody(
   r: RaceDossier,
-  extra: { status?: string; actions?: string; mine?: string } = {},
+  extra: { status?: string; actions?: string; mine?: string; links?: EntityLinks } = {},
 ): string {
   const q = r.query;
   const inc = incumbencyNote(r.listing);
@@ -867,7 +911,8 @@ export function raceBody(
     }</p>`
     : "";
   const model = r.candidates.find((c) => c.model)?.model;
-  const notes = r.context?.notes ?? [];
+  const links = extra.links;
+  const notes = notesFor(r.context, q.state, q.city, links);
 
   return `<h1>${esc(raceTitle(r))}</h1>
 <p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
@@ -897,17 +942,29 @@ ${
         r.candidates[i + 1],
         r.finance,
         r.finance?.subjects.find((s) => s.candidate === i),
+        links && d.status !== "pending"
+          ? {
+            ref: personRef(
+              q.state,
+              q.city,
+              d.candidate.name,
+              d.identity_note ? links.runId : undefined,
+            ),
+            links,
+          }
+          : undefined,
       )
     ).join("")
   }
 ${portalGapsHtml(r.finance)}
 ${
     !r.candidates.length || r.candidates.some((c) => c.status === "pending") ? "" : sharedHtml(
-      raceConnections(r),
+      raceConnections(r, links?.runId),
       r.finance,
       r.context,
       `${q.city}, ${q.state}`,
       "Only one name is on the ballot here, so there is nothing to compare.",
+      links,
     )
   }
 ${namesHtml(r.context)}
@@ -941,7 +998,13 @@ export function measureTitle(m: { label: string; jurisdiction: string; electionD
 /** One measure's page: the same template for every measure, both sides sought equally. */
 export function measureBody(
   d: MeasureDossier,
-  extra: { status?: string; actions?: string; mine?: string; stopped?: boolean } = {},
+  extra: {
+    status?: string;
+    actions?: string;
+    mine?: string;
+    stopped?: boolean;
+    links?: EntityLinks;
+  } = {},
 ): string {
   const q = d.query;
   const question = q.question
@@ -955,7 +1018,8 @@ export function measureBody(
   const identity = d.identity_note
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
     : "";
-  const notes = d.context?.notes ?? [];
+  const links = extra.links;
+  const notes = notesFor(d.context, q.state, q.jurisdiction, links);
   const body = d.status === "pending"
     ? `<p class="gap">${
       extra.stopped
@@ -970,6 +1034,9 @@ ${
           d.finance,
           d.finance?.subjects.find((s) => s.side === side),
           `Contributions on file: ${SIDE_LABEL[side].toLowerCase()}`,
+          `Contributions on file: ${
+            entityName(SIDE_LABEL[side].toLowerCase(), sideRef(q, side), links)
+          }`,
         )
       ).join("")
     }
@@ -977,11 +1044,12 @@ ${gapsAndUnverified(d.gaps, d.unverified, notes)}
 ${portalGapsHtml(d.finance)}
 ${
       sharedHtml(
-        measureConnections(d),
+        measureConnections(d, links?.runId),
         d.finance,
         d.context,
         [q.jurisdiction, q.state].filter(Boolean).join(", "),
         "",
+        links,
       )
     }
 ${namesHtml(d.context)}`;

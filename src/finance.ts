@@ -32,7 +32,9 @@ import {
   contributorRef,
   type EntityRef,
   nameKey,
+  nearMisses,
   noteRef,
+  type PossibleMatch,
   type SUPPORT_SECTIONS,
 } from "./knowledge.ts";
 import {
@@ -413,11 +415,7 @@ export interface Shared {
   b: Tie[];
 }
 
-/** Names close enough that they may be one entity, kept separate because the rule can't tell. */
-export interface PossibleMatch {
-  a: string[];
-  b: string[];
-}
+export type { PossibleMatch };
 
 export interface PairConnections {
   a: string;
@@ -426,33 +424,19 @@ export interface PairConnections {
   possible: PossibleMatch[];
 }
 
-/** Words that don't make a different organization by themselves, for flagging near misses only. */
-const SUFFIXES = new Set(
-  (`the inc incorporated corp corporation co company llc l l c ltd lp llp pllc pc pac committee
-  political action`).split(/\s+/),
-);
-
-/**
- * For flagging names that may be one entity, never for matching: without
- * corporate suffixes, and in any word order, since filings write
- * individuals "DOE, JANE" where facts say "Jane Doe".
- */
-function looseKey(name: string): string {
-  return nameKey(name).split(" ").filter((w) => w && !SUFFIXES.has(w)).sort().join(" ");
-}
-
 function party(
   label: string,
   money: FinanceSubjectResult | undefined,
-  // The graph (KnowledgeBase.tiesOf) reads support from the same sections and matches by the
-  // same entity keys. It works across runs and doesn't flag near misses; this page view
-  // works from one dossier, so a downloaded page needs no database.
+  // The graph (KnowledgeBase.tiesOf) reads support from the same sections, matches by the
+  // same entity keys, and flags near misses with the same nearMisses. It works across runs;
+  // this page view works from one dossier, so a downloaded page needs no database.
   support: readonly {
     section: typeof SUPPORT_SECTIONS[number];
     result: SectionResult | undefined;
   }[],
   scope: { state: string; jurisdiction: string; notes: RaceDossier["context"] },
-  index: number,
+  /** Row ids as the graph writes them (`run|subject|row`), so keys match the graph's. */
+  row: { run: string; subject: number },
 ): Party {
   const ties = new Map<string, { ref: EntityRef; ties: Tie[] }>();
   const add = (ref: EntityRef, tie: Tie) => {
@@ -463,7 +447,12 @@ function party(
   const untyped: string[] = [];
   (money?.contributions ?? []).forEach((c, n) => {
     if (!c.verified) return;
-    const ref = contributorRef(scope.state, scope.jurisdiction, c, `page|${index}|${n}`);
+    const ref = contributorRef(
+      scope.state,
+      scope.jurisdiction,
+      c,
+      `${row.run}|${row.subject}|${n}`,
+    );
     if (ref) add(ref, { kind: "contribution", contribution: c });
     else untyped.push(c.contributor);
   });
@@ -488,28 +477,12 @@ export function compare(a: Party, b: Party): PairConnections {
     if (y) shared.push({ ref: x.ref, a: x.ties, b: y.ties });
   }
   shared.sort((p, q) => nameKey(p.ref.name).localeCompare(nameKey(q.ref.name)));
-  // Per loose key, every entity (by key) and untyped name each party has under it.
-  const loose = (p: Party) => {
-    const m = new Map<string, Map<string, string>>();
-    const put = (key: string, name: string) => {
-      const k = looseKey(name);
-      if (k) m.set(k, (m.get(k) ?? new Map()).set(key, name));
-    };
-    for (const [key, x] of p.ties) put(key, x.ref.name);
-    // An untyped contributor is never one entity with anything, even a same-named one.
-    p.untyped.forEach((name) => put(`untyped:${p === a ? "a" : "b"}:${name}`, name));
-    return m;
-  };
-  const la = loose(a), lb = loose(b);
-  const possible: PossibleMatch[] = [];
-  for (const [k, ea] of la) {
-    const eb = lb.get(k);
-    if (!eb) continue;
-    // A near miss is anything under the key that isn't the very entity the other side has.
-    const unmatched = [...ea.keys()].some((x) => !eb.has(x)) ||
-      [...eb.keys()].some((x) => !ea.has(x));
-    if (unmatched) possible.push({ a: [...ea.values()], b: [...eb.values()] });
-  }
+  // An untyped contributor is never one entity with anything, even a same-named one.
+  const entries = (p: Party, side: string) => [
+    ...[...p.ties].map(([key, x]) => ({ key, name: x.ref.name })),
+    ...p.untyped.map((name) => ({ key: `untyped:${side}:${name}`, name })),
+  ];
+  const possible = nearMisses(entries(a, "a"), entries(b, "b"));
   return { a: a.label, b: b.label, shared, possible };
 }
 
@@ -518,34 +491,44 @@ function pairs(parties: readonly Party[]): PairConnections[] {
   return parties.flatMap((a, i) => parties.slice(i + 1).map((b) => compare(a, b)));
 }
 
-export function raceConnections(race: RaceDossier): PairConnections[] {
+/**
+ * `runId`, when the app serves the page, makes each contributor's key the
+ * graph's (see contributorRef), so an entry can link to its entity page.
+ */
+export function raceConnections(race: RaceDossier, runId = "page"): PairConnections[] {
   const q = race.query;
   const scope = { state: q.state, jurisdiction: q.city, notes: race.context };
-  return pairs(race.candidates.flatMap((c, i) =>
-    c.status === "pending" ? [] : [party(
+  const subjects = race.finance?.subjects ?? [];
+  return pairs(race.candidates.flatMap((c, i) => {
+    if (c.status === "pending") return [];
+    const subject = subjects.findIndex((s) => s.candidate === i);
+    return [party(
       c.candidate.name,
-      race.finance?.subjects.find((s) => s.candidate === i),
+      subjects[subject],
       c.status === "ok" ? [{ section: "endorsements", result: c.sections.endorsements }] : [],
       scope,
-      i,
-    )]
-  ));
+      { run: runId, subject },
+    )];
+  }));
 }
 
 export const SIDE_LABEL = { support: "Supporters", oppose: "Opponents" } as const;
 
 /** The supporters against the opponents: each side's committees and its own case. */
-export function measureConnections(m: MeasureDossier): PairConnections[] {
+export function measureConnections(m: MeasureDossier, runId = "page"): PairConnections[] {
   if (m.status !== "ok") return [];
   const q = m.query;
   const scope = { state: q.state, jurisdiction: q.jurisdiction, notes: m.context };
-  const side = (s: "support" | "oppose", section: "case_for" | "case_against", i: number) =>
-    party(
+  const subjects = m.finance?.subjects ?? [];
+  const side = (s: "support" | "oppose", section: "case_for" | "case_against") => {
+    const subject = subjects.findIndex((x) => x.side === s);
+    return party(
       SIDE_LABEL[s],
-      m.finance?.subjects.find((x) => x.side === s),
+      subjects[subject],
       [{ section, result: m.sections[section] }],
       scope,
-      i,
+      { run: runId, subject },
     );
-  return pairs([side("support", "case_for", 0), side("oppose", "case_against", 1)]);
+  };
+  return pairs([side("support", "case_for"), side("oppose", "case_against")]);
 }
