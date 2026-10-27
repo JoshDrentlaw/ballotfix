@@ -554,7 +554,7 @@ Deno.test("a queue that fills partway keeps the user's edits and an honest count
   assertStringIncludes(body, "queue is full");
   assertStringIncludes(body, `value="Fontana (corrected)"`);
   assertStringIncludes(body, `name="pick" value="1" checked`);
-  assertStringIncludes(body, "Up to 3 can start right now");
+  assertStringIncludes(body, "up to 3 can start now");
   s.port.release();
   await s.jobs.idle();
 });
@@ -1088,7 +1088,7 @@ Deno.test("picks can be marked on the ballot page before anything is researched"
   assertEquals((await s.choices.get(`${id}-0`))!.picks, ["Joz Sida"]);
   assertEquals(await s.store.list(), [], "saving picks starts no research");
   const after = await (await s.app(new Request(`http://app.test${loc}?saved=1`))).text();
-  assertStringIncludes(after, "Leaning: <strong>Joz Sida</strong>");
+  assertStringIncludes(after, "Your pick: <strong>Joz Sida</strong>");
   assertStringIncludes(after, `value="Joz Sida" checked`);
 
   // An error comes back on the ballot page, keeping what was typed.

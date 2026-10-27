@@ -324,10 +324,18 @@ form.ballot h2 { margin-top: 8px; }
 details.settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; }
 details.settings[open] { padding-bottom: 14px; }
 details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
+details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
+details.settings[open] > div.row { margin-bottom: 14px; }
+details.banner > summary { color: var(--warn-fg); padding: 0; }
+details.banner > p { margin-top: 8px; }
+.item-lean a { display: inline-block; min-height: 44px; padding: 10px 0; text-decoration: none; color: var(--muted); }
+.item-lean .link { color: var(--accent); text-decoration: underline; }
+.picks .pick .label { color: var(--muted); font-weight: 400; font-size: .9rem; }
+.mine form.stack { border: 0; padding: 0; margin: 0; background: transparent; }
 details.note > summary { padding: 0; }
 .bar { position: sticky; bottom: 0; z-index: 1; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 0 12px; margin-top: 4px; display: grid; gap: 6px; }
 .bar-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
-.bar-buttons button { flex: 1 1 120px; min-height: 44px; padding: 8px 12px; }
+.bar-buttons button { flex: 1 1 120px; min-height: 44px; padding: 8px 10px; white-space: nowrap; font-size: .95rem; }
 fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 4px; }
 .bar .sub { margin: 0; font-size: .82rem; }
 .walk { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }

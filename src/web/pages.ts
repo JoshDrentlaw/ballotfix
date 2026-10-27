@@ -242,13 +242,15 @@ function ballotTabs(b: BallotRecord, items: readonly PickItem[], at: BallotTab, 
   return `<nav class="tabs" aria-label="This ballot">${
     tab("research", "", "To research", String(total - started))
   }${tab("researched", "/researched", "Researched", String(started))}${
-    tab("picks", "/picks", "Picks", `${decided}/${total}`)
+    tab("picks", "/picks", "Picks", `${decided} of ${total}`)
   }</nav>`;
 }
 
 function leanLine(choice: ChoiceRecord | null): string {
   return `<span class="item-lean">${
-    choice?.picks.length ? `Leaning: <strong>${esc(choice.picks.join(", "))}</strong>` : "Undecided"
+    choice?.picks.length
+      ? `Your pick: <strong>${esc(choice.picks.join(", "))}</strong>`
+      : "Undecided"
   }${choice?.notes ? " · has notes" : ""}</span>`;
 }
 
@@ -450,10 +452,18 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   const started = Object.keys(b.started).length;
   const error = o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : "";
   const notes = r.notes
-    ? `<details class="note"><summary><strong>Reading notes</strong></summary><p>${
-      esc(r.notes)
-    }</p></details>`
+    ? `<details><summary>Reading notes</summary><p>${esc(r.notes)}</p></details>`
     : "";
+  const check =
+    `They were read by AI from your images and can be wrong. They're in the order your ballot prints them, contests first, then measures.${
+      started ? ` The ${started} already started are under Researched.` : ""
+    }`;
+  // In full until research starts; after that it's been read, so it folds to one line.
+  const banner = !left
+    ? ""
+    : started
+    ? `<details class="banner"><summary><strong>Read by AI: check against your ballot</strong></summary><p>${check}</p>${notes}</details>`
+    : `<div class="banner"><p><strong>Check these against your ballot before researching.</strong> ${check}</p>${notes}</div>`;
   const empty = r.contests.length || measures.length
     ? ""
     : `<p class="gap">No contests or measures were found on this ballot.</p>`;
@@ -469,17 +479,21 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   const state = posted("state", r.state ?? DEFAULT_FORM.state);
   const ballotIssues = posted("priorities", "");
   // Open when the date or state wasn't read, so the default isn't used unnoticed.
+  const issueCount = ballotIssues.split(/[\n;]/).filter((x) => x.trim()).length;
   const settings = canStart
-    ? `<details class="settings"${r.election_date && r.state ? "" : " open"}><summary>Election ${
-      esc(readableDate(election))
-    } · ${esc(state)}</summary>
+    ? `<details class="settings"${
+      r.election_date && r.state && !ballotIssues ? "" : " open"
+    }><summary>Research settings <span class="item-meta">${esc(readableDate(election))} · ${
+      esc(state)
+    } · ${
+      issueCount
+        ? `${issueCount} issue${issueCount === 1 ? "" : "s"} for everything`
+        : "no issues named"
+    }</span></summary>
 <div class="row">
   <label>Election date <input name="election" type="date" value="${esc(election)}"></label>
   <label>State <input name="state" maxlength="2" value="${esc(state)}"></label>
-</div></details>
-<details class="settings"${
-      ballotIssues ? " open" : ""
-    }><summary>What matters most to you <span class="hint">(optional)</span></summary>
+</div>
 ${prioritiesField(ballotIssues, true)}</details>`
     : "";
   const bar = left && (canStart || o.choices)
@@ -502,11 +516,9 @@ ${
 </div>
 ${
       canStart
-        ? `<p class="sub">About $1 to $2 each. ${
-          o.available
-            ? `Up to ${o.available} can start right now.`
-            : "Other races are researching now; try again when one finishes."
-        }${o.choices ? " Either button saves your picks and notes." : ""}</p>`
+        ? `<p class="sub">About $1 to $2 each · ${
+          o.available ? `up to ${o.available} can start now` : "others are researching; try later"
+        }</p>`
         : ""
     }
 </div>`
@@ -517,15 +529,9 @@ ${
     r.county ? ` · ${esc(r.county)}` : ""
   } · ${esc(when(b.created_at))}</p>
 ${ballotTabs(b, items, "research", base)}
-${
-    left
-      ? `<div class="banner"><p><strong>Check these against your ballot before researching.</strong> They were read by AI from your images and can be wrong. They're in the order your ballot prints them, contests first, then measures.${
-        started ? ` The ${started} already started are under Researched.` : ""
-      }</p></div>`
-      : ""
-  }
+${banner}
 ${o.saved ? `<p class="note" role="status">Saved.</p>` : ""}
-${notes}${error}${empty}${done}
+${left ? "" : notes}${error}${empty}${done}
 ${
     left
       ? `<form class="stack ballot" method="post" action="${base}/ballots/${esc(b.id)}/research">
@@ -605,13 +611,13 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
       esc(x.heading)
     }</a></h3>${pill(run.status)}</div>
 <p class="desig">${esc(x.detail)}</p>
-<p class="item-lean">${
+<p class="item-lean"><a href="${href}#mine">${
       x.choice?.picks.length
         ? `Your pick: <strong>${esc(x.choice.picks.join(", "))}</strong>`
-        : "Undecided"
-    }</p>
+        : `Undecided · <span class="link">set your pick</span>`
+    }</a></p>
 ${who}
-<div class="actions"><a class="button secondary" href="${href}">Open the research</a><a class="button secondary" href="${href}#mine">Notes and pick</a></div></li>`;
+<div class="actions"><a class="button secondary" href="${href}">Open the research</a></div></li>`;
   }).join("");
   const asked = done.some((x) => (x.run!.priorities?.length ?? 0) > 0)
     ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Every candidate was checked against the same issues. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`
@@ -731,7 +737,7 @@ function choicePanel(
   base: string,
   saved: boolean,
 ): string {
-  const head = `<section class="mine" id="mine"><h2>Your notes and pick</h2>`;
+  const head = `<section class="mine" id="mine"><h2>Your pick and notes</h2>`;
   if (active) {
     return `${head}<p class="sub">You can write notes and a preliminary pick here once research finishes.${
       choice ? ` So far: ${pickText(choice.picks)}.` : ""
@@ -806,14 +812,12 @@ export function runPage(
     }/rerun"><button class="secondary" type="submit">Research again</button></form>`
     : "";
   const download = (run.measure ? run.measure_result : run.race) && run.status === "done"
-    ? `<a class="button" href="${base}/races/${esc(run.id)}/download">Download page</a>`
+    ? `<a class="button secondary" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
   const mine = `${
     opts.choices ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false) : ""
   }${opts.walk ? walkNav(opts.walk) : ""}`;
-  const jump = opts.choices
-    ? `<a class="button secondary" href="#mine">Your notes and pick</a>`
-    : "";
+  const jump = opts.choices ? `<a class="button" href="#mine">Your pick and notes</a>` : "";
   const walk = opts.walk ? walkNav(opts.walk) : "";
   const actions = `${walk}${
     rerun || download || jump ? `<div class="actions">${jump}${download}${rerun}</div>` : ""
@@ -919,7 +923,9 @@ export function picksPage(
       open ? " open" : ""
     }><summary><span class="item-title">${esc(x.heading)}</span><span class="item-meta">${
       esc(x.detail)
-    }</span><span class="pick">${pickText(x.choice?.picks)}</span>${
+    }</span><span class="pick">${
+      x.choice?.picks.length ? `<span class="label">Your pick:</span> ` : ""
+    }${pickText(x.choice?.picks)}</span>${
       x.choice?.notes ? `<span class="item-meta noprint">Has notes</span>` : ""
     }</summary>
 <div class="noprint item-body">${inputs}
