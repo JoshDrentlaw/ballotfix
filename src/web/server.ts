@@ -16,12 +16,33 @@
  *   GET  /ballots/:id/researched what has research, in ballot order, with the quick read on each
  *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
  *   POST /ballots/:id/picks     save picks and notes (from the sheet, or the ballot page)
+ *   GET  /entities              name search over the knowledge graph, one place at a time
+ *   GET  /entities/:slug        what the graph holds on one person, organization, office,
+ *                               measure, or measure side, across finished runs (read-only)
  *   GET  /healthz
  *   GET  /apple-touch-icon.png  home-screen icon (public, like /healthz)
  */
 
 import { measuresOf, parsePriorities } from "../dossier.ts";
-import { CSP, renderMeasure, renderRace, slug, TOUCH_ICON_PATH } from "../render.ts";
+import {
+  CSP,
+  type EntityLinks,
+  measureTitle,
+  renderMeasure,
+  renderRace,
+  slug,
+  titleFor,
+  TOUCH_ICON_PATH,
+} from "../render.ts";
+import {
+  entityPage,
+  entityView,
+  keptRunId,
+  MAX_QUERY_CHARS,
+  MAX_SEARCH_RESULTS,
+  type RunInfo,
+  searchPage,
+} from "./entities.ts";
 import { MAX_PRIORITIES } from "../template.ts";
 import type {
   BallotCandidate,
@@ -700,6 +721,77 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     };
   };
 
+  /** A finished run's links into entity pages: only entities its own graph share holds. */
+  const linksFor = (run: RunRecord): EntityLinks | undefined => {
+    if (run.status !== "done") return undefined;
+    const slugs = o.store.knowledge.slugsOfRun(run.id);
+    if (!slugs.size) return undefined;
+    return {
+      runId: run.id,
+      href: (key) => {
+        const s = slugs.get(key);
+        return s ? `${BASE}/entities/${s}` : null;
+      },
+    };
+  };
+
+  const runInfo = async (id: string): Promise<RunInfo | null> => {
+    const run = await o.store.get(id);
+    if (!run) return null;
+    const done = run.measure ? run.measure_result : run.race;
+    return {
+      id: run.id,
+      title: run.measure ? measureTitle(run.measure) : titleFor(run.query),
+      created_at: run.created_at,
+      researched: (done?.generated_at ?? run.created_at).slice(0, 10),
+      newer: o.store.newerDone(run),
+    };
+  };
+
+  /** Read-only views of the knowledge graph. GET only; they spend nothing. */
+  const entityRoutes = async (req: Request, path: string, url: URL): Promise<Response | null> => {
+    const kb = o.store.knowledge;
+    if (path === "/entities") {
+      if (req.method !== "GET") {
+        return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
+      }
+      const places = kb.places();
+      const asked = url.searchParams.get("place") ?? "";
+      const scope = places.some((p) => p.scope === asked)
+        ? asked
+        : places.length === 1
+        ? places[0].scope
+        : null;
+      const query = (url.searchParams.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
+      const results = scope ? kb.search(scope, query) : null;
+      // Same-named people kept to one run each are told apart by their run.
+      const runOf = new Map<number, RunInfo>();
+      for (const e of (results ?? []).slice(0, MAX_SEARCH_RESULTS)) {
+        const id = keptRunId(e);
+        const info = id ? await runInfo(id) : null;
+        if (info) runOf.set(e.id, info);
+      }
+      return html(searchPage({ places, scope, query, results, runOf, base: BASE }));
+    }
+    const m = path.match(/^\/entities\/([^/]+)$/);
+    if (!m) return null;
+    if (req.method !== "GET") {
+      return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
+    }
+    const e = kb.bySlug(m[1]);
+    if (!e) {
+      return html(
+        messagePage(
+          "Not found",
+          "Nothing in finished research is at that address. It may have come from a run that was researched again or failed.",
+          BASE,
+        ),
+        404,
+      );
+    }
+    return html(entityPage(await entityView(kb, runInfo, e), BASE));
+  };
+
   const researchOff = () =>
     html(messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE), 503);
 
@@ -923,6 +1015,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     const ballotResponse = await ballotRoutes(req, path, url);
     if (ballotResponse) return ballotResponse;
 
+    const entityResponse = await entityRoutes(req, path, url);
+    if (entityResponse) return entityResponse;
+
     if (path === "/races" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
       const form = await req.formData();
@@ -957,6 +1052,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           choices: Boolean(o.choices),
           choice: await choiceFor(run),
           walk: await walkFor(run),
+          links: linksFor(run),
           ...extra,
         });
       if (!suffix && req.method === "GET") {

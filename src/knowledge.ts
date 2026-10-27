@@ -49,7 +49,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 5;
+export const KNOWLEDGE_VERSION = 6;
 
 /** "side": the supporters or the opponents of one measure, so the two can be compared. */
 export const ENTITY_KINDS = ["person", "office", "measure", "organization", "side"] as const;
@@ -82,6 +82,10 @@ export interface EntityRef {
   key: string;
   /** Display name as first seen. */
   name: string;
+  /** Normalized state and jurisdiction ("ca|fontana"): the part of the key every lookup stays in. */
+  scope: string;
+  /** The place as the run wrote it ("Fontana, CA"), for display only. */
+  place: string;
 }
 
 export interface Citation {
@@ -157,10 +161,21 @@ export function jurisdictionKey(j: string): string {
   return county ? `${county[1]} county` : k;
 }
 
+/** The scope part of an entity key: normalized state, then jurisdiction. */
+export function scopeKey(state: string, jurisdiction: string): string {
+  return `${nameKey(state)}|${jurisdictionKey(jurisdiction)}`;
+}
+
 function ref(kind: EntityKind, name: string, scope: string[]): EntityRef {
-  const [state, jurisdiction, ...rest] = scope.map(nameKey);
-  const parts = [state, jurisdictionKey(jurisdiction ?? ""), ...rest, nameKey(name)];
-  return { kind, name, key: `${kind}:${parts.join("|")}` };
+  const [state, jurisdiction = "", ...rest] = scope;
+  const parts = [scopeKey(state, jurisdiction), ...rest.map(nameKey), nameKey(name)];
+  return {
+    kind,
+    name,
+    key: `${kind}:${parts.join("|")}`,
+    scope: scopeKey(state, jurisdiction),
+    place: [jurisdiction.trim(), state.trim()].filter(Boolean).join(", "),
+  };
 }
 
 /**
@@ -202,6 +217,7 @@ export function measureRef(m: MeasureQuery): EntityRef {
 export function sideRef(m: MeasureQuery, side: "support" | "oppose"): EntityRef {
   const measure = measureRef(m);
   return {
+    ...measure,
     kind: "side",
     name: `${side === "support" ? "Supporters" : "Opponents"} of ${m.label}`,
     key: `side:${measure.key.slice("measure:".length)}|${side}`,
@@ -273,6 +289,72 @@ export function contributorRef(
     ...person,
     key: `${person.key}|donor ${identifies ? work.join("|") : `row ${row}`}`,
   };
+}
+
+/**
+ * Why an entity is kept apart from same-named ones, read off its key:
+ * "run", a person whose dossier flagged a name ambiguity (personRef);
+ * "row", a contributor whose filing doesn't say enough to tell same-named
+ * people apart; "work", a contributor matched only on the same stated
+ * occupation and employer (contributorRef). Null for the plain rule.
+ */
+export function keptApart(key: string): "run" | "row" | "work" | null {
+  if (/\|run [^|]+$/.test(key)) return "run";
+  if (key.includes("|donor row ")) return "row";
+  if (key.includes("|donor ")) return "work";
+  return null;
+}
+
+/** Words that don't make a different organization by themselves, for flagging near misses only. */
+const SUFFIXES = new Set(
+  (`the inc incorporated corp corporation co company llc l l c ltd lp llp pllc pc pac committee
+  political action`).split(/\s+/),
+);
+
+/**
+ * For flagging names that may be one entity, never for matching: without
+ * corporate suffixes, and in any word order, since filings write
+ * individuals "DOE, JANE" where facts say "Jane Doe".
+ */
+export function looseKey(name: string): string {
+  return nameKey(name).split(" ").filter((w) => w && !SUFFIXES.has(w)).sort().join(" ");
+}
+
+/** Names close enough that they may be one entity, kept separate because the rule can't tell. */
+export interface PossibleMatch {
+  a: string[];
+  b: string[];
+}
+
+/**
+ * The near misses between what two sides are tied to: names under one loose
+ * key on both sides where at least one entity isn't the very entity the
+ * other side has. Shared by the page view (src/finance.ts) and the graph
+ * (KnowledgeBase.between), so the two can't flag differently. Alphabetical.
+ * Never a match: the page lists them as "possibly the same, kept separate".
+ */
+export function nearMisses(
+  a: Iterable<{ key: string; name: string }>,
+  b: Iterable<{ key: string; name: string }>,
+): PossibleMatch[] {
+  const loose = (xs: Iterable<{ key: string; name: string }>) => {
+    const m = new Map<string, Map<string, string>>();
+    for (const { key, name } of xs) {
+      const k = looseKey(name);
+      if (k) m.set(k, (m.get(k) ?? new Map()).set(key, name));
+    }
+    return m;
+  };
+  const la = loose(a), lb = loose(b);
+  const out: { k: string; p: PossibleMatch }[] = [];
+  for (const [k, ea] of la) {
+    const eb = lb.get(k);
+    if (!eb) continue;
+    const unmatched = [...ea.keys()].some((x) => !eb.has(x)) ||
+      [...eb.keys()].some((x) => !ea.has(x));
+    if (unmatched) out.push({ k, p: { a: [...ea.values()], b: [...eb.values()] } });
+  }
+  return out.sort((x, y) => x.k.localeCompare(y.k)).map((x) => x.p);
 }
 
 function citationOf(f: Fact): Citation | null {

@@ -175,6 +175,22 @@ export class RunStore extends RecordTable<RunRecord> {
   }
 
   /**
+   * The newest finished run of the same race or measure (same choice id)
+   * started after this one: what a rerun replaced it with. Null if none.
+   */
+  newerDone(run: RunRecord): string | null {
+    const r = this.db.get(
+      `SELECT id FROM runs WHERE status = 'done' AND id != ?1 AND created_at > ?2
+       AND coalesce(json_extract(body, '$.choice_id'), id) = ?3
+       ORDER BY created_at DESC, id LIMIT 1`,
+      run.id,
+      run.created_at,
+      run.choice_id ?? run.id,
+    );
+    return r ? String(r.id) : null;
+  }
+
+  /**
    * A run that was queued or running when the server stopped will never
    * finish. Say so rather than leaving it spinning forever.
    */

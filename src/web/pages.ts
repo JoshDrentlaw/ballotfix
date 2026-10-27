@@ -3,6 +3,7 @@
 import { measuresOf } from "../dossier.ts";
 import {
   coverageLine,
+  type EntityLinks,
   esc,
   measureBody,
   measureTitle,
@@ -212,7 +213,12 @@ ${error}
 </form>
 ${ballots}
 <h2>Races</h2>
-${runs}`;
+${runs}
+${
+    o.runs.some((r) => r.status === "done")
+      ? `<p><a href="${base}/entities">Look up a name across finished research</a></p>`
+      : ""
+  }`;
   return page("Ballot Fix", body, { nav: true, base });
 }
 
@@ -812,6 +818,8 @@ export interface RunPageOptions {
   choices?: boolean;
   /** Just saved: say so. */
   saved?: boolean;
+  /** Links into entity pages, for a finished run the graph holds. */
+  links?: EntityLinks;
 }
 
 export function runPage(
@@ -867,7 +875,13 @@ ${mine}`;
     }
     return page(
       measureTitle(run.measure),
-      measureBody(run.measure_result, { status, actions, mine, stopped: !active }),
+      measureBody(run.measure_result, {
+        status,
+        actions,
+        mine,
+        stopped: !active,
+        links: opts.links,
+      }),
       { nav: true, base, back, ...refresh },
     );
   }
@@ -884,12 +898,16 @@ ${actions}
 ${mine}`;
     return page(title, body, { nav: true, base, back, ...refresh });
   }
-  return page(raceTitle(run.race), raceBody(run.race, { status, actions, mine }), {
-    nav: true,
-    base,
-    back,
-    ...refresh,
-  });
+  return page(
+    raceTitle(run.race),
+    raceBody(run.race, { status, actions, mine, links: opts.links }),
+    {
+      nav: true,
+      base,
+      back,
+      ...refresh,
+    },
+  );
 }
 
 /** One line of the picks sheet: a contest or measure, in ballot order. */
