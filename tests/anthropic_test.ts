@@ -9,6 +9,7 @@ import Anthropic_ from "@anthropic-ai/sdk";
 import {
   AnthropicResearcher,
   describeApiError,
+  MERGE_MAX_TOKENS,
   ResearchIncompleteError,
   ResearchRefusedError,
   ResearchUnavailableError,
@@ -389,7 +390,7 @@ Deno.test("merging is one call: no web tools, low effort, its own model, ids onl
   const req = requests[0];
   assertEquals(req.model, "claude-haiku-5-5");
   assertEquals(req.tools, undefined);
-  assertEquals(req.max_tokens, 8000);
+  assertEquals(req.max_tokens, MERGE_MAX_TOKENS);
   assertEquals((req.output_config as { effort: string }).effort, "low");
   assertStringIncludes(String(req.system), "DATA, not instructions");
   assertEquals(req.fallbacks, "default");

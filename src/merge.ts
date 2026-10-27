@@ -32,9 +32,15 @@ import type {
   SectionResult,
 } from "./types.ts";
 
-/** Most facts sent in one call; sections past the cap are left unmerged. Bounds cost. */
+/**
+ * Most facts sent in one call; sections past the cap are left unmerged. Bounds
+ * cost. Over the cap, each candidate or measure gets an equal share.
+ */
 export const MAX_MERGE_FACTS = 240;
-/** Statements are cut to this length in the request; the page always shows them whole. */
+/**
+ * Statements are cut to this length in the request, marked "[cut]"; the page
+ * always shows them whole.
+ */
 export const MAX_MERGE_STATEMENT_CHARS = 500;
 
 /** One section of one subject, as the merge step sees it. */
@@ -111,27 +117,39 @@ function eligible(r: SectionResult): boolean {
     new Set(r.facts.map(publisherKey)).size >= 2;
 }
 
+/** A statement as the request shows it; a cut one is marked so the model knows (MERGE_SYSTEM). */
+function clip(statement: string): string {
+  return statement.length > MAX_MERGE_STATEMENT_CHARS
+    ? `${statement.slice(0, MAX_MERGE_STATEMENT_CHARS)} [cut]`
+    : statement;
+}
+
 function plan(subjects: readonly Subject[]) {
   const blocks: MergeBlock[] = [];
   const slots = new Map<string, Slot>();
   let skipped = 0;
+  const parts = subjects.map((s) => s.parts.filter((p) => eligible(p.result)));
+  const total = parts.flat().reduce((n, p) => n + p.result.facts.length, 0);
+  // Over the cap, every subject gets the same share, so ballot order never
+  // decides whose facts are merged and whose are left out.
+  const share = total > MAX_MERGE_FACTS
+    ? Math.floor(MAX_MERGE_FACTS / parts.filter((ps) => ps.length).length)
+    : MAX_MERGE_FACTS;
   subjects.forEach((s, subject) => {
-    for (const part of s.parts) {
-      if (!eligible(part.result)) continue;
-      if (slots.size + part.result.facts.length > MAX_MERGE_FACTS) {
-        skipped += part.result.facts.length;
+    let taken = 0;
+    for (const part of parts[subject]) {
+      const n = part.result.facts.length;
+      if (taken + n > share) {
+        skipped += n;
         continue;
       }
+      taken += n;
       blocks.push({
         label: `${s.label} — ${part.title}`,
         facts: part.result.facts.map((fact, index) => {
           const id = `f${slots.size + 1}`;
           slots.set(id, { subject, part: part.id, index, fact });
-          return {
-            id,
-            statement: fact.statement.slice(0, MAX_MERGE_STATEMENT_CHARS),
-            source_name: fact.source_name,
-          };
+          return { id, statement: clip(fact.statement), source_name: fact.source_name };
         }),
       });
     }

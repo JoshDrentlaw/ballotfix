@@ -4,7 +4,12 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { personRef } from "../src/knowledge.ts";
-import { MAX_MERGE_FACTS, mergeMeasure, mergeRace } from "../src/merge.ts";
+import {
+  MAX_MERGE_FACTS,
+  MAX_MERGE_STATEMENT_CHARS,
+  mergeMeasure,
+  mergeRace,
+} from "../src/merge.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { renderRace } from "../src/render.ts";
 import { JobRunner } from "../src/web/jobs.ts";
@@ -179,6 +184,55 @@ Deno.test("facts past the cap are left unmerged rather than sent", async () => {
   const out = await mergeRace(await runRace(QUERY, port, { candidates: CANDS.slice(0, 1) }), m);
   assertEquals(m.calls.length, 0);
   assertEquals(out.skipped, MAX_MERGE_FACTS + 1);
+});
+
+Deno.test("over the cap, every candidate gets the same share, whatever the ballot order", async () => {
+  // Each candidate has more eligible facts than half the cap, in two sections.
+  const half = MAX_MERGE_FACTS / 2;
+  const facts = (who: string, sec: string, n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => fact(`${who} ${sec} fact ${i}.`, `https://${who}${sec}${i}.example/a`, `O${i}`),
+    );
+  const port = new FakeResearch(
+    listing(CANDS),
+    Object.fromEntries(CANDS.map((c, k) => {
+      const who = `c${k}`;
+      const all = [...facts(who, "bg", half - 10), ...facts(who, "acc", 20)];
+      return [
+        c.name,
+        raw({
+          sections: {
+            background: section(...all.slice(0, half - 10)),
+            accomplishments: section(...all.slice(half - 10)),
+          },
+          retrieved_urls: all.map((f) => f.source_url),
+        }),
+      ];
+    })),
+  );
+  const m = new FakeMerger(() => []);
+  const out = await mergeRace(await runRace(QUERY, port, { candidates: CANDS }), m);
+  const sent = (label: string) =>
+    m.calls[0].filter((b) => b.label.startsWith(label)).reduce((n, b) => n + b.facts.length, 0);
+  assertEquals(sent(CANDS[0].name), sent(CANDS[1].name));
+  assert(out.sent <= MAX_MERGE_FACTS);
+  assertEquals(out.skipped, 40);
+});
+
+Deno.test("a statement cut for the request is marked as cut", async () => {
+  const long = `${"x".repeat(MAX_MERGE_STATEMENT_CHARS)} but the vote was 4-1.`;
+  const port = new FakeResearch(listing(CANDS.slice(0, 1)), {
+    "Acquanetta Warren": raw({
+      sections: { record: section(fact(long, HERALD, "Herald"), fact("Short.", PE, "P-E")) },
+      retrieved_urls: [HERALD, PE],
+    }),
+  });
+  const m = new FakeMerger(() => []);
+  await mergeRace(await runRace(QUERY, port, { candidates: CANDS.slice(0, 1) }), m);
+  const [cut, short] = m.calls[0][0].facts;
+  assertEquals(cut.statement, `${"x".repeat(MAX_MERGE_STATEMENT_CHARS)} [cut]`);
+  assertEquals(short.statement, "Short.");
 });
 
 Deno.test("a merged fact renders once as reported by N sources, escaped, with each source", async () => {
