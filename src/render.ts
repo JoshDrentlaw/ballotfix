@@ -408,12 +408,15 @@ export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64
   <path d="M42.5 47.5l8.5 8.5" stroke="#f3d39b" stroke-width="6" stroke-linecap="round" />
 </svg>`;
 
-/** Embedded as data: so exported pages stay self-contained; img-src allows only data:. */
+/** Embedded as data: so exported pages stay self-contained. */
 const ICON_HREF = `data:image/svg+xml;base64,${btoa(ICON_SVG)}`;
 
 /** The page's Content-Security-Policy; the server sends the same one as a header. */
 export const CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'";
+  "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'";
+
+/** Where the app serves static/apple-touch-icon.png (under its base path). */
+export const TOUCH_ICON_PATH = "/apple-touch-icon.png";
 
 /** Full HTML document with a strict CSP: no scripts, no external resources. */
 export function page(title: string, body: string, opts: PageOptions = {}): string {
@@ -435,6 +438,7 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <link rel="icon" type="image/svg+xml" href="${ICON_HREF}">
+${opts.nav ? `<link rel="apple-touch-icon" href="${base}${TOUCH_ICON_PATH}">` : ""}
 ${refresh}
 <title>${esc(title)}</title>
 <style>${STYLES}</style>

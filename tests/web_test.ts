@@ -269,6 +269,10 @@ Deno.test("basePath prefixes every generated link and redirect, and still accept
   assertEquals(bareHealth.status, 200);
   const prefixedHealth = await app(new Request("http://app.test/ballotfix/healthz"));
   assertEquals(prefixedHealth.status, 200);
+  assertStringIncludes(
+    done,
+    `<link rel="apple-touch-icon" href="/ballotfix/apple-touch-icon.png">`,
+  );
 });
 
 Deno.test("form errors re-render with the user's values and a 400", async () => {
@@ -316,10 +320,15 @@ Deno.test("a real browser's same-origin form post is accepted even with Origin: 
   await jobs.idle();
 });
 
-Deno.test("password protects every page except the health check", async () => {
+Deno.test("password protects every page except the health check and the icon", async () => {
   const { app } = await setup({ password: "s3cret" });
   assertEquals((await app(new Request("http://app.test/"))).status, 401);
   assertEquals((await app(new Request("http://app.test/healthz"))).status, 200);
+  // iOS fetches the home-screen icon without credentials.
+  const icon = await app(new Request("http://app.test/apple-touch-icon.png"));
+  assertEquals(icon.status, 200);
+  assertEquals(icon.headers.get("content-type"), "image/png");
+  assertEquals([...(await icon.bytes()).slice(1, 4)], [0x50, 0x4e, 0x47]); // "PNG"
   const bad = new Request("http://app.test/", {
     headers: { authorization: `Basic ${btoa("me:nope")}` },
   });

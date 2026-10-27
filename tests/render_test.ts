@@ -57,7 +57,7 @@ Deno.test("research content is escaped and never becomes markup or script", asyn
   assertStringIncludes(html, "&lt;b&gt;and&lt;/b&gt;");
   assertStringIncludes(
     html,
-    `content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'"`,
+    `content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'"`,
   );
 });
 

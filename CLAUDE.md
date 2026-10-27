@@ -89,6 +89,10 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   with or without the prefix, so direct/local access is unaffected. Do **not** pair this with
   Caddy's `handle_path` (which strips the prefix) — the app has no concept of its incoming path
   being rewritten, so a stripped prefix and a preserved one must match.
+- Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
+  them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
+  `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at
+  `/apple-touch-icon.png` ahead of the password check.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
 ## Verifying UI changes

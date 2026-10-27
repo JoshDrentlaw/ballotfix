@@ -17,10 +17,11 @@
  *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
  *   POST /ballots/:id/picks     save picks and notes (from the sheet, or the ballot page)
  *   GET  /healthz
+ *   GET  /apple-touch-icon.png  home-screen icon (public, like /healthz)
  */
 
 import { measuresOf, parsePriorities } from "../dossier.ts";
-import { CSP, renderMeasure, renderRace, slug } from "../render.ts";
+import { CSP, renderMeasure, renderRace, slug, TOUCH_ICON_PATH } from "../render.ts";
 import { MAX_PRIORITIES } from "../template.ts";
 import type {
   BallotCandidate,
@@ -875,6 +876,8 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     return html(messagePage("Not allowed", "That action isn't available here.", BASE), 405);
   };
 
+  let touchIcon: Promise<Uint8Array<ArrayBuffer>> | undefined;
+
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     // Accept the path with or without BASE, so direct/local access (no proxy
@@ -886,6 +889,17 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     }
 
     if (path === "/healthz") return new Response("ok", { headers: SECURITY_HEADERS });
+    // Before the password check: iOS fetches this without credentials.
+    if (path === TOUCH_ICON_PATH && req.method === "GET") {
+      touchIcon ??= Deno.readFile(new URL("../../static/apple-touch-icon.png", import.meta.url));
+      return new Response(await touchIcon, {
+        headers: {
+          "content-type": "image/png",
+          "cache-control": "public, max-age=86400",
+          ...SECURITY_HEADERS,
+        },
+      });
+    }
 
     if (o.password && !authorized(req, o.password)) {
       return new Response("Password required.", {
