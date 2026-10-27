@@ -8,7 +8,10 @@ import type {
   BallotReading,
   ClaimMerger,
   ContextWriter,
+  FinanceResearcher,
   RawCandidateResearch,
+  RawContribution,
+  RawFinanceSubject,
   RawMeasureResearch,
   ResearchPort,
 } from "../src/types.ts";
@@ -294,6 +297,148 @@ export function sampleContextWriter(delayMs = 0): ContextWriter {
         }),
         retrieved_urls: Object.values(SAMPLE_NOTES).map((s) => s.url)
           .filter((u) => !u.includes("never-opened")),
+        model: "layout-sample",
+      };
+    },
+  };
+}
+
+const FILING_A = "https://example.org/netfile/filings/a-460.pdf";
+const FILING_B = "https://example.org/netfile/filings/b-460.pdf";
+const FILING_YES = "https://example.org/netfile/filings/yes-460.pdf";
+const FILING_NO = "https://example.org/netfile/filings/no-460.pdf";
+
+function gift(
+  filer: string,
+  contributor: string,
+  amount: string,
+  url: string,
+  extra: Partial<RawContribution> = {},
+): RawContribution {
+  return {
+    filer,
+    contributor,
+    contributor_type: "organization",
+    occupation: "",
+    employer: "",
+    amount,
+    date: "09/14/2026",
+    filing_period: "07/01/2026 - 09/19/2026",
+    filing: "Form 460, Schedule A (placeholder)",
+    source_name: "Example City Clerk, NetFile (placeholder)",
+    source_url: url,
+    ...extra,
+  };
+}
+
+const person = (occupation: string, employer: string) => ({
+  contributor_type: "individual",
+  occupation,
+  employer,
+});
+
+/**
+ * Placeholder filings, by position on the ballot: the first two candidates
+ * share a PAC and a donor, and have two near-miss company names; the rest
+ * have none found. The measure's two sides share a PAC and a near miss.
+ */
+const SAMPLE_FILINGS: Omit<RawFinanceSubject, "id">[] = [
+  {
+    committees: ["Placeholder A for Mayor 2026"],
+    searched: ["city clerk NetFile portal (placeholder)"],
+    gap_note: "",
+    not_listed: "",
+    totals: [{
+      filer: "Placeholder A for Mayor 2026",
+      label: "Total contributions received, calendar year to date",
+      amount: "$18,450.00",
+      filing_period: "01/01/2026 - 09/19/2026",
+      source_name: "Example City Clerk, NetFile (placeholder)",
+      source_url: FILING_A,
+    }],
+    contributions: [
+      gift("Placeholder A for Mayor 2026", "Example Builders PAC", "$1,000.00", FILING_A),
+      gift("Placeholder A for Mayor 2026", "Pat Placeholder", "$250.00", FILING_A, {
+        ...person("Engineer", "Example Engineering Co"),
+      }),
+      gift("Placeholder A for Mayor 2026", "Smith Development", "$500.00", FILING_A),
+      gift("Placeholder A for Mayor 2026", "Lee Placeholder", "$100.00", FILING_A, {
+        ...person("Retired", ""),
+      }),
+      gift("Placeholder A for Mayor 2026", "Example Blog Readers", "$50.00", FILING_A, {
+        source_url: "https://example.org/never-opened/filing",
+      }),
+    ],
+  },
+  {
+    committees: ["Placeholder B for Mayor 2026"],
+    searched: ["city clerk NetFile portal (placeholder)"],
+    gap_note: "",
+    not_listed: "Placeholder: the 460 lists 38 more itemized contributions under $100.",
+    totals: [],
+    contributions: [
+      gift("Placeholder B for Mayor 2026", "Example Builders PAC", "$2,500.00", FILING_B),
+      gift("Placeholder B for Mayor 2026", "Pat Placeholder", "$100.00", FILING_B, {
+        ...person("Engineer", "Example Engineering Co"),
+      }),
+      gift("Placeholder B for Mayor 2026", "Smith Development LLC", "$750.00", FILING_B),
+      gift("Placeholder B for Mayor 2026", "Lee Placeholder", "$100.00", FILING_B, {
+        ...person("Retired", ""),
+      }),
+    ],
+  },
+];
+
+const SAMPLE_SIDES: Record<"support" | "oppose", Omit<RawFinanceSubject, "id">> = {
+  support: {
+    committees: ["Yes on Example Parks, Measure X (placeholder)"],
+    searched: ["city clerk NetFile portal (placeholder)"],
+    gap_note: "",
+    not_listed: "",
+    totals: [],
+    contributions: [
+      gift("Yes on Example Parks", "Example Builders PAC", "$5,000.00", FILING_YES),
+      gift("Yes on Example Parks", "Example Developers LLC", "$2,000.00", FILING_YES),
+    ],
+  },
+  oppose: {
+    committees: ["No on Measure X Taxpayers Committee (placeholder)"],
+    searched: ["city clerk NetFile portal (placeholder)"],
+    gap_note: "",
+    not_listed: "",
+    totals: [],
+    contributions: [
+      gift("No on Measure X", "Example Builders PAC", "$250.00", FILING_NO),
+      gift("No on Measure X", "Example Developers", "$500.00", FILING_NO),
+    ],
+  },
+};
+
+/** Placeholder finance lookup; same shape as the real one's answer. */
+export function sampleFinanceResearcher(delayMs = 0): FinanceResearcher {
+  return {
+    findContributions: async ({ subjects }) => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      const empty = {
+        committees: [],
+        searched: ["city clerk NetFile portal (placeholder)"],
+        gap_note: "Placeholder: no committee for this candidate was found on the portal.",
+        not_listed: "",
+        totals: [],
+        contributions: [],
+      };
+      return {
+        subjects: subjects.map((s, i) => ({
+          id: s.id,
+          ...(s.role === "candidate" ? SAMPLE_FILINGS[i] ?? empty : SAMPLE_SIDES[s.role]),
+        })),
+        portal_gaps: [{
+          portal: "Example County Registrar e-filing (placeholder)",
+          url: "https://example.org/county/efile",
+          problem: "javascript_only",
+          note: "Placeholder: the search page loads its results with JavaScript.",
+        }],
+        retrieved_urls: [FILING_A, FILING_B, FILING_YES, FILING_NO],
         model: "layout-sample",
       };
     },

@@ -7,13 +7,24 @@
 
 import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import { coveredSections, incumbencyNote } from "./dossier.ts";
+import {
+  measureConnections,
+  type PairConnections,
+  raceConnections,
+  SIDE_LABEL,
+  type Tie,
+} from "./finance.ts";
+import { nameKey } from "./knowledge.ts";
 import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
   ContextNote,
   ContextResult,
+  Contribution,
   EvidenceType,
   Fact,
+  FinanceResult,
+  FinanceSubjectResult,
   MeasureDossier,
   OrderBasis,
   PriorityResult,
@@ -314,7 +325,222 @@ function namesHtml(c: ContextResult | undefined): string {
   return `<section class="sec names"><h4>Names in these facts</h4>${parts.join("")}</section>`;
 }
 
-function dossierSection(d: CandidateDossier, notes: Notes, next?: CandidateDossier): string {
+// ---------------------------------------------------------------------------
+// Campaign finance (src/finance.ts)
+// ---------------------------------------------------------------------------
+
+const PORTAL_PROBLEM_LABEL = {
+  scanned_pdf: "scanned PDF with no readable text",
+  login_required: "needs a login",
+  javascript_only: "only works with JavaScript",
+  not_found: "no filings found online",
+  other: "couldn't be read",
+} as const;
+
+/** "Contractor, Acme Builders" for an individual, when the record states either. */
+function work(c: Contribution): string {
+  const w = [c.occupation, c.employer].filter(Boolean).join(", ");
+  return w ? ` <span class="desig">(${esc(w)})</span>` : "";
+}
+
+function giftItem(c: Contribution): string {
+  return `<li class="fact gift">
+  <span class="ev ev-${c.verified ? "primary_record" : "unsourced"}">${
+    c.verified ? "Filing" : "Unverified"
+  }</span>
+  <p><strong>${esc(c.contributor)}</strong>${work(c)}: ${esc(c.amount)} · ${
+    c.date ? esc(c.date) : "date not stated"
+  }</p>
+  <p class="meta">To ${esc(c.filer)} · ${
+    c.filing_period ? esc(c.filing_period) : "filing period not stated"
+  }${c.filing ? ` · ${esc(c.filing)}` : ""} · ${link(c.source_url, c.source_name)}</p>
+</li>`;
+}
+
+/** Alphabetical by contributor: the order says nothing about who gave most. */
+const alphabetical = (cs: readonly Contribution[]) =>
+  [...cs].sort((a, b) => nameKey(a.contributor).localeCompare(nameKey(b.contributor)));
+
+/**
+ * One candidate's or side's money, the same block for everyone, including a
+ * subject with nothing found (its gap note). Nothing for runs from before the
+ * step, or where it didn't run.
+ */
+function moneyHtml(
+  finance: FinanceResult | undefined,
+  s: FinanceSubjectResult | undefined,
+  title: string,
+): string {
+  if (!finance) return "";
+  if (!s) {
+    return `<section class="sec money"><h4>${
+      esc(title)
+    }</h4><p class="gap">Not looked up in this run.</p></section>`;
+  }
+  const totals = s.totals.length
+    ? `<ul class="meta totals">${
+      s.totals.map((t) =>
+        `<li>${esc(t.filer)}, ${esc(t.label)}: <strong>${esc(t.amount)}</strong>${
+          t.filing_period ? ` (${esc(t.filing_period)})` : ""
+        } · ${link(t.source_url, t.source_name)}</li>`
+      ).join("")
+    }</ul>`
+    : "";
+  const gifts = s.contributions.length
+    ? `<ul class="facts">${alphabetical(s.contributions).map(giftItem).join("")}</ul>`
+    : "";
+  const notes = [
+    s.gap_note ? `<p class="gap">${esc(s.gap_note)}</p>` : "",
+    s.not_listed ? `<p class="gap">The filings list more: ${esc(s.not_listed)}</p>` : "",
+    s.left_out.length
+      ? `<p class="gap">Not kept (each run keeps at most ${finance.per_subject} per ${
+        s.side ? "side" : "candidate"
+      }, the same for everyone): ${s.left_out.map(esc).join("; ")}.</p>`
+      : "",
+    s.dropped
+      ? `<p class="gap">${s.dropped} more row${
+        s.dropped === 1 ? "" : "s"
+      } came back incomplete, or past the limit without a retrieved page, and aren't shown.</p>`
+      : "",
+    s.committees.length
+      ? `<p class="searched">Committees looked at: ${s.committees.map(esc).join("; ")}</p>`
+      : "",
+    s.searched.length ? `<p class="searched">Looked at: ${s.searched.map(esc).join("; ")}</p>` : "",
+  ].join("");
+  const unverified = s.unverified.length
+    ? `<details class="unverified"><summary>${s.unverified.length} contribution${
+      s.unverified.length === 1 ? "" : "s"
+    } not shown because the cited page was never retrieved</summary><p>Treat these as leads to check at the filing portal yourself. They aren't counted as shared connections.</p><ul class="facts">${
+      alphabetical(s.unverified).map(giftItem).join("")
+    }</ul></details>`
+    : "";
+  return `<section class="sec money"><h4>${esc(title)}</h4>
+<p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
+${totals}${gifts}${notes}${unverified}</section>`;
+}
+
+/** The filing portals this run couldn't read: coverage gaps, shown, not collapsed. */
+function portalGapsHtml(finance: FinanceResult | undefined): string {
+  if (!finance) return "";
+  const lines = [
+    finance.error
+      ? `<li>The campaign finance lookup failed in this run (${esc(finance.error)}).</li>`
+      : "",
+    ...finance.portal_gaps.map((g) =>
+      `<li>${link(g.url, g.portal)}: ${PORTAL_PROBLEM_LABEL[g.problem]}.${
+        g.note ? ` ${esc(g.note)}` : ""
+      }</li>`
+    ),
+  ].filter(Boolean);
+  return lines.length
+    ? `<section class="sec"><h4>Campaign finance this run couldn't read</h4><ul class="gaps">${
+      lines.join("")
+    }</ul></section>`
+    : "";
+}
+
+const SUPPORT_TITLE: Record<string, string> = {
+  endorsements: "Endorsements and affiliations",
+  case_for: "The case for",
+  case_against: "The case against",
+};
+
+function tieHtml(label: string, t: Tie): string {
+  const who = `<span class="who-tag">${esc(label)}:</span> `;
+  if (t.kind === "contribution") {
+    const c = t.contribution;
+    return `<li>${who}contribution of ${esc(c.amount)}, ${
+      c.date ? esc(c.date) : "date not stated"
+    }, to ${esc(c.filer)}${c.filing_period ? ` (${esc(c.filing_period)})` : ""} · ${
+      link(c.source_url, c.source_name)
+    }</li>`;
+  }
+  const more = t.fact.also?.length ? ` and ${t.fact.also.length} more` : "";
+  return `<li>${who}named in ${esc(SUPPORT_TITLE[t.section] ?? t.section)}: “${
+    esc(t.fact.statement)
+  }” · ${link(t.fact.source_url, t.fact.source_name)}${more}</li>`;
+}
+
+function kindLabel(key: string, kind: string): string {
+  return key.includes("|donor ") ? "individual" : kind;
+}
+
+function possibleHtml(p: PairConnections): string {
+  return p.possible.map((m) =>
+    `<p class="gap">Possibly the same, kept separate because the names or details don't match exactly: ${
+      m.a.map(esc).join(" / ")
+    } (${esc(p.a)}) and ${m.b.map(esc).join(" / ")} (${esc(p.b)}).</p>`
+  ).join("");
+}
+
+/**
+ * Who each pair shares as a contributor or endorser, each tie with its
+ * source. Collapsed. Every pair is accounted for: one with nothing shared
+ * is named as such. Nothing is scored or ranked.
+ */
+function sharedHtml(
+  pairs: readonly PairConnections[],
+  finance: FinanceResult | undefined,
+  context: ContextResult | undefined,
+  place: string,
+  single: string,
+): string {
+  const caveats = [
+    !finance
+      ? "Campaign finance filings weren't looked up in this run, so only endorsements are compared."
+      : finance.error
+      ? "Campaign finance filings couldn't be looked up in this run, so only endorsements are compared."
+      : "",
+    !context?.notes.some((n) => n.verified)
+      ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
+      : "",
+  ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
+  const found = pairs.filter((p) => p.shared.length || p.possible.length);
+  const none = pairs.filter((p) => !p.shared.length);
+  const blocks = found.map((p) =>
+    `<section class="pair"><h5>${esc(p.a)} and ${esc(p.b)}</h5>${
+      p.shared.length
+        ? `<ul class="shared-list">${
+          p.shared.map((x) =>
+            `<li><strong>${esc(x.ref.name)}</strong> <span class="desig">${
+              kindLabel(x.ref.key, x.ref.kind)
+            }</span><ul class="ties">${x.a.map((t) => tieHtml(p.a, t)).join("")}${
+              x.b.map((t) => tieHtml(p.b, t)).join("")
+            }</ul></li>`
+          ).join("")
+        }</ul>`
+        : ""
+    }${possibleHtml(p)}</section>`
+  ).join("");
+  const body = pairs.length
+    ? `${blocks}${
+      none.length
+        ? `<p><strong>No shared contributors or endorsers found:</strong> ${
+          none.map((p) => `${esc(p.a)} and ${esc(p.b)}`).join("; ")
+        }.</p>`
+        : ""
+    }`
+    : `<p class="gap">${esc(single)}</p>`;
+  const sharing = pairs.filter((p) => p.shared.length).length;
+  return `<details class="shared sec"><summary>Shared connections (${
+    sharing
+      ? `${sharing} of ${pairs.length} pair${pairs.length === 1 ? "" : "s"} ${
+        sharing === 1 ? "shares" : "share"
+      } someone`
+      : "none found"
+  })</summary>
+<p>For each pair, the contributors and endorsers both have, each with its source. A contributor counts only from a filing this run retrieved; an endorser only where a fact names someone with a sourced note. They are matched within ${
+    esc(place)
+  } by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
+${caveats}${body}</details>`;
+}
+
+function dossierSection(
+  d: CandidateDossier,
+  notes: Notes,
+  next?: CandidateDossier,
+  finance?: FinanceResult,
+): string {
   const c = d.candidate;
   if (d.status === "pending") {
     return `<article class="dossier pending" id="${slug(c.name)}">
@@ -336,6 +562,13 @@ function dossierSection(d: CandidateDossier, notes: Notes, next?: CandidateDossi
   ${identity}
   ${prioritiesHtml(d.priorities, "candidate", notes)}
   ${sections}
+  ${
+    moneyHtml(
+      finance,
+      finance?.subjects.find((s) => !s.side && s.subject === c.name),
+      "Contributions on file",
+    )
+  }
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
   <p class="back"><a href="#top">Back to all candidates</a>${
     next ? ` · <a href="#${slug(next.candidate.name)}">Next: ${esc(next.candidate.name)}</a>` : ""
@@ -505,6 +738,18 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
 .stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
+.money .sub { font-size: .85rem; margin: 0 0 4px; }
+.totals { list-style: none; padding: 0; margin: 4px 0 8px; }
+.totals li { margin: 2px 0; }
+details.shared { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; margin: 24px 0; }
+details.shared > summary { color: var(--fg); font-weight: 700; padding: 12px 0; }
+details.shared[open] { padding-bottom: 12px; }
+.pair { border-top: 1px solid var(--line); padding-top: 4px; }
+.shared-list { list-style: none; padding: 0; margin: 0; }
+.shared-list > li { padding: 6px 0; }
+.ties { margin: 4px 0 0; padding-left: 18px; font-size: .9rem; }
+.ties li { margin: 4px 0; }
+.who-tag { font-weight: 600; }
 /* Last, so it wins over the screen rules above. */
 @media print { nav.top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 `;
@@ -649,7 +894,17 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map(overviewCard).join("")}</ul>
 
-${r.candidates.map((d, i) => dossierSection(d, notes, r.candidates[i + 1])).join("")}
+${r.candidates.map((d, i) => dossierSection(d, notes, r.candidates[i + 1], r.finance)).join("")}
+${portalGapsHtml(r.finance)}
+${
+    !r.candidates.length || r.candidates.some((c) => c.status === "pending") ? "" : sharedHtml(
+      raceConnections(r),
+      r.finance,
+      r.context,
+      `${q.city}, ${q.state}`,
+      "Only one name is on the ballot here, so there is nothing to compare.",
+    )
+  }
 ${namesHtml(r.context)}
 
 ${extra.mine ?? ""}
@@ -704,7 +959,26 @@ export function measureBody(
     }</p>`
     : `${prioritiesHtml(d.priorities, "measure", notes)}
 ${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id], notes)).join("")}
+${
+      (["support", "oppose"] as const).map((side) =>
+        moneyHtml(
+          d.finance,
+          d.finance?.subjects.find((s) => s.side === side),
+          `Contributions on file: ${SIDE_LABEL[side].toLowerCase()}`,
+        )
+      ).join("")
+    }
 ${gapsAndUnverified(d.gaps, d.unverified, notes)}
+${portalGapsHtml(d.finance)}
+${
+      sharedHtml(
+        measureConnections(d),
+        d.finance,
+        d.context,
+        [q.jurisdiction, q.state].filter(Boolean).join(", "),
+        "",
+      )
+    }
 ${namesHtml(d.context)}`;
 
   return `<h1>${esc(measureTitle(q))}</h1>
