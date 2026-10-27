@@ -30,6 +30,7 @@ import {
   EVIDENCE_LABEL,
   link,
   page,
+  publishedDate,
   readableDate,
   readingGuide,
   sourceMeta,
@@ -178,16 +179,25 @@ function runRef(id: string, runs: Map<string, RunInfo>, base: string): string {
  * that is said once above the facts instead of under each one.
  */
 function fromLine(id: string, v: EntityView, base: string): string {
-  return v.runs.size === 1 ? "" : `<p class="meta from">${runRef(id, v.runInfo, base)}</p>`;
+  return onlyRun(v) ? "" : `<p class="meta from">${runRef(id, v.runInfo, base)}</p>`;
+}
+
+/** The one run everything held on this entity comes from, or null. */
+function onlyRun(v: EntityView): string | null {
+  return v.runs.size === 1 ? [...v.runs.keys()][0] : null;
 }
 
 /** When everything on the page comes from one run, it is named once, here. */
 function oneRunHtml(v: EntityView, base: string): string {
-  return v.runs.size === 1
-    ? `<p class="sub from">Everything on this page comes ${
-      runRef([...v.runs.keys()][0], v.runInfo, base)
-    }.</p>`
-    : "";
+  const id = onlyRun(v);
+  if (!id) return "";
+  // Shared connections can come from a peer's run; each of those names its own.
+  const otherTies = (v.peers ?? []).some((p) =>
+    p.pair.shared.some((s) => [...s.a, ...s.b].some((t) => t.run_id !== id))
+  );
+  return `<p class="sub from">Everything on this page${
+    otherTies ? " except shared connections, which each name their run," : ""
+  } comes ${runRef(id, v.runInfo, base)}.</p>`;
 }
 
 function citationsHtml(cs: readonly StoredCitation[]): string {
@@ -351,10 +361,8 @@ function contributionsHtml(v: EntityView, base: string): string {
 function ballotHtml(v: EntityView, base: string): string {
   const lines = v.links.flatMap((l): string[] => {
     const other = entityLink(l.other, base);
-    const detail = l.detail
-      ? ` (${esc(/^\d{4}-\d{2}-\d{2}$/.test(l.detail) ? readableDate(l.detail) : l.detail)})`
-      : "";
-    const from = v.runs.size === 1
+    const detail = l.detail ? ` (${esc(publishedDate(l.detail))})` : "";
+    const from = onlyRun(v)
       ? ""
       : ` <span class="meta">${runRef(l.run_id, v.runInfo, base)}</span>`;
     switch (`${l.relation} ${l.direction}`) {

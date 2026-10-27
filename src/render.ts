@@ -87,7 +87,7 @@ export function sourceMeta(
 }
 
 /** A full date reads like the rest of the page; a year or anything else stays as the source gave it. */
-function publishedDate(s: string): string {
+export function publishedDate(s: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? readableDate(s) : s;
 }
 
@@ -215,16 +215,22 @@ const shownKey = (f: Fact) => `${f.source_url}\n${f.statement.trim().toLowerCase
 
 /**
  * A fact that also backs one of the voter's issues, which come first and show
- * it in full. Here it keeps its words and first source, and links to the rest.
+ * it in full. Here it keeps its words and every source of its own (a merge in
+ * this section may have joined outlets the issue's copy doesn't have), and
+ * links to the rest.
  */
 function refItem(f: Fact, at: { id: string; label: string }, notes: Notes): string {
-  const more = f.also?.length;
+  const also = f.also ?? [];
+  const jump = `<a class="jumpto" href="#${esc(at.id)}">Shown in full under “${esc(at.label)}”</a>`;
+  const sources = also.length
+    ? `<ul class="meta srcs">${
+      [f, ...also].map((x) => `<li>${factMeta(x)}</li>`).join("")
+    }</ul><p class="meta">${jump}</p>`
+    : `<p class="meta">${factMeta(f)} · ${jump}</p>`;
   return `<li class="fact ref">
   ${evTag(f.evidence_type)}
   ${statementHtml(f.statement, notes)}
-  <p class="meta">${factMeta(f)}${
-    more ? ` and ${more} more source${more === 1 ? "" : "s"}` : ""
-  } · <a class="jumpto" href="#${esc(at.id)}">Shown in full under “${esc(at.label)}”</a></p>
+  ${sources}
 </li>`;
 }
 
@@ -749,9 +755,12 @@ function glanceHtml(r: RaceDossier): string {
       : d.status === "pending"
       ? `<td class="none">…</td>`
       : null;
-  const row = (label: string, cell: (d: CandidateDossier) => string) =>
+  // Money is looked up for a failed candidate too, so only pending hides it.
+  const row = (label: string, cell: (d: CandidateDossier) => string, evenIfFailed = false) =>
     `<tr><th scope="row">${esc(label)}</th>${
-      ds.map((d) => unfinished(d) ?? cell(d)).join("")
+      ds.map((d) => (evenIfFailed && d.status === "failed" ? null : unfinished(d)) ?? cell(d)).join(
+        "",
+      )
     }</tr>`;
   const issues = (r.priorities ?? []).map((issue, i) =>
     row(issue, (d) => {
@@ -768,12 +777,12 @@ function glanceHtml(r: RaceDossier): string {
   );
   const sections = SECTIONS.map((s) =>
     row(s.title, (d) => {
+      const n = d.sections[s.id]?.facts.length ?? 0;
+      // A non-incumbent's section is n/a only when it is empty: facts found there still show.
       const notHeld = "incumbentOnly" in s && s.incumbentOnly && !d.candidate.incumbent;
-      return notHeld ? `<td class="none">n/a</td>` : glanceCell(
-        d.sections[s.id]?.facts.length ?? 0,
-        sectionAnchor(d.candidate.name, s.id),
-        "nothing found",
-      );
+      return notHeld && !n
+        ? `<td class="none">n/a</td>`
+        : glanceCell(n, sectionAnchor(d.candidate.name, s.id), "nothing found");
     })
   );
   const money = r.finance
@@ -783,9 +792,9 @@ function glanceHtml(r: RaceDossier): string {
       return glanceCell(
         m?.contributions.length ?? 0,
         sectionAnchor(d.candidate.name, "filed"),
-        "none found",
+        m ? "none found" : "not looked up",
       );
-    })]
+    }, true)]
     : [];
   const issueHead = issues.length
     ? `<tr class="group"><th scope="rowgroup" colspan="${ds.length + 1}">Your issues</th></tr>`
@@ -1018,6 +1027,7 @@ a.ent { color: inherit; text-decoration: underline dotted; text-decoration-thick
 .sec { scroll-margin-top: var(--sticky); }
 .dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; }
 .dossier .sec > h4, .dossier .sec > h5 { margin-top: 12px; }
+/* A measure's dossier has no header, so its first section needs no rule above it. */
 .dossier > section:first-child { border-top: 0; margin-top: 0; }
 .dossier-head { padding-bottom: 4px; }
 .dossier-head .desig { margin: 2px 0 0; }
@@ -1153,12 +1163,15 @@ ${body}
 /** "2026-11-03" -> "Nov 3, 2026". Falls back to the input if it isn't a date. */
 export function readableDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
-  return isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  // An impossible day ("2024-02-30") would roll over to another date: keep it as given.
+  return isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso
+    ? iso
+    : d.toLocaleDateString("en-US", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
 }
 
 export function titleFor(q: { city: string; office: string; electionDate: string }): string {
@@ -1318,6 +1331,7 @@ export function measureBody(
     : "";
   const links = extra.links;
   const notes = notesFor(d.context, q.state, q.jurisdiction, links);
+  const shown = shownInPriorities(d.priorities, "m");
   const body = d.status === "pending"
     ? `<p class="gap">${
       extra.stopped
@@ -1327,10 +1341,7 @@ export function measureBody(
     : `${prioritiesHtml(d.priorities, "measure", notes, "m")}
 ${
       MEASURE_SECTIONS.map((s) =>
-        sectionHtml(s.title, d.sections[s.id], notes, {
-          id: sectionAnchor("m", s.id),
-          shown: shownInPriorities(d.priorities, "m"),
-        })
+        sectionHtml(s.title, d.sections[s.id], notes, { id: sectionAnchor("m", s.id), shown })
       ).join("")
     }
 ${

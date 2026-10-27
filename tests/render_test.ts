@@ -3,6 +3,7 @@ import {
   ICON_SVG,
   measureBody,
   page,
+  readableDate,
   renderMeasure,
   renderRace,
   safeHref,
@@ -383,4 +384,37 @@ Deno.test("contributions are tables, one per filing, alphabetical, in the record
   assertStringIncludes(html, `<td class="num">$1,000.00</td><td class="date">09/14/2026</td>`);
   assertStringIncludes(html, `<span class="desig">Retired</span>`);
   assert(!html.includes("<b>Z"));
+});
+
+Deno.test("a date that doesn't exist stays as the source gave it, not rolled over", () => {
+  assertEquals(readableDate("2024-02-30"), "2024-02-30");
+  assertEquals(readableDate("2024-02-29"), "Feb 29, 2024");
+  assertEquals(readableDate("2024"), "2024");
+});
+
+Deno.test("a fact pointed to from its section keeps every source of its own", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        criticisms: { facts: [minutes], searched: [], gap_note: null },
+        priority_1: { facts: [minutes], searched: [], gap_note: null },
+      },
+      retrieved_urls: [minutes.source_url, "https://news.example/b"],
+    }),
+  });
+  const race = await runRace(QUERY, port, { priorities: ["renters"] });
+  // As a merge in this section would leave it: another outlet only this copy has.
+  race.candidates[0].sections.criticisms!.facts[0].also = [{
+    ...minutes,
+    evidence_type: "primary_record",
+    source_name: "Example News",
+    source_url: "https://news.example/b",
+  }];
+  const html = renderRace(race);
+  const ref = html.slice(html.indexOf(`<li class="fact ref">`));
+  const item = ref.slice(0, ref.indexOf("</li>\n"));
+  assertStringIncludes(item, `href="https://city.example/minutes"`);
+  assertStringIncludes(item, `href="https://news.example/b"`);
+  assertStringIncludes(item, "Shown in full under “renters”");
 });

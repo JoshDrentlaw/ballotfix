@@ -377,7 +377,11 @@ Deno.test("an entity page groups facts, shows every citation and run, and never 
   assertStringIncludes(text, "Nothing in finished research for:");
   assertStringIncludes(text, "Listed as the incumbent in");
   // Everything here is from one run, so it is named once rather than under each fact.
-  assertStringIncludes(text, "Everything on this page comes from <a");
+  // Its shared connections come from the council and measure runs, and say so.
+  assertStringIncludes(
+    text,
+    "Everything on this page except shared connections, which each name their run, comes from <a",
+  );
   assert(!text.includes(`class="meta from"`));
   // Contributions: alphabetical by contributor, each as filed, no total anywhere.
   // Punctuation aside, as names compare everywhere: "<script>… Holdings" sorts as "script".
