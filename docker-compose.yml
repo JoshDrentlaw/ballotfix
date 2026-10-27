@@ -1,7 +1,7 @@
 # Production stack for nucklehead (also the file CI deploys with `docker compose up --build -d`).
 # Real secrets come from an untracked, gitignored .env in this dir (auto-loaded by compose
-# for ${VAR} substitution). No Postgres: Ballotfix persists runs as JSON files under
-# BALLOTFIX_DATA_DIR (src/web/store.ts), so a named volume is enough.
+# for ${VAR} substitution). No Postgres: Ballotfix keeps everything in one SQLite file,
+# BALLOTFIX_DATA_DIR/ballotfix.db (src/web/db.ts), so a named volume is enough.
 services:
   web:
     build: .

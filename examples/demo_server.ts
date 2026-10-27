@@ -8,16 +8,11 @@
  */
 import { BallotJobs, JobRunner } from "../src/web/jobs.ts";
 import { createApp } from "../src/web/server.ts";
-import { BallotStore, ChoiceStore, RunStore } from "../src/web/store.ts";
+import { openStores } from "../src/web/store.ts";
 import { sampleBallotReader, samplePort } from "./sample_data.ts";
 
 const dir = await Deno.makeTempDir({ prefix: "ballotfix-demo-" });
-const store = new RunStore(dir);
-await store.init();
-const ballotStore = new BallotStore(dir);
-await ballotStore.init();
-const choices = new ChoiceStore(dir);
-await choices.init();
+const { runs: store, ballots: ballotStore, choices } = await openStores(dir);
 const jobs = new JobRunner(store, () => samplePort(3000));
 const ballots = new BallotJobs(ballotStore, () => sampleBallotReader(3000));
 const port = Number(Deno.env.get("PORT") ?? "8788");

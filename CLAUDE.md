@@ -41,9 +41,10 @@ Specific to elections:
    egregiously against their views. A stance other than unclear stands only on verified facts
    (`assemblePriorities` downgrades it otherwise), and stances are never combined into an overall
    score or a recommendation.
-7. **The voter's notes and picks are theirs.** `ChoiceStore` (`data/choices/`), apart from runs so a
-   job's progress saves can't overwrite them. Never in downloads or a run's JSON. Ballot items use
-   choice id `<ballotId>-<key>`, so a note made before research stays with it, and reruns keep it.
+7. **The voter's notes and picks are theirs.** `ChoiceStore` (its own `choices` table), apart from
+   runs so a job's progress saves can't overwrite them. Never in downloads or a run's JSON. Ballot
+   items use choice id `<ballotId>-<key>`, so a note made before research stays with it, and reruns
+   keep it.
 
 ## Provenance check
 
@@ -60,7 +61,7 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed order out, with no
   web tools.
 - Ballot upload: images are held in memory for the one read call and never written to disk; only the
-  `BallotReading` is saved (`data/ballots/`). The reader must never report the voter's name,
+  `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
   reviews and corrects the reading before any research starts. Races started from it carry
   `candidate_source` with `order_basis: "official_ballot_order"`.
@@ -81,15 +82,26 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both
   the app and the static export, so they can't drift apart.
 - Web app (`deno task serve`, `src/serve.ts`): `src/web/server.ts` routes, `pages.ts` HTML,
-  `jobs.ts` one-race-at-a-time queue, `store.ts` one JSON file per run in `data/`. No client
-  JavaScript: forms post, running races use a meta refresh. POSTs must be same-origin
-  (`Sec-Fetch-Site`, then `Origin`), because starting research spends money.
+  `jobs.ts` one-race-at-a-time queue, `store.ts` runs/ballots/choices as JSON rows in one SQLite
+  file (`data/ballotfix.db`, `db.ts`, Deno's built-in `node:sqlite`). `openStores()` imports the
+  JSON files older versions wrote, once, and leaves them in place. No client JavaScript: forms post,
+  running races use a meta refresh. POSTs must be same-origin (`Sec-Fetch-Site`, then `Origin`),
+  because starting research spends money.
 - `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy `handle`
   block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link, form action,
   and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`). Requests work
   with or without the prefix, so direct/local access is unaffected. Do **not** pair this with
   Caddy's `handle_path` (which strips the prefix) — the app has no concept of its incoming path
   being rewritten, so a stripped prefix and a preserved one must match.
+- Knowledge graph (step 1 of the knowledge-base plan): `src/knowledge.ts` projects a finished
+  dossier into entities (person, office, measure), claims with per-citation provenance, and
+  relations (`candidate_for`, `holds`); `src/web/kb.ts` writes it to SQLite in the same transaction
+  as the run's save, and answers queries. It is derived data: only `done` runs contribute,
+  unverified facts stay `verified = 0`, and bumping `KNOWLEDGE_VERSION` rebuilds it from saved runs
+  on start. People are keyed by state + jurisdiction + name, so same-named people elsewhere are
+  never merged on name alone. Indexing makes no model or network calls; later steps (merging
+  duplicate claims, context notes for unfamiliar names, campaign finance) add model calls and should
+  each have a cap.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
 ## Verifying UI changes

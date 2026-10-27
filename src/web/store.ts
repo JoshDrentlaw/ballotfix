@@ -1,9 +1,12 @@
 /**
- * Run storage for the web app: one JSON file per research run in a data
- * directory. Phase 0 deliberately has no database; a run is small and
- * written a handful of times.
+ * Storage for the web app: runs, ballots, and the voter's choices, each a
+ * table in one SQLite file (src/web/db.ts), plus the knowledge graph derived
+ * from finished runs (src/web/kb.ts). Until this replaced them, each record
+ * was a JSON file in the data directory; openStores() imports those once.
  */
 
+import { Db } from "./db.ts";
+import { KnowledgeBase } from "./kb.ts";
 import type {
   BallotCandidate,
   BallotReading,
@@ -16,11 +19,6 @@ import type {
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "interrupted";
 
-/**
- * One research run: a race between candidates, or (when `measure` is set) one
- * ballot measure. A measure run's `query` holds its jurisdiction as the city
- * and its label as the office, so listings and ids work the same way.
- */
 export interface RunRecord {
   id: string;
   query: RaceQuery;
@@ -60,62 +58,84 @@ export function isRunId(id: string): boolean {
   return ID_RE.test(id);
 }
 
-/** One JSON file per record in a directory, keyed by a validated id. Shared by runs and ballots. */
-class JsonDir<T extends { id: string; created_at: string }> {
-  constructor(readonly dir: string) {}
+type Table = "runs" | "ballots" | "choices";
 
-  #path(id: string): string {
-    if (!isRunId(id)) throw new Error(`invalid id: ${id}`);
-    return `${this.dir}/${id}.json`;
+/** One row per record, its body the record as JSON. Shared by runs, ballots, and choices. */
+class RecordTable<T extends { id: string; created_at: string }> {
+  constructor(readonly db: Db, readonly table: Table) {}
+
+  /** Inserts or updates. ON CONFLICT DO UPDATE, never REPLACE, which would delete the row first. */
+  save(record: T): Promise<void> {
+    if (!isRunId(record.id)) return Promise.reject(new Error(`invalid id: ${record.id}`));
+    this.db.run(
+      `INSERT INTO ${this.table} (id, created_at, body) VALUES (?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET body = excluded.body`,
+      record.id,
+      record.created_at,
+      JSON.stringify(record),
+    );
+    return Promise.resolve();
   }
 
-  async init(): Promise<void> {
-    await Deno.mkdir(this.dir, { recursive: true });
+  get(id: string): Promise<T | null> {
+    if (!isRunId(id)) return Promise.resolve(null);
+    const r = this.db.get(`SELECT body FROM ${this.table} WHERE id = ?`, id);
+    return Promise.resolve(r ? parse<T>(r.body) : null);
   }
 
-  /** Atomic save: write a temp file, then rename over the old one. */
-  async save(record: T): Promise<void> {
-    const path = this.#path(record.id);
-    const tmp = `${path}.${crypto.randomUUID()}.tmp`;
-    await Deno.writeTextFile(tmp, JSON.stringify(record));
-    await Deno.rename(tmp, path);
-  }
-
-  async get(id: string): Promise<T | null> {
-    if (!isRunId(id)) return null;
-    try {
-      return JSON.parse(await Deno.readTextFile(this.#path(id))) as T;
-    } catch (err) {
-      if (err instanceof Deno.errors.NotFound || err instanceof SyntaxError) return null;
-      throw err;
-    }
-  }
-
-  /** All records, newest first. Unreadable files are skipped, not fatal. */
-  async list(): Promise<T[]> {
-    const out: T[] = [];
-    try {
-      for await (const e of Deno.readDir(this.dir)) {
-        if (!e.isFile || !e.name.endsWith(".json")) continue;
-        const r = await this.get(e.name.slice(0, -5));
-        if (r) out.push(r);
-      }
-    } catch (err) {
-      if (!(err instanceof Deno.errors.NotFound)) throw err;
-    }
-    return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  /** All records, newest first. Unreadable rows are skipped, not fatal. */
+  list(): Promise<T[]> {
+    const rows = this.db.all(`SELECT body FROM ${this.table} ORDER BY created_at DESC, id`);
+    return Promise.resolve(rows.map((r) => parse<T>(r.body)).filter((r): r is T => r !== null));
   }
 }
 
-export class RunStore extends JsonDir<RunRecord> {
+function parse<T>(body: unknown): T | null {
+  try {
+    return JSON.parse(String(body)) as T;
+  } catch {
+    return null;
+  }
+}
+
+export class RunStore extends RecordTable<RunRecord> {
+  readonly knowledge: KnowledgeBase;
+
+  constructor(db: Db) {
+    super(db, "runs");
+    this.knowledge = new KnowledgeBase(db);
+  }
+
+  /**
+   * Saving a run also refreshes what it contributes to the knowledge graph,
+   * in the same transaction. Only a finished run contributes, so the partial
+   * saves made while research is running cost one indexed delete.
+   */
+  override save(run: RunRecord): Promise<void> {
+    if (!isRunId(run.id)) return Promise.reject(new Error(`invalid id: ${run.id}`));
+    this.db.tx(() => {
+      this.db.run(
+        `INSERT INTO runs (id, created_at, status, body) VALUES (?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET status = excluded.status, body = excluded.body`,
+        run.id,
+        run.created_at,
+        run.status,
+        JSON.stringify(run),
+      );
+      this.knowledge.indexRun(run);
+    });
+    return Promise.resolve();
+  }
+
   /**
    * A run that was queued or running when the server stopped will never
    * finish. Say so rather than leaving it spinning forever.
    */
   async markInterrupted(now: string): Promise<number> {
     let n = 0;
-    for (const run of await this.list()) {
-      if (run.status !== "queued" && run.status !== "running") continue;
+    for (const r of this.db.all("SELECT body FROM runs WHERE status IN ('queued', 'running')")) {
+      const run = parse<RunRecord>(r.body);
+      if (!run) continue;
       await this.save({
         ...run,
         status: "interrupted",
@@ -147,10 +167,9 @@ export interface BallotRecord {
   started: Record<string, string>;
 }
 
-/** Ballots live in a subdirectory of the run directory, so RunStore.list() never sees them. */
-export class BallotStore extends JsonDir<BallotRecord> {
-  constructor(runDir: string) {
-    super(`${runDir}/ballots`);
+export class BallotStore extends RecordTable<BallotRecord> {
+  constructor(db: Db) {
+    super(db, "ballots");
   }
 
   async markInterrupted(now: string): Promise<number> {
@@ -183,8 +202,91 @@ export interface ChoiceRecord {
   notes: string;
 }
 
-export class ChoiceStore extends JsonDir<ChoiceRecord> {
-  constructor(runDir: string) {
-    super(`${runDir}/choices`);
+export class ChoiceStore extends RecordTable<ChoiceRecord> {
+  constructor(db: Db) {
+    super(db, "choices");
   }
+}
+
+export interface Stores {
+  db: Db;
+  runs: RunStore;
+  ballots: BallotStore;
+  choices: ChoiceStore;
+}
+
+export interface OpenOptions {
+  log?: (msg: string) => void;
+}
+
+/**
+ * Opens (or creates) data/ballotfix.db. On first open, imports the JSON
+ * files earlier versions kept in the same directory (runs at the top level,
+ * ballots/ and choices/ below), leaving the files in place. Rebuilds the
+ * knowledge graph when its projection changed or records were imported.
+ */
+export async function openStores(dir: string, opts: OpenOptions = {}): Promise<Stores> {
+  const log = opts.log ?? (() => {});
+  await Deno.mkdir(dir, { recursive: true });
+  const db = new Db(`${dir}/ballotfix.db`);
+  const stores: Stores = {
+    db,
+    runs: new RunStore(db),
+    ballots: new BallotStore(db),
+    choices: new ChoiceStore(db),
+  };
+  let imported = 0;
+  if (db.meta("json_imported_at") === null) {
+    const files = {
+      runs: await readJsonDir(dir),
+      ballots: await readJsonDir(`${dir}/ballots`),
+      choices: await readJsonDir(`${dir}/choices`),
+    };
+    db.tx(() => {
+      for (const [table, records] of Object.entries(files)) {
+        for (const r of records) {
+          // Any existing row is newer than the file it came from.
+          db.run(
+            `INSERT INTO ${table} (id, created_at, ${table === "runs" ? "status, " : ""}body)
+             VALUES (?, ?, ${table === "runs" ? "?, " : ""}?) ON CONFLICT (id) DO NOTHING`,
+            r.id,
+            r.created_at,
+            ...(table === "runs" ? [String(r.status)] : []),
+            JSON.stringify(r),
+          );
+          imported++;
+        }
+      }
+      db.setMeta("json_imported_at", new Date().toISOString());
+    });
+    if (imported) {
+      log(`Imported ${imported} saved record(s) from JSON files into ${dir}/ballotfix.db.`);
+    }
+  }
+  if (imported || !stores.runs.knowledge.upToDate) {
+    const n = stores.runs.knowledge.rebuild();
+    if (n) log(`Indexed ${n} finished run(s) into the knowledge graph.`);
+  }
+  return stores;
+}
+
+type Stored = { id: string; created_at: string; status?: unknown };
+
+/** The *.json records in one directory, skipping anything unreadable or misnamed. */
+async function readJsonDir(dir: string): Promise<Stored[]> {
+  const out: Stored[] = [];
+  try {
+    for await (const e of Deno.readDir(dir)) {
+      if (!e.isFile || !e.name.endsWith(".json")) continue;
+      const id = e.name.slice(0, -5);
+      if (!isRunId(id)) continue;
+      const r = parse<Stored>(await Deno.readTextFile(`${dir}/${e.name}`));
+      if (r && typeof r === "object" && r.id === id && typeof r.created_at === "string") {
+        out.push(r);
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err;
+  }
+  return out;
 }
