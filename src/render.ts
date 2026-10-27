@@ -834,15 +834,15 @@ export const STYLES = `
   /* Evidence type: what kind of source backs a fact. Blues, purple, and grey only: red and green mean stance. */
   --ev-opinion:#6b4592;
   /* Stance on a voter's issue. */
-  --stance-conflicts:#a3302a; --stance-aligns:#1f6f43; --stance-mixed:#7a5200;
-  /* Job status. */
-  --ok:#1f6f43; --bad:#a3302a;
+  --stance-conflicts:#a3302a; --stance-aligns:#1f6f43;
+  /* Job status: done is the normal state, so it stays neutral; a failure is amber, something to act on. */
+  --ok:#3f3e3a; --bad:#8a5200;
   /* Shape. */
   --r:10px; --r-lg:12px; --sticky:60px; }
 @media (prefers-color-scheme: dark) { :root { --bg:#161614; --fg:#ecebe6; --muted:#a8a69e;
   --line:#34332f; --line-strong:#4a4843; --card:#1f1f1c; --tint:#262622; --accent:#8cc0dc; --accent-fg:#10202a;
   --info-bg:#1d272d; --warn-bg:#3a2c12; --warn-fg:#f3d39b; --ev-opinion:#c9a3e6;
-  --stance-conflicts:#f0a090; --stance-aligns:#7fd3a3; --stance-mixed:#e8c27a; --ok:#7fd3a3; --bad:#f0a090; } }
+  --stance-conflicts:#f0a090; --stance-aligns:#7fd3a3; --ok:#cfcdc6; --bad:#f3c26b; } }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -916,7 +916,7 @@ form.inline { display: inline; margin: 0; }
 .runs .when { color: var(--muted); font-size: .85rem; }
 .pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
 .pill-running { color: var(--accent); } .pill-done { color: var(--ok); }
-.pill-failed, .pill-interrupted { color: var(--bad); }
+.pill-failed, .pill-interrupted { color: var(--bad); background: var(--warn-bg); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: var(--r); padding: 12px 14px; }
 input[type=file] { padding: 10px; }
@@ -1004,7 +1004,9 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .card .stance { font-size: .85rem; }
 .stance .basis { color: var(--fg); }
 .stance-conflicts { color: var(--stance-conflicts); } .stance-aligns { color: var(--stance-aligns); }
-.stance-mixed { color: var(--stance-mixed); } .stance-unclear { color: var(--muted); }
+/* Mixed is both ways: body text, with a rule half conflicts and half aligns. */
+.stance-mixed { color: var(--fg); }
+.stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 .money .sub { font-size: .85rem; margin: 0 0 4px; }
 .totals { list-style: none; padding: 0; margin: 4px 0 8px; }
@@ -1059,6 +1061,7 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .grid td.none { color: var(--muted); font-size: .82rem; }
 .grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }
 .inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
+.inc-mark.cov-fail { color: var(--bad); font-weight: 600; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The jump bar stays at the top while reading the dossiers. */
 nav.jump { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 16px -16px 0; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }

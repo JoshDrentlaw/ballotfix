@@ -178,10 +178,10 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 
 - Tokens by meaning, never reused across meanings: evidence type (`.ev` chips: filled for primary
   record, outlined for reported/opinion, dashed for unsourced; blues, purple, grey only), stance
-  (`--stance-*`: red and green belong to stance alone), job status (`--ok`/`--bad`), notices
-  (`.banner.info` for the page's standing explanations, plain `.banner` warn colors only for
-  something to act on). Radii are `--r`/`--r-lg`; `--sticky` is the jump bar's height, for
-  `scroll-margin-top`.
+  (`--stance-*`: red and green belong to stance alone; mixed is body text with a half-red,
+  half-green rule), job status (`--ok` neutral, `--bad` amber), notices (`.banner.info` for the
+  page's standing explanations, plain `.banner` warn colors only for something to act on). Radii are
+  `--r`/`--r-lg`; `--sticky` is the jump bar's height, for `scroll-margin-top`.
 - Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
 - A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
   candidates across in ballot order, each cell a fact count or stance linking to
