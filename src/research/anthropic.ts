@@ -657,13 +657,17 @@ export const MERGE_MAX_TOKENS = 32000;
 
 /**
  * The context call's caps. Searches and fetches are counted across the whole
- * call, pause_turn continuations included, so a run never spends more than
- * this however the server splits the turn. The output cap has the same room
- * as the merge call's: thinking counts against it, and hitting it fails the
- * call rather than keeping part of an answer.
+ * call, pause_turn continuations included (see remaining()). The API takes
+ * no cap below 1 while a tool is in the history, so each continuation can add
+ * one of each past the cap; the call allows CONTEXT_MAX_CONTINUATIONS, so a
+ * run makes at most CONTEXT_MAX_SEARCHES + CONTEXT_MAX_CONTINUATIONS searches,
+ * and likewise for fetches. Past that the call fails rather than continuing.
+ * The output cap has the same room as the merge call's: thinking counts
+ * against it, and hitting it fails the call rather than keeping part of an answer.
  */
 export const CONTEXT_MAX_SEARCHES = 10;
 export const CONTEXT_MAX_FETCHES = 5;
+export const CONTEXT_MAX_CONTINUATIONS = 3;
 export const CONTEXT_MAX_TOKENS = 32000;
 
 const MAX_CONTINUATIONS = 8;
@@ -672,7 +676,7 @@ const MAX_CONTINUATIONS = 8;
  * What is left of a call's caps after the turns so far. The API counts
  * max_uses per request, so a continuation would otherwise start afresh. It
  * can't be 0 while the tool is in the history; at 1, an exhausted tool can
- * still run once per continuation, which MAX_CONTINUATIONS bounds.
+ * still run once per continuation, which the call's continuation limit bounds.
  */
 function remaining(caps: { searches: number; fetches: number }, seen: readonly Block[]) {
   const used = (name: string) =>
@@ -866,7 +870,12 @@ export class AnthropicResearcher implements ResearchPort, BallotReader, ClaimMer
       searches: CONTEXT_MAX_SEARCHES,
       fetches: CONTEXT_MAX_FETCHES,
       acrossTurns: true,
-    }, { model: this.#contextModel, effort: "low", maxTokens: CONTEXT_MAX_TOKENS });
+    }, {
+      model: this.#contextModel,
+      effort: "low",
+      maxTokens: CONTEXT_MAX_TOKENS,
+      maxContinuations: CONTEXT_MAX_CONTINUATIONS,
+    });
     return { notes: contextNotes(json), retrieved_urls: urls, model: this.#contextModel };
   }
 
@@ -883,6 +892,7 @@ export class AnthropicResearcher implements ResearchPort, BallotReader, ClaimMer
       model?: string;
       effort?: NonNullable<AnthropicResearcherOptions["effort"]>;
       maxTokens?: number;
+      maxContinuations?: number;
     } = {},
   ): Promise<{ json: unknown; urls: string[] }> {
     const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
@@ -890,7 +900,8 @@ export class AnthropicResearcher implements ResearchPort, BallotReader, ClaimMer
     ];
     const seen: Block[] = [];
 
-    for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
+    const maxContinuations = call.maxContinuations ?? MAX_CONTINUATIONS;
+    for (let i = 0; i <= maxContinuations; i++) {
       const caps = tools && (tools.acrossTurns ? remaining(tools, seen) : tools);
       let response;
       try {
@@ -942,6 +953,6 @@ export class AnthropicResearcher implements ResearchPort, BallotReader, ClaimMer
         }
       }
     }
-    throw new ResearchIncompleteError(`still paused after ${MAX_CONTINUATIONS} continuations`);
+    throw new ResearchIncompleteError(`still paused after ${maxContinuations} continuations`);
   }
 }

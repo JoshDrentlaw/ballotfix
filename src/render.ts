@@ -279,16 +279,25 @@ function namesHtml(c: ContextResult | undefined): string {
   const unverified = c.notes.filter((n) => !n.verified);
   const list = (names: readonly string[]) => names.map(esc).join("; ");
   const parts = [
-    shown.length
-      ? `<p>A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. The same names were looked up the same way, whichever candidate or side they came up for.</p>`
-      : "",
+    c.error
+      ? `<p class="gap">Notes on these names couldn't be written in this run (${esc(c.error)}).</p>`
+      : `<p>Names were picked out of the facts automatically, so some may be missed.${
+        shown.length
+          ? ` A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate.`
+          : ""
+      } Every name was looked up the same way, whichever candidate or side it came up for.</p>`,
     c.not_described.length
       ? `<p><strong>No sourced note found for:</strong> ${list(c.not_described)}.</p>`
       : "",
-    c.not_looked_up.length
-      ? `<p><strong>Not looked up</strong> (each run looks up at most ${MAX_CONTEXT_NAMES} names, shared equally): ${
-        list(c.not_looked_up)
+    c.not_needed?.length
+      ? `<p><strong>No note needed</strong> (not a specific person or organization, or widely known), as judged by the research model: ${
+        list(c.not_needed)
       }.</p>`
+      : "",
+    c.not_looked_up.length
+      ? `<p><strong>Not looked up</strong>${
+        c.error ? "" : ` (each run looks up at most ${MAX_CONTEXT_NAMES} names, shared equally)`
+      }: ${list(c.not_looked_up)}.</p>`
       : "",
     unverified.length
       ? `<details class="unverified"><summary>${unverified.length} note${
@@ -302,7 +311,6 @@ function namesHtml(c: ContextResult | undefined): string {
       }</ul></details>`
       : "",
   ].filter(Boolean);
-  if (!parts.length) return "";
   return `<section class="sec names"><h4>Names in these facts</h4>${parts.join("")}</section>`;
 }
 

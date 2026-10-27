@@ -8,6 +8,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import Anthropic_ from "@anthropic-ai/sdk";
 import {
   AnthropicResearcher,
+  CONTEXT_MAX_CONTINUATIONS,
   CONTEXT_MAX_FETCHES,
   CONTEXT_MAX_SEARCHES,
   CONTEXT_MAX_TOKENS,
@@ -473,4 +474,18 @@ Deno.test("a context answer cut off at max_tokens fails rather than being half-r
     () => new AnthropicResearcher({ client }).describeNames(NAMES),
     ResearchIncompleteError,
   );
+});
+
+Deno.test("the context call stops after its own continuation limit", async () => {
+  const paused = { stop_reason: "pause_turn", content: [searchUse("s")] };
+  const { client, requests } = stubClient(
+    Array.from({ length: CONTEXT_MAX_CONTINUATIONS + 2 }, () => structuredClone(paused)),
+  );
+  await assertRejects(
+    () => new AnthropicResearcher({ client }).describeNames(NAMES),
+    ResearchIncompleteError,
+    `still paused after ${CONTEXT_MAX_CONTINUATIONS} continuations`,
+  );
+  // So at most this many searches past the cap, one per continuation.
+  assertEquals(requests.length, CONTEXT_MAX_CONTINUATIONS + 1);
 });

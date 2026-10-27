@@ -13,8 +13,12 @@
  * - A note must be one short, neutral description. One that uses an
  *   evaluative word (CHARACTERIZATIONS) is not shown at all.
  * - Over the cap, every candidate (or, for a measure, each side) gets the
- *   same share of names, and the names left out are listed on the page.
- * - The request never says which candidate or side a name came from.
+ *   same share of names, and the names left out are listed on the page, as
+ *   are names the model judged need no note and names it couldn't describe.
+ * - The request never labels which candidate or side a name came from, and
+ *   the candidates' names in the statements it quotes are replaced.
+ * - A failed call is recorded on the dossier, so the page says why the
+ *   names it lists have no notes.
  */
 
 import { normalizeUrl } from "./dossier.ts";
@@ -175,14 +179,36 @@ function tokens(text: string): Token[] {
 }
 
 /**
+ * What `findNames` leaves out: `words`, the candidates' and the place's own
+ * words (a run made only of these and generic words is dropped), and
+ * `people`, the candidates' full names (a run that is all or part of one is
+ * dropped, but "Friends of Jane Doe", a committee, is kept).
+ */
+export interface Exclusions {
+  words: ReadonlySet<string>;
+  people: readonly string[];
+}
+
+const NOTHING_EXCLUDED: Exclusions = { words: new Set(), people: [] };
+
+export function exclusions(people: readonly string[], places: readonly string[]): Exclusions {
+  const words = new Set<string>();
+  for (const s of [...people, ...places]) {
+    // A candidate's surname or the city's name alone ("Warren voted", "Fontana's budget").
+    for (const w of nameKey(s).split(" ")) if (w.length > 2) words.add(w);
+  }
+  return { words, people: people.map(nameKey).filter(Boolean) };
+}
+
+/**
  * Candidate names in one statement: runs of capitalized words (with "of",
  * "for", ... inside, and "Local 1000" after a union's name), minus titles,
- * sentence openers, generic words, ballot items, and anything in `exclude`
- * (the candidates' own names, the place's own name). Crude on purpose: the
- * model skips what isn't a name worth a note, and a name it never sees is
- * listed on the page, not lost.
+ * sentence openers, generic words, ballot items, and what `exclude` names.
+ * A heuristic: it misses some names (a one-word name opening a sentence,
+ * "Chevron gave...") and finds some non-names, which the model skips. The
+ * page says names were picked out automatically and some may be missed.
  */
-export function findNames(statement: string, exclude: ReadonlySet<string> = new Set()): string[] {
+export function findNames(statement: string, exclude: Exclusions = NOTHING_EXCLUDED): string[] {
   const ts = tokens(statement);
   const runs: Token[][] = [];
   let run: Token[] = [];
@@ -204,46 +230,54 @@ export function findNames(statement: string, exclude: ReadonlySet<string> = new 
   const out: string[] = [];
   for (let r of runs) {
     const first = r[0];
-    while (r.length && (LEADING.has(r[0].word.toLowerCase()) || !isCap(r[0].word))) {
+    // A title or opener comes off the front, but not one that starts a name: "Justice for Janitors".
+    while (
+      r.length &&
+      (!isCap(r[0].word) ||
+        (LEADING.has(r[0].word.toLowerCase()) && !CONNECTORS.has(r[1]?.word.toLowerCase() ?? "")))
+    ) {
       r = r.slice(1);
     }
     while (r.length && !isCap(r.at(-1)!.word) && !/^\d+$/.test(r.at(-1)!.word)) r = r.slice(0, -1);
     if (!r.length) continue;
     const words = r.map((t) => t.word.toLowerCase());
     if (NOT_NAMES.has(words[0])) continue;
-    if (words.every((w) => GENERIC.has(w) || CONNECTORS.has(w) || exclude.has(w))) continue;
+    if (words.every((w) => GENERIC.has(w) || CONNECTORS.has(w) || exclude.words.has(nameKey(w)))) {
+      continue;
+    }
     if (r.length === 1) {
       const w = r[0].word;
       if (r[0] === first && first.sentenceStart && !isAcronym(w)) continue;
       if (w.length < 3 && !isAcronym(w)) continue;
     }
     const name = statement.slice(r[0].start, r.at(-1)!.end);
-    if (isExcluded(name, exclude)) continue;
+    const k = ` ${nameKey(name)} `;
+    if (exclude.people.some((p) => ` ${p} `.includes(k))) continue;
     out.push(name);
   }
   return [...new Set(out)];
 }
 
-/** Excluded: the name is, or is part of, an excluded name (a candidate's surname alone, too). */
-function isExcluded(name: string, exclude: ReadonlySet<string>): boolean {
-  const k = ` ${nameKey(name)} `;
-  for (const e of exclude) {
-    if (e.includes(" ") && (` ${e} `.includes(k) || k.includes(` ${e} `))) return true;
+/**
+ * A statement as the request shows it: cut short, with the candidates' names
+ * replaced, so the model looks up every name the same way whoever it came up for.
+ */
+export function redact(statement: string, people: readonly string[]): string {
+  let s = statement;
+  const parts = [
+    ...people,
+    ...people.flatMap((p) => p.split(/\s+/).filter((w) => w.length > 2)),
+  ].sort((a, b) => b.length - a.length);
+  for (const p of parts) {
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    s = s.replace(
+      new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "giu"),
+      "[candidate]",
+    );
   }
-  return false;
-}
-
-/** What `findNames` leaves out for this run: the candidates, each of their words, and the place. */
-function exclusions(people: readonly string[], places: readonly string[]): Set<string> {
-  const out = new Set<string>();
-  for (const s of [...people, ...places]) {
-    const k = nameKey(s);
-    if (!k) continue;
-    out.add(k);
-    // A candidate's surname or the city's name alone ("Warren voted", "Fontana's budget").
-    for (const w of k.split(" ")) if (w.length > 2) out.add(w);
-  }
-  return out;
+  // One "[candidate]" for a full name, not one per word.
+  s = s.replace(/\[candidate\](\s+\[candidate\])+/g, "[candidate]");
+  return s.length > MAX_MENTION_CHARS ? `${s.slice(0, MAX_MENTION_CHARS)}…` : s;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +287,8 @@ function exclusions(people: readonly string[], places: readonly string[]): Set<s
 interface Found {
   name: string;
   key: string;
-  mentions: string[];
+  /** The first statement naming it, per subject. */
+  mentions: Map<number, string>;
   /** How many statements name it, per subject. */
   count: Map<number, number>;
 }
@@ -268,13 +303,16 @@ function priorityResults(p: readonly PriorityResult[] | undefined): SectionResul
 }
 
 /**
- * Collects names from each subject's statements, then sends up to the cap,
- * round robin across subjects (each subject's most-mentioned names first),
- * so no subject's names crowd out another's whatever the ballot order.
+ * Collects names from each subject's statements, then sends up to the cap in
+ * rounds: each round, every subject with names left adds its next
+ * most-mentioned one. Only whole rounds are sent, so ballot order never
+ * buys a subject an extra name; what doesn't fit is listed as not looked up.
+ * A name already taken for another subject serves both, and this subject
+ * takes its next one.
  */
 export function chooseNames(
   subjects: readonly string[][],
-  exclude: ReadonlySet<string>,
+  exclude: Exclusions,
   cap = MAX_CONTEXT_NAMES,
 ): { chosen: Found[]; left: Found[] } {
   const byKey = new Map<string, Found>();
@@ -283,8 +321,8 @@ export function chooseNames(
       for (const name of findNames(s, exclude)) {
         const key = nameKey(name);
         let f = byKey.get(key);
-        if (!f) byKey.set(key, f = { name, key, mentions: [], count: new Map() });
-        if (f.mentions.length < MAX_MENTIONS && !f.mentions.includes(s)) f.mentions.push(s);
+        if (!f) byKey.set(key, f = { name, key, mentions: new Map(), count: new Map() });
+        if (!f.mentions.has(subject)) f.mentions.set(subject, s);
         f.count.set(subject, (f.count.get(subject) ?? 0) + 1);
       }
     }
@@ -296,18 +334,14 @@ export function chooseNames(
   );
   const picked = new Set<Found>();
   const next = queues.map(() => 0);
-  let progress = true;
-  while (picked.size < cap && progress) {
-    progress = false;
+  for (;;) {
+    const round = new Set<Found>();
     queues.forEach((q, i) => {
-      if (picked.size >= cap) return;
-      // A name another subject already took counts for both; take this subject's next one.
-      while (next[i] < q.length && picked.has(q[next[i]])) next[i]++;
-      if (next[i] < q.length) {
-        picked.add(q[next[i]++]);
-        progress = true;
-      }
+      while (next[i] < q.length && (picked.has(q[next[i]]) || round.has(q[next[i]]))) next[i]++;
+      if (next[i] < q.length) round.add(q[next[i]++]);
     });
+    if (!round.size || picked.size + round.size > cap) break;
+    for (const f of round) picked.add(f);
   }
   return { chosen: all.filter((f) => picked.has(f)), left: all.filter((f) => !picked.has(f)) };
 }
@@ -350,14 +384,16 @@ function toNote(
 }
 
 /**
- * One entry per name sent. A name the answer left out, or described in a way
- * that can't be shown, is listed in not_described: never dropped silently.
+ * One entry per name sent: a note, not_needed (the model judged it isn't a
+ * specific person or organization, or that nearly every voter knows it), or
+ * not_described (left out of the answer, or described in a way that can't be
+ * shown). The page lists both lists: no name is dropped silently.
  */
 export function checkNotes(
   sent: readonly NameToDescribe[],
   raw: readonly RawContextNote[],
   retrievedUrls: readonly string[],
-): { notes: ContextNote[]; not_described: string[] } {
+): { notes: ContextNote[]; not_described: string[]; not_needed: string[] } {
   const retrieved = new Set(
     retrievedUrls.map(normalizeUrl).filter((u): u is string => u !== null),
   );
@@ -365,14 +401,18 @@ export function checkNotes(
   for (const r of raw) if (!answers.has(r.id)) answers.set(r.id, r);
   const notes: ContextNote[] = [];
   const not_described: string[] = [];
+  const not_needed: string[] = [];
   for (const n of sent) {
     const a = answers.get(n.id);
-    if (a && clean(a.kind) === "skip") continue;
+    if (a && clean(a.kind) === "skip") {
+      not_needed.push(n.name);
+      continue;
+    }
     const note = a ? toNote(n.name, a, retrieved) : null;
     if (note) notes.push(note);
     else not_described.push(n.name);
   }
-  return { notes, not_described };
+  return { notes, not_described, not_needed };
 }
 
 // ---------------------------------------------------------------------------
@@ -389,26 +429,77 @@ export interface ContextStepResult<T> {
   skipped: number;
 }
 
-const clip = (s: string) => s.length > MAX_MENTION_CHARS ? `${s.slice(0, MAX_MENTION_CHARS)}…` : s;
+/** Everything the step needs from a dossier, before any call. */
+interface Plan {
+  subjects: string[][];
+  exclude: Exclusions;
+  /** Candidates' names, replaced in what is sent. */
+  people: string[];
+  place: string;
+  electionDate: string;
+}
+
+function racePlan(race: RaceDossier): Plan {
+  const q = race.query;
+  const people = race.candidates.map((c) => c.candidate.name);
+  return {
+    subjects: race.candidates.filter((c) => c.status === "ok").map((c) =>
+      statements([...Object.values(c.sections), ...priorityResults(c.priorities)])
+    ),
+    exclude: exclusions(people, [q.city]),
+    people,
+    place: `${q.city}, ${q.state}`,
+    electionDate: q.electionDate,
+  };
+}
+
+/**
+ * A measure's names come in three equal shares: the case for, the case
+ * against, and everything else, so neither side's names crowd out the other's.
+ */
+function measurePlan(m: MeasureDossier): Plan {
+  const q = m.query;
+  const { case_for, case_against, ...rest } = m.sections;
+  return {
+    subjects: m.status === "ok"
+      ? [
+        statements([case_for]),
+        statements([case_against]),
+        statements([...Object.values(rest), ...priorityResults(m.priorities)]),
+      ]
+      : [],
+    exclude: exclusions(m.query.label ? [m.query.label] : [], [q.jurisdiction]),
+    people: [],
+    place: [q.jurisdiction, q.state].filter(Boolean).join(", "),
+    electionDate: q.electionDate,
+  };
+}
 
 async function describe(
-  subjects: readonly string[][],
-  exclude: ReadonlySet<string>,
-  place: string,
-  electionDate: string,
+  plan: Plan,
   writer: ContextWriter,
 ): Promise<ContextResult & { sent: number }> {
-  const { chosen, left } = chooseNames(subjects, exclude);
+  const { chosen, left } = chooseNames(plan.subjects, plan.exclude);
+  const empty = { notes: [], not_described: [], not_needed: [], model: null };
   const not_looked_up = left.map((f) => f.name);
-  if (!chosen.length) return { notes: [], not_looked_up, not_described: [], model: null, sent: 0 };
+  if (!chosen.length) return { ...empty, not_looked_up, sent: 0 };
   const names = chosen.map((f, i) => ({
     id: `n${i + 1}`,
     name: f.name,
-    mentions: f.mentions.map(clip),
+    // From different subjects where it came up for several: better for telling who it is.
+    mentions: [...f.mentions.values()].slice(0, MAX_MENTIONS).map((s) => redact(s, plan.people)),
   }));
-  const r = await writer.describeNames({ place, electionDate, names });
-  const { notes, not_described } = checkNotes(names, r.notes, r.retrieved_urls);
-  return { notes, not_looked_up, not_described, model: r.model, sent: names.length };
+  const r = await writer.describeNames({
+    place: plan.place,
+    electionDate: plan.electionDate,
+    names,
+  });
+  return {
+    ...checkNotes(names, r.notes, r.retrieved_urls),
+    not_looked_up,
+    model: r.model,
+    sent: names.length,
+  };
 }
 
 function finish<T extends { context?: ContextResult }>(
@@ -416,8 +507,10 @@ function finish<T extends { context?: ContextResult }>(
   r: ContextResult & { sent: number },
 ): ContextStepResult<T> {
   const { sent, ...context } = r;
+  const found = sent + context.not_looked_up.length;
   return {
-    dossier: { ...d, context },
+    // Nothing to say when the facts name no one: the dossier stays as it was.
+    dossier: found ? { ...d, context } : d,
     sent,
     shown: context.notes.filter((n) => n.verified).length,
     skipped: context.not_looked_up.length,
@@ -429,38 +522,42 @@ export async function contextForRace(
   race: RaceDossier,
   writer: ContextWriter,
 ): Promise<ContextStepResult<RaceDossier>> {
-  const done = race.candidates.filter((c) => c.status === "ok");
-  const subjects = done.map((c) =>
-    statements([...Object.values(c.sections), ...priorityResults(c.priorities)])
-  );
-  const exclude = exclusions(race.candidates.map((c) => c.candidate.name), [race.query.city]);
-  const q = race.query;
-  return finish(
-    race,
-    await describe(subjects, exclude, `${q.city}, ${q.state}`, q.electionDate, writer),
-  );
+  return finish(race, await describe(racePlan(race), writer));
 }
 
-/**
- * A measure's names come in three equal shares: the case for, the case
- * against, and everything else, so neither side's names crowd out the other's.
- */
 export async function contextForMeasure(
   m: MeasureDossier,
   writer: ContextWriter,
 ): Promise<ContextStepResult<MeasureDossier>> {
-  if (m.status !== "ok") return { dossier: m, sent: 0, shown: 0, skipped: 0 };
-  const { case_for, case_against, ...rest } = m.sections;
-  const subjects = [
-    statements([case_for]),
-    statements([case_against]),
-    statements([...Object.values(rest), ...priorityResults(m.priorities)]),
-  ];
-  const q = m.query;
-  const exclude = exclusions(m.query.label ? [m.query.label] : [], [q.jurisdiction]);
-  const place = [q.jurisdiction, q.state].filter(Boolean).join(", ");
-  return finish(m, await describe(subjects, exclude, place, q.electionDate, writer));
+  return finish(m, await describe(measurePlan(m), writer));
 }
+
+/**
+ * The dossier after a failed context call: every name found is listed as not
+ * looked up, with why, so the page says what is missing. Unchanged when the
+ * facts name no one.
+ */
+function failed<T extends { context?: ContextResult }>(d: T, plan: Plan, error: string): T {
+  const { chosen, left } = chooseNames(plan.subjects, plan.exclude, Infinity);
+  const names = [...chosen, ...left].map((f) => f.name);
+  if (!names.length) return d;
+  return {
+    ...d,
+    context: {
+      notes: [],
+      not_looked_up: names,
+      not_described: [],
+      not_needed: [],
+      model: null,
+      error,
+    },
+  };
+}
+
+export const raceContextFailed = (race: RaceDossier, error: string) =>
+  failed(race, racePlan(race), error);
+export const measureContextFailed = (m: MeasureDossier, error: string) =>
+  failed(m, measurePlan(m), error);
 
 // ---------------------------------------------------------------------------
 // Where a note attaches
@@ -471,16 +568,22 @@ export type Piece = string | { text: string; note: ContextNote };
 
 /**
  * Splits a statement at the first place each verified note's name appears,
- * longest names first, whole words only. Used by the page and the graph, so
+ * longest names first, whole words only, any case. Used by the page and the graph, so
  * a note attaches in both or neither.
  */
 export function attachNotes(statement: string, notes: readonly ContextNote[]): Piece[] {
   const hits: { start: number; end: number; note: ContextNote }[] = [];
   const shown = notes.filter((n) => n.verified).sort((a, b) => b.name.length - a.name.length);
+  // Case doesn't matter ("ACME Builders" in one fact, "Acme Builders" in another), unless
+  // lowercasing changes the length, which would shift every position.
+  const lower = statement.toLowerCase();
   for (const note of shown) {
+    const lowerName = note.name.toLowerCase();
+    const exact = lower.length !== statement.length || lowerName.length !== note.name.length;
+    const [text, name] = exact ? [statement, note.name] : [lower, lowerName];
     let from = 0;
     while (from <= statement.length) {
-      const i = statement.indexOf(note.name, from);
+      const i = text.indexOf(name, from);
       if (i < 0) break;
       const end = i + note.name.length;
       const wordEdge = !/[\p{L}\p{N}]/u.test(statement[i - 1] ?? "") &&

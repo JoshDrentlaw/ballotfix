@@ -4,7 +4,12 @@
  * predictable and avoids rate limits. A small queue holds the rest.
  */
 
-import { contextForMeasure, contextForRace } from "../context.ts";
+import {
+  contextForMeasure,
+  contextForRace,
+  measureContextFailed,
+  raceContextFailed,
+} from "../context.ts";
 import { mergeMeasure, mergeRace } from "../merge.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
@@ -73,6 +78,7 @@ export class JobRunner {
   readonly #makeContextWriter: (() => ContextWriter) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
+  #post = new Set<Promise<void>>();
 
   constructor(store: RunStore, makePort: () => ResearchPort, opts: JobRunnerOptions = {}) {
     this.#store = store;
@@ -87,8 +93,9 @@ export class JobRunner {
 
   /**
    * Runs one step on a run already saved as done, and saves again if it
-   * changed anything. A failure only logs: the research stands as it was.
-   * Returns the dossier the next step should start from.
+   * changed anything. A failure only logs, and saves what `failed` makes of
+   * it, if anything, so the page can say what is missing: the research
+   * stands as it was. Returns the dossier the next step should start from.
    */
   async #after<T>(
     id: string,
@@ -96,6 +103,7 @@ export class JobRunner {
     dossier: T,
     step: (() => Promise<AfterStep<T>>) | undefined,
     save: (dossier: T) => Promise<void>,
+    failed: (dossier: T, error: string) => T = (d) => d,
   ): Promise<T> {
     if (!step) return dossier;
     try {
@@ -105,7 +113,12 @@ export class JobRunner {
       await save(r.dossier);
       return r.dossier;
     } catch (err) {
-      this.#log(`[${id}] ${what} failed: ${err instanceof Error ? err.message : err}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.#log(`[${id}] ${what} failed: ${msg}`);
+      const marked = failed(dossier, msg);
+      if (marked !== dossier) {
+        await save(marked).catch((e) => this.#log(`[${id}] could not record that: ${e}`));
+      }
       return dossier;
     }
   }
@@ -122,6 +135,7 @@ export class JobRunner {
       d: T,
       w: ContextWriter,
     ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number }>,
+    contextFailed: (d: T, error: string) => T,
     save: (dossier: T) => Promise<void>,
   ): Promise<void> {
     const makeMerger = this.#makeMerger, makeWriter = this.#makeContextWriter;
@@ -150,8 +164,8 @@ export class JobRunner {
         const r = await context(merged, makeWriter());
         return {
           dossier: r.dossier,
-          // Saved even with nothing to show, so the page can say what wasn't looked up.
-          changed: true,
+          // Unchanged only when the facts name no one; otherwise the page lists what was found.
+          changed: r.dossier !== merged,
           log: [
             ...(r.sent ? [`wrote ${r.shown} context note(s) for ${r.sent} names`] : []),
             ...(r.skipped ? [`left ${r.skipped} names without a note (over the cap)`] : []),
@@ -159,7 +173,19 @@ export class JobRunner {
         };
       }),
       save,
+      contextFailed,
     );
+  }
+
+  /**
+   * The steps after a run is done run beside the queue, not in it: the run
+   * is already saved and readable, and the next race shouldn't wait on them.
+   * At most one chain per finished run, so spend stays bounded.
+   */
+  #background(p: Promise<void>): void {
+    const tracked = p.catch((err) => this.#log(`after-run steps failed: ${err}`))
+      .finally(() => this.#post.delete(tracked));
+    this.#post.add(tracked);
   }
 
   /** Races (and measures) waiting or running. */
@@ -216,9 +242,10 @@ export class JobRunner {
     return run;
   }
 
-  /** Resolves once every submitted race has finished. For tests and shutdown. */
-  idle(): Promise<void> {
-    return this.#tail;
+  /** Resolves once every submitted race, and the steps after it, have finished. For tests and shutdown. */
+  async idle(): Promise<void> {
+    await this.#tail;
+    while (this.#post.size) await Promise.all(this.#post);
   }
 
   async #execute(initial: RunRecord): Promise<void> {
@@ -241,13 +268,14 @@ export class JobRunner {
           error: result.error,
         });
         if (result.status === "ok") {
-          await this.#afterDone(
+          this.#background(this.#afterDone(
             run.id,
             result,
             mergeMeasure,
             contextForMeasure,
+            measureContextFailed,
             (d) => save({ measure_result: d }),
-          );
+          ));
         }
         return;
       }
@@ -260,13 +288,14 @@ export class JobRunner {
         onUpdate: (partial) => save({ race: partial }),
       });
       await save({ race, status: "done" });
-      await this.#afterDone(
+      this.#background(this.#afterDone(
         run.id,
         race,
         mergeRace,
         contextForRace,
+        raceContextFailed,
         (d) => save({ race: d }),
-      );
+      ));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${run.id}] failed: ${msg}`);

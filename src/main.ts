@@ -8,7 +8,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
-import { contextForRace } from "./context.ts";
+import { contextForRace, raceContextFailed } from "./context.ts";
 import { mergeRace } from "./merge.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
@@ -148,7 +148,9 @@ async function main(): Promise<number> {
       if (c.sent) console.error(`Wrote ${c.shown} context note(s) for ${c.sent} names.`);
       if (c.skipped) console.error(`${c.skipped} names not looked up (over the cap).`);
     } catch (err) {
-      console.error(`Context notes failed; writing the page without them. ${err}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Context notes failed; the page lists the names without them. ${msg}`);
+      race = raceContextFailed(race, msg);
     }
   }
 

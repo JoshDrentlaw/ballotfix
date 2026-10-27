@@ -5,11 +5,15 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
+  attachNotes,
   checkNotes,
+  chooseNames,
   contextForMeasure,
   contextForRace,
+  exclusions,
   findNames,
   MAX_CONTEXT_NAMES,
+  raceContextFailed,
 } from "../src/context.ts";
 import { organizationRef, personRef, projectRace } from "../src/knowledge.ts";
 import { runMeasure, runRace } from "../src/race.ts";
@@ -107,7 +111,7 @@ function writer(
 const PAC_NOTE = { note: "A political action committee formed by Inland Empire home builders." };
 
 Deno.test("names are runs of capitalized words, minus titles, openers, candidates, and generic words", () => {
-  const ex = new Set(["acquanetta warren", "acquanetta", "warren", "fontana"]);
+  const ex = exclusions(["Acquanetta Warren"], ["Fontana"]);
   assertEquals(
     findNames(
       "Mayor Warren voted with Councilmember John Roberts to approve the Sierra Lakes warehouse proposed by Hillwood Investment Properties.",
@@ -127,6 +131,23 @@ Deno.test("names are runs of capitalized words, minus titles, openers, candidate
   assertEquals(findNames("Friends of Fontana Parks backed Warren's plan.", ex), [
     "Friends of Fontana Parks",
   ]);
+  // A committee named for a candidate is a name worth a note; the candidate alone is not.
+  assertEquals(findNames("Friends of Acquanetta Warren paid Acquanetta Warren back.", ex), [
+    "Friends of Acquanetta Warren",
+  ]);
+  // A title-like first word that starts a name stays on it.
+  assertEquals(findNames("Endorsed by Justice for Janitors.", ex), ["Justice for Janitors"]);
+});
+
+Deno.test("a city with a two-word name doesn't hide the organizations named after it", () => {
+  const ex = exclusions(["Todd Gloria"], ["San Diego"]);
+  assertEquals(
+    findNames(
+      "Backed by the San Diego Police Officers Association and the San Diego County Taxpayers Association; San Diego approved it.",
+      ex,
+    ),
+    ["San Diego Police Officers Association", "San Diego County Taxpayers Association"],
+  );
 });
 
 Deno.test("one call per race, verified facts only, without saying whose facts they are", async () => {
@@ -142,6 +163,12 @@ Deno.test("one call per race, verified facts only, without saying whose facts th
   assert(!sent.includes("Hidden Name Group"));
   assert(!req.names.some((n) => /Warren|Sida/.test(n.name)));
   assert(!("candidate" in req.names[0]));
+  // Candidates' names in the quoted statements are replaced, too.
+  assert(!/Warren|Sida|Acquanetta|Joz/.test(sent));
+  assertEquals(req.names[0].mentions, [
+    "Endorsed by Inland Builders PAC and SEIU Local 2015.",
+    "Inland Builders PAC endorsed [candidate].",
+  ]);
   // The PAC is named for both candidates and gets one note, the same for both.
   assertEquals(out.sent, 2);
   assertEquals(out.shown, 1);
@@ -149,7 +176,7 @@ Deno.test("one call per race, verified facts only, without saying whose facts th
   assertEquals(out.dossier.context!.not_looked_up, []);
 });
 
-Deno.test("a race with no names makes no call but records that the step ran", async () => {
+Deno.test("a race with no names makes no call and leaves the dossier as it was", async () => {
   const port = new FakeResearch(listing(CANDS), {
     "Acquanetta Warren": raw({
       sections: { record: section(fact("Voted for the 2025 budget.")) },
@@ -160,12 +187,59 @@ Deno.test("a race with no names makes no call but records that the step ran", as
   const out = await contextForRace(await runRace(QUERY, port, { candidates: CANDS }), w);
   assertEquals(w.requests.length, 0);
   assertEquals(out.sent, 0);
-  assertEquals(out.dossier.context, {
-    notes: [],
-    not_looked_up: [],
-    not_described: [],
-    model: null,
-  });
+  assertEquals(out.dossier.context, undefined);
+});
+
+Deno.test("only whole rounds are sent, so ballot order never buys a candidate an extra name", () => {
+  const subject = (p: string) =>
+    Array.from({ length: 10 }, (_, i) => `Endorsed by ${p} Group ${String.fromCharCode(65 + i)}.`);
+  const { chosen, left } = chooseNames(
+    ["Alpha", "Beta", "Gamma", "Delta"].map(subject),
+    exclusions([], []),
+  );
+  // 30 doesn't split four ways: 7 rounds of 4 go, and the 2 slots left stay unused.
+  assertEquals(chosen.length, 28);
+  for (const p of ["Alpha", "Beta", "Gamma", "Delta"]) {
+    assertEquals(chosen.filter((f) => f.name.startsWith(p)).length, 7);
+  }
+  assertEquals(left.length, 12);
+});
+
+Deno.test("names the model says need no note are listed, not dropped", async () => {
+  const w = writer({ "Inland Builders PAC": { kind: "skip", note: "" } });
+  const { dossier } = await contextForRace(await race(), w);
+  assertEquals(dossier.context!.not_needed, ["Inland Builders PAC"]);
+  assertStringIncludes(renderRace(dossier), "<strong>No note needed</strong>");
+});
+
+Deno.test("a failed call is recorded, and the page lists every name found as not looked up", async () => {
+  const r = await race();
+  const d = raceContextFailed(r, "response hit max_tokens before finishing");
+  assertEquals(d.context!.error, "response hit max_tokens before finishing");
+  assertEquals(d.context!.not_looked_up, ["Inland Builders PAC", "SEIU Local 2015"]);
+  const page = renderRace(d);
+  assertStringIncludes(page, "Notes on these names couldn't be written in this run");
+  assertStringIncludes(page, "SEIU Local 2015");
+});
+
+Deno.test("a note attaches whatever the case of the name in the statement", () => {
+  const note = {
+    name: "ACME Builders",
+    kind: "organization" as const,
+    note: "A developer.",
+    source_name: "SOS",
+    source_url: SOS,
+    author: null,
+    published: null,
+    verified: true,
+  };
+  assertEquals(attachNotes("Paid by Acme Builders.", [note]), [
+    "Paid by ",
+    { text: "Acme Builders", note },
+    ".",
+  ]);
+  // Not inside another word.
+  assertEquals(attachNotes("Paid by Acme Buildersmith.", [note]), ["Paid by Acme Buildersmith."]);
 });
 
 Deno.test("over the cap, every candidate gets the same share, and the rest are listed", async () => {
@@ -245,7 +319,7 @@ Deno.test("a note stands only on a retrieved page, in plain words, for a name th
     author: null,
     published: null,
   };
-  const { notes, not_described } = checkNotes(sent, [
+  const { notes, not_described, not_needed } = checkNotes(sent, [
     { ...base, id: "n1" },
     { ...base, id: "n1", note: "A later answer for the same id is ignored." },
     { ...base, id: "n2", source_url: NEVER },
@@ -260,13 +334,18 @@ Deno.test("a note stands only on a retrieved page, in plain words, for a name th
     ["A PAC", "A trade association.", true],
     ["B Union", "A trade association.", false],
   ]);
-  // Skipped (no note needed) is not a gap; everything else that can't be shown is listed.
+  // Every name sent is accounted for: shown, unverified, no note needed, or not described.
+  assertEquals(not_needed, ["E Person"]);
   assertEquals(not_described, ["C Group", "D Firm", "F Co", "G Org"]);
 });
 
 Deno.test("a missing answer is listed as not described, never dropped", () => {
   const sent = [{ id: "n1", name: "A PAC", mentions: [] }];
-  assertEquals(checkNotes(sent, [], []), { notes: [], not_described: ["A PAC"] });
+  assertEquals(checkNotes(sent, [], []), {
+    notes: [],
+    not_described: ["A PAC"],
+    not_needed: [],
+  });
 });
 
 Deno.test("a verified note renders collapsed next to the name, escaped; an unverified one doesn't", async () => {
@@ -388,7 +467,8 @@ Deno.test("the job runner adds notes after merging, to the merged run, and a fai
   await jobs.idle();
   const kept = (await s.runs.get(second.id))!;
   assertEquals(kept.status, "done");
-  assertEquals(kept.race!.context, undefined);
+  assertEquals(kept.race!.context?.error, "max_tokens");
+  assertEquals(kept.race!.context?.not_looked_up, ["Inland Builders PAC"]);
   // Merged all the same.
   assertEquals(kept.race!.candidates[0].sections.endorsements.facts.length, 1);
   assert(logs.some((l) => l.includes("context notes failed: max_tokens")));
@@ -422,4 +502,41 @@ Deno.test("a measure's notes render on its page", async () => {
   assertStringIncludes(page, `<span class="named">Friends of Fontana Parks.</span><details`);
   assertStringIncludes(page, `<span class="named">Fontana Taxpayers Association.</span><details`);
   assert(!page.includes("</details>.</div>"));
+});
+
+Deno.test("the next race doesn't wait for the previous one's context notes", async () => {
+  const s = await openStores(await Deno.makeTempDir());
+  const port = new FakeResearch(listing(CANDS), {
+    "Acquanetta Warren": raw({
+      sections: { endorsements: section(fact("Endorsed by Inland Builders PAC.")) },
+      retrieved_urls: [HERALD],
+    }),
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const researched: string[] = [];
+  const jobs = new JobRunner(s.runs, () => ({
+    ...port,
+    findBallot: () => port.findBallot(),
+    researchMeasure: (m, p) => port.researchMeasure(m, p),
+    researchCandidate: (q, c, l, p) => {
+      researched.push(c.name);
+      return port.researchCandidate(q, c, l, p);
+    },
+  }), {
+    makeContextWriter: () => ({
+      describeNames: async (req) => {
+        await gate;
+        return writer({}).describeNames(req);
+      },
+    }),
+  });
+  await jobs.submit(QUERY, CANDS.slice(0, 1));
+  await jobs.submit(QUERY, CANDS.slice(1));
+  // The second race is researched while the first one's context call is still waiting.
+  for (let i = 0; i < 50 && researched.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+  assertEquals(researched, ["Acquanetta Warren", "Joz Sida"]);
+  release();
+  await jobs.idle();
+  s.db.close();
 });

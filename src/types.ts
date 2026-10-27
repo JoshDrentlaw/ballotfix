@@ -363,7 +363,14 @@ export interface ContextResult {
   not_looked_up: string[];
   /** Names sent that came back with no note the page can show. */
   not_described: string[];
+  /**
+   * Names the model judged need no note: not a specific person or organization,
+   * or known to nearly every voter. Listed too. Absent in runs saved before it.
+   */
+  not_needed?: string[];
   model: string | null;
+  /** Why the call failed, when it did; every name found is then in not_looked_up. */
+  error?: string;
 }
 
 /**
