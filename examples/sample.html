@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPGRlZnM+CiAgICA8ZyBpZD0ic2hlZXQiPgogICAgICA8cmVjdCB4PSIxMSIgeT0iOSIgd2lkdGg9IjMyIiBoZWlnaHQ9IjQyIiByeD0iNCIgZmlsbD0iI2ZiZmFmNyIgLz4KICAgICAgPGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjg1MzZiIiBzdHJva2Utd2lkdGg9IjIuMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgICAgICA8ZWxsaXBzZSBjeD0iMTguNSIgY3k9IjE5IiByeD0iMi44IiByeT0iMiIgLz4KICAgICAgICA8ZWxsaXBzZSBjeD0iMTguNSIgY3k9IjI5IiByeD0iMi44IiByeT0iMiIgLz4KICAgICAgICA8ZWxsaXBzZSBjeD0iMTguNSIgY3k9IjM5IiByeD0iMi44IiByeT0iMiIgLz4KICAgICAgICA8cGF0aCBkPSJNMjUgMTloMTJNMjUgMjloMTJNMjUgMzloMTIiIC8+CiAgICAgIDwvZz4KICAgIDwvZz4KICAgIDxjbGlwUGF0aCBpZD0ibGVucyI+PGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iOCIgLz48L2NsaXBQYXRoPgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNCIgZmlsbD0iIzI4NTM2YiIgLz4KICA8dXNlIGhyZWY9IiNzaGVldCIgLz4KICA8ZyBjbGlwLXBhdGg9InVybCgjbGVucykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjMWY0MzU3IiAvPgogICAgPHVzZSBocmVmPSIjc2hlZXQiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDM1IDQwKSBzY2FsZSgxLjYpIHRyYW5zbGF0ZSgtMzUgLTQwKSIgLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzUiIGN5PSI0MCIgcj0iMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2YzZDM5YiIgc3Ryb2tlLXdpZHRoPSI0IiAvPgogIDxwYXRoIGQ9Ik00Mi41IDQ3LjVsOC41IDguNSIgc3Ryb2tlPSIjZjNkMzliIiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgLz4KPC9zdmc+">
+
 
 <title>Example City Mayor · Nov 3, 2026</title>
 <style>
@@ -65,13 +67,10 @@ button.secondary, .button.secondary { background: transparent; color: var(--acce
 .mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
 .mine h2 { margin: 0; }
 .mine p { margin: 0; }
-.picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.picks li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
+.picks .pick { grid-column: 1 / -1; font-size: 1.05rem; font-weight: 700; margin-top: 2px; }
 .picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
 .picks .notes { white-space: pre-line; margin: 4px 0 0; }
 .printonly { display: none; }
-.picks fieldset, .picks label { margin-top: 8px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -83,17 +82,71 @@ form.inline { display: inline; margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
 input[type=file] { padding: 10px; }
-.contests { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.contest { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
-.contest p { margin: 0; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
 fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
 fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
-.contest details { display: grid; gap: 10px; }
-.contest details label { margin-top: 10px; }
+.tabs { display: flex; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.tabs a { flex: 1; text-align: center; padding: 10px 4px; border-radius: 9px; text-decoration: none; font-weight: 600; font-size: .92rem; min-height: 44px; }
+.tabs a[aria-current=page] { background: var(--accent); color: var(--accent-fg); }
+.tabs .count { font-weight: 400; opacity: .85; }
+.items, .picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.item, .picks > li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; scroll-margin-top: 12px; }
+.item > details > summary, .picks summary { color: var(--fg); padding: 12px 0; display: grid; grid-template-columns: 1fr auto; column-gap: 8px; list-style: none; }
+.item > details > summary::-webkit-details-marker, .picks summary::-webkit-details-marker { display: none; }
+.item > details > summary::after, .picks summary::after { content: "Show"; grid-column: 2; grid-row: 1; color: var(--accent); font-size: .85rem; font-weight: 600; }
+.item > details[open] > summary::after, .picks details[open] summary::after { content: "Hide"; }
+.item-title { font-weight: 700; grid-column: 1; }
+.item-meta, .item-lean { grid-column: 1 / -1; color: var(--muted); font-size: .88rem; }
+.item-lean strong { color: var(--fg); }
+.item-body { display: grid; gap: 12px; padding: 0 0 12px; }
+.item-body details { display: grid; gap: 10px; }
+.item-body details label { margin-top: 10px; }
+.item label.research { border-top: 1px solid var(--line); }
+.item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-top: 12px; }
+.item > p { margin: 2px 0; }
+.item .actions { margin: 10px 0 12px; flex-wrap: nowrap; }
+.item .actions .button { flex: 1; min-height: 44px; padding: 10px 8px; font-size: .92rem; }
+.who { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.who li { border-top: 1px solid var(--line); padding-top: 6px; }
+.who .desig { font-size: .85rem; }
+.who .stance, .who .cov { font-size: .85rem; margin: 2px 0; }
+form.ballot { background: transparent; border: 0; padding: 0; }
+form.ballot h2 { margin-top: 8px; }
+details.settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; }
+details.settings[open] { padding-bottom: 14px; }
+details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
+details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
+details.settings[open] > div.row { margin-bottom: 14px; }
+details.banner > summary { color: var(--warn-fg); padding: 0; }
+details.banner > p { margin-top: 8px; }
+.item-lean a { display: inline-block; min-height: 44px; padding: 10px 0; text-decoration: none; color: var(--muted); }
+.item .will { display: none; grid-column: 1 / -1; color: var(--accent); font-weight: 600; font-size: .88rem; }
+.item:has(> label.research input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item:has(> label.research input:checked) .will { display: block; }
+.item:has(> label.research input:checked) .will::before { content: "✓ "; }
+/* A live count of what's checked, with no script: counters run in document order, and the bar comes last. */
+form.ballot { counter-reset: checked; }
+label.research input:checked { counter-increment: checked; }
+form.ballot:has(label.research input:checked) .bar button.go::after { content: " (" counter(checked) ")"; }
+.who a.who-name { display: block; min-height: 44px; padding: 10px 0; text-decoration: none; font-weight: 600; }
+.who a.who-name .desig { font-weight: 400; }
+.item-lean .link { color: var(--accent); text-decoration: underline; }
+.picks .pick .label { color: var(--muted); font-weight: 400; font-size: .9rem; }
+.mine form.stack { border: 0; padding: 0; margin: 0; background: transparent; }
+details.note > summary { padding: 0; }
+.bar { position: sticky; bottom: 0; z-index: 1; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 0 12px; margin-top: 4px; display: grid; gap: 6px; }
+.bar-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.bar-buttons button { flex: 1 1 120px; min-height: 44px; padding: 8px 10px; white-space: nowrap; font-size: .95rem; }
+fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 4px; }
+.bar .sub { margin: 0; font-size: .82rem; }
+.walk { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.walk a { display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 6px 10px; text-decoration: none; font-weight: 600; font-size: .9rem; min-width: 0; }
+.walk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.walk .next { justify-content: flex-end; }
+.walk .mid { color: var(--muted); font-weight: 400; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
 .stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
@@ -103,14 +156,14 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
 .stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 /* Last, so it wins over the screen rules above. */
-@media print { nav.top, .actions, .noprint { display: none; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+@media print { nav.top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 </style>
 </head>
 <body>
 <main id="top">
 
 <h1>Example City Mayor · Nov 3, 2026</h1>
-<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched 2026-10-25</p>
+<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched Oct 27, 2026</p>
 
 
 
@@ -161,7 +214,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <p>Placeholder: a claim whose cited page was never opened.</p>
   <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
 </li></ul></details>
-  <p class="back"><a href="#top">Back to all candidates</a></p>
+  <p class="back"><a href="#top">Back to all candidates</a> · <a href="#sample-candidate-b">Next: Sample Candidate B</a></p>
 </article><article class="dossier" id="sample-candidate-b">
   <h2>Sample Candidate B</h2>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
@@ -183,7 +236,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <p>Placeholder: a claim whose cited page was never opened.</p>
   <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
 </li></ul></details>
-  <p class="back"><a href="#top">Back to all candidates</a></p>
+  <p class="back"><a href="#top">Back to all candidates</a> · <a href="#sample-candidate-c">Next: Sample Candidate C</a></p>
 </article><article class="dossier" id="sample-candidate-c">
   <h2>Sample Candidate C</h2>
   <p class="desig">Ballot designation not found</p>
