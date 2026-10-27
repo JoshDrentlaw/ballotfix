@@ -6,6 +6,7 @@ import type {
   BallotListing,
   BallotReader,
   BallotReading,
+  ClaimMerger,
   RawCandidateResearch,
   RawMeasureResearch,
   ResearchPort,
@@ -49,6 +50,14 @@ export const withFacts: RawCandidateResearch = {
         published: "2021-07-15",
         evidence_type: "reported",
       }, {
+        statement:
+          "Placeholder: the city was sued by the state attorney general over the warehouse.",
+        source_name: "Example Daily",
+        source_url: "https://example.org/daily/2",
+        author: null,
+        published: "2021-07-16",
+        evidence_type: "reported",
+      }, {
         statement: "Placeholder: a claim whose cited page was never opened.",
         source_name: "Example Blog",
         source_url: "https://example.org/never-opened",
@@ -62,7 +71,11 @@ export const withFacts: RawCandidateResearch = {
   },
   identity_note: "Placeholder: another person with this name serves on a county board.",
   gaps: ["Placeholder: the campaign finance portal could not be searched."],
-  retrieved_urls: ["https://example.org/mayor", "https://example.org/news/1"],
+  retrieved_urls: [
+    "https://example.org/mayor",
+    "https://example.org/news/1",
+    "https://example.org/daily/2",
+  ],
   model: "layout-sample",
 };
 
@@ -184,6 +197,18 @@ export function sampleBallotReader(delayMs = 0): BallotReader {
 }
 
 /** Fake research port; delayMs simulates how long real research takes. */
+/** Placeholder merge: in each block, the facts about the warehouse are one fact. */
+export function sampleMerger(delayMs = 0): ClaimMerger {
+  return {
+    groupDuplicates: async (blocks) => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return blocks.map((b) =>
+        b.facts.filter((f) => f.statement.includes("warehouse")).map((f) => f.id)
+      );
+    },
+  };
+}
+
 export function samplePort(delayMs = 0): ResearchPort {
   const wait = () => new Promise((r) => setTimeout(r, delayMs));
   return {

@@ -6,7 +6,8 @@
  * offices, measures), each claim with its citations, plus typed relations
  * between entities ("candidate_for"). That is what lets later steps merge one
  * fact reported by several outlets into one claim, and connect candidates and
- * measures through shared donors, endorsers, and cases.
+ * measures through shared donors, endorsers, and cases. Merged facts (one
+ * fact, several outlets; src/merge.ts) become one claim with several citations.
  *
  * Nothing here touches storage; src/web/kb.ts writes a Projection to SQLite.
  * The graph is derived from saved runs and can always be rebuilt from them,
@@ -29,7 +30,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 2;
+export const KNOWLEDGE_VERSION = 3;
 
 export const ENTITY_KINDS = ["person", "office", "measure"] as const;
 export type EntityKind = typeof ENTITY_KINDS[number];
@@ -142,7 +143,11 @@ function citationOf(f: Fact): Citation | null {
   };
 }
 
-/** Facts without a usable URL are left out: a claim never exists without provenance. */
+/**
+ * Facts without a usable URL are left out: a claim never exists without
+ * provenance. A merged fact (src/merge.ts) is one claim citing every source
+ * folded into it.
+ */
 function claimsFrom(
   subject: string,
   section: string,
@@ -154,6 +159,7 @@ function claimsFrom(
   facts.forEach((f, position) => {
     const c = citationOf(f);
     if (!c) return;
+    const also = (f.also ?? []).map(citationOf).filter((x): x is Citation => x !== null);
     out.push({
       subject,
       section,
@@ -162,7 +168,7 @@ function claimsFrom(
       statement: f.statement,
       evidence_type: f.evidence_type,
       verified,
-      citations: [c],
+      citations: [c, ...also],
     });
   });
   return out;

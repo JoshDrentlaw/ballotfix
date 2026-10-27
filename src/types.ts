@@ -164,6 +164,12 @@ export interface Fact {
   author: string | null;
   published: string | null;
   evidence_type: EvidenceType;
+  /**
+   * Other verified facts in the same section that state the same thing, each
+   * with its own provenance, folded in by the merge step (src/merge.ts). Each
+   * comes from a different publisher. Absent when nothing was merged.
+   */
+  also?: Fact[];
 }
 
 export interface SectionResult {
@@ -267,6 +273,21 @@ export interface MeasureDossier {
   model: string | null;
   error: string | null;
   generated_at: string;
+}
+
+/** One section's verified facts, as the merge step shows them to a model. */
+export interface MergeBlock {
+  /** Who the facts are about and which section, for the model's context only. */
+  label: string;
+  facts: { id: string; statement: string; source_name: string }[];
+}
+
+/**
+ * Finds facts that state the same thing. Returns groups of ids, each group
+ * drawn from one block; src/merge.ts validates them before anything changes.
+ */
+export interface ClaimMerger {
+  groupDuplicates(blocks: MergeBlock[]): Promise<string[][]>;
 }
 
 /**

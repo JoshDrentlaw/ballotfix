@@ -4,6 +4,7 @@
  * predictable and avoids rate limits. A small queue holds the rest.
  */
 
+import { mergeMeasure, mergeRace, type MergeResult } from "../merge.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
 import type {
@@ -11,6 +12,7 @@ import type {
   BallotPage,
   BallotReader,
   CandidateSource,
+  ClaimMerger,
   MeasureQuery,
   RaceQuery,
   ResearchPort,
@@ -24,6 +26,11 @@ export interface JobRunnerOptions {
   maxQueued?: number;
   now?: () => Date;
   log?: (msg: string) => void;
+  /**
+   * Merges duplicate claims once a run is done: one call per run, after the
+   * finished run is saved, so the page doesn't wait on it. Omit to skip.
+   */
+  makeMerger?: () => ClaimMerger;
 }
 
 export class QueueFullError extends Error {}
@@ -46,6 +53,7 @@ export class JobRunner {
   readonly #maxQueued: number;
   readonly #now: () => Date;
   readonly #log: (msg: string) => void;
+  readonly #makeMerger: (() => ClaimMerger) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
 
@@ -56,6 +64,30 @@ export class JobRunner {
     this.#maxQueued = opts.maxQueued ?? 3;
     this.#now = opts.now ?? (() => new Date());
     this.#log = opts.log ?? (() => {});
+    this.#makeMerger = opts.makeMerger;
+  }
+
+  /**
+   * Folds duplicate claims into one with several sources, then saves again.
+   * The run is already saved as done, so a failure here only logs: the
+   * research stands, unmerged.
+   */
+  async #mergeClaims<T>(
+    id: string,
+    merge: (m: ClaimMerger) => Promise<MergeResult<T>>,
+    save: (dossier: T) => Promise<void>,
+  ): Promise<void> {
+    if (!this.#makeMerger) return;
+    try {
+      const r = await merge(this.#makeMerger());
+      if (r.sent) this.#log(`[${id}] merged ${r.groups} duplicate claim(s) among ${r.sent} facts`);
+      if (r.skipped) this.#log(`[${id}] left ${r.skipped} facts unmerged (over the cap)`);
+      if (r.groups) await save(r.dossier);
+    } catch (err) {
+      this.#log(
+        `[${id}] merging duplicate claims failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   /** Races (and measures) waiting or running. */
@@ -136,6 +168,11 @@ export class JobRunner {
           status: result.status === "failed" ? "failed" : "done",
           error: result.error,
         });
+        await this.#mergeClaims(
+          run.id,
+          (m) => mergeMeasure(result, m),
+          (d) => save({ measure_result: d }),
+        );
         return;
       }
       const race = await runRace(run.query, this.#makePort(), {
@@ -147,6 +184,7 @@ export class JobRunner {
         onUpdate: (partial) => save({ race: partial }),
       });
       await save({ race, status: "done" });
+      await this.#mergeClaims(run.id, (m) => mergeRace(race, m), (d) => save({ race: d }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${run.id}] failed: ${msg}`);
