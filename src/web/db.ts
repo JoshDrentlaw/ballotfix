@@ -140,6 +140,11 @@ const MIGRATIONS = [
   ALTER TABLE entities ADD COLUMN place TEXT NOT NULL DEFAULT '';
   CREATE UNIQUE INDEX entities_by_slug ON entities (slug);
   CREATE INDEX entities_by_scope ON entities (scope, kind);
+
+  -- "Researched again since": the newer finished run of the same race or measure.
+  -- json_valid first, so a corrupt row (which the store skips) can still be written.
+  CREATE INDEX runs_by_choice
+    ON runs (coalesce(CASE WHEN json_valid(body) THEN json_extract(body, '$.choice_id') END, id), created_at);
   `,
 ];
 

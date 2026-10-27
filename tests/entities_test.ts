@@ -10,6 +10,7 @@ import { contextForMeasure, contextForRace } from "../src/context.ts";
 import { financeForMeasure, financeForRace, raceConnections } from "../src/finance.ts";
 import {
   contributorRef,
+  keptApart,
   measureRef,
   nameKey,
   nearMisses,
@@ -278,7 +279,7 @@ Deno.test("places and search stay in one jurisdiction, alphabetical", async () =
   assertEquals(warrens.map((e) => e.key), [personRef("CA", "Fontana", "Acquanetta Warren").key]);
   const all = kb.search(FONTANA, "").map((e) => e.name);
   assertEquals(all, [...all].sort((a, b) => nameKey(a).localeCompare(nameKey(b))));
-  assert(all.includes("Supporters of Measure X"));
+  assert(all.includes("Supporters of Measure X (2026-11-03 election)"));
   assert(kb.search(FONTANA, "").every((e) => e.scope === FONTANA));
   // Punctuation and case don't matter; another place's entities never show.
   assertEquals(kb.search(FONTANA, "INLAND-builders").map((e) => e.name), ["Inland Builders PAC"]);
@@ -299,17 +300,17 @@ Deno.test("slugs are stable hashes of the key, so a rebuild keeps every address"
 Deno.test("peers are every other candidate and side in the same place, never elsewhere", async () => {
   const { s, kb, get } = await world();
   const warren = get(personRef("CA", "Fontana", "Acquanetta Warren").key);
-  const peers = kb.peersOf(warren);
+  const peers = kb.peersOf(warren)!;
   assertEquals(peers.map((p) => p.name), [
     "Ann Other",
     "Joz Sida",
     "Joz Sida",
-    "Opponents of Measure X",
-    "Supporters of Measure X",
+    "Opponents of Measure X (2026-11-03 election)",
+    "Supporters of Measure X (2026-11-03 election)",
   ]);
   assert(peers.every((p) => p.scope === FONTANA));
   // A donor or an organization isn't compared with anyone.
-  assertEquals(kb.peersOf(get(organizationRef("CA", "Fontana", "Inland Builders PAC").key)), []);
+  assertEquals(kb.peersOf(get(organizationRef("CA", "Fontana", "Inland Builders PAC").key)), null);
   s.db.close();
 });
 
@@ -541,5 +542,74 @@ Deno.test("a page links only to entities its own run holds", async () => {
   await s.runs.save(raceRun("mayor-3", d.mayor, "2026-10-11T00:00:00Z", { status: "running" }));
   const page = (await fetch("/bf/races/mayor-3")).text;
   assert(!page.includes("/entities/"));
+  s.db.close();
+});
+
+Deno.test("a name that reads like a key marker is never taken for one", () => {
+  assertEquals(keptApart(organizationRef("CA", "Fontana", "Run for Something").key), null);
+  assertEquals(keptApart(organizationRef("CA", "Fontana", "Donor Network of CA").key), null);
+  assertEquals(keptApart(personRef("CA", "Fontana", "Run Lee").key), null);
+  assertEquals(keptApart(personRef("CA", "Fontana", "Run Lee", "r-1").key), "run");
+  const work = { contributor: "Donor Run", contributor_type: "individual" as const };
+  assertEquals(
+    keptApart(
+      contributorRef(
+        "CA",
+        "Fontana",
+        { ...work, occupation: "Engineer", employer: "Run Club" },
+        "x",
+      )!.key,
+    ),
+    "work",
+  );
+  assertEquals(
+    keptApart(
+      contributorRef("CA", "Fontana", { ...work, occupation: "Retired", employer: null }, "x")!.key,
+    ),
+    "row",
+  );
+});
+
+Deno.test("same-labeled measures of different elections are told apart by name", () => {
+  const later = { ...MEASURE, electionDate: "2028-11-07" };
+  assert(sideRef(MEASURE, "support").name !== sideRef(later, "support").name);
+  assertStringIncludes(measureRef(later).name, "2028-11-07");
+});
+
+Deno.test("every peer gets a block in alphabetical order, whatever it shares", async () => {
+  const { s, fetch, get } = await world();
+  const warren = get(personRef("CA", "Fontana", "Acquanetta Warren").key);
+  const text = (await fetch(`/bf/entities/${warren.slug}`)).text;
+  const shared = text.slice(
+    text.indexOf("Shared with others"),
+    text.indexOf("Where this comes from"),
+  );
+  const heads = [...shared.matchAll(/<h5><a [^>]+>([^<]+)<\/a>/g)].map((m) => m[1]);
+  assertEquals(heads, [
+    "Ann Other",
+    "Joz Sida",
+    "Joz Sida",
+    "Opponents of Measure X (2026-11-03 election)",
+    "Supporters of Measure X (2026-11-03 election)",
+  ]);
+  assertStringIncludes(shared, "No shared contributors or endorsers found.");
+  s.db.close();
+});
+
+Deno.test("a search of punctuation alone lists the place, not a quoted non-match", async () => {
+  const { s, fetch } = await world();
+  const text = (await fetch(`/bf/entities?place=${encodeURIComponent(FONTANA)}&q=!!!`)).text;
+  assertStringIncludes(text, "Everything in Fontana, CA");
+  assert(!text.includes("containing"));
+  s.db.close();
+});
+
+Deno.test("a corrupt run row doesn't break entity pages", async () => {
+  const { s, fetch, get } = await world();
+  s.db.run(
+    "INSERT INTO runs (id, created_at, status, body) VALUES ('bad-1', '2026-10-20', 'done', '{nope')",
+  );
+  const warren = get(personRef("CA", "Fontana", "Acquanetta Warren").key);
+  assertEquals((await fetch(`/bf/entities/${warren.slug}`)).status, 200);
   s.db.close();
 });

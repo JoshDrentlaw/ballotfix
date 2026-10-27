@@ -24,6 +24,7 @@
  */
 
 import { measuresOf, parsePriorities } from "../dossier.ts";
+import { nameKey } from "../knowledge.ts";
 import {
   CSP,
   type EntityLinks,
@@ -762,7 +763,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         : places.length === 1
         ? places[0].scope
         : null;
-      const query = (url.searchParams.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
+      const typed = (url.searchParams.get("q") ?? "").trim().slice(0, MAX_QUERY_CHARS);
+      // Punctuation alone matches every name; say so by listing the place as for no query.
+      const query = nameKey(typed) ? typed : "";
       const results = scope ? kb.search(scope, query) : null;
       // Same-named people kept to one run each are told apart by their run.
       const runOf = new Map<number, RunInfo>();

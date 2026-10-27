@@ -21,6 +21,7 @@ import {
   type ContributionDetail,
   type EntityKind,
   keptApart,
+  keptToRun,
   nameKey,
   UNVERIFIED_SECTION,
 } from "../knowledge.ts";
@@ -94,9 +95,10 @@ export async function entityView(
 ): Promise<EntityView> {
   const claims = kb.claimsAbout(entity.id);
   const subjects = kb.subjectsOf(claims.filter((c) => c.role === "named").map((c) => c.id));
-  const comparable = kb.isComparable(entity);
-  const peers = comparable
-    ? kb.peersOf(entity).map((p): Peer => ({
+  const others = kb.peersOf(entity);
+  const own = others?.length ? kb.tiesOf(entity.id) : undefined;
+  const peers = others
+    ? others.map((p): Peer => ({
       entity: p,
       offices: [
         ...new Set(
@@ -104,7 +106,7 @@ export async function entityView(
             .map((l) => l.other.name),
         ),
       ].sort(),
-      pair: kb.between(entity, p),
+      pair: kb.between(entity, p, own),
     }))
     : null;
   const runs = kb.runsOf(entity.id);
@@ -395,9 +397,8 @@ function sharedHtml(v: EntityView, base: string): string {
   if (!peers) return "";
   const self = v.entity;
   const place = self.place || "this place";
-  const found = peers.filter((p) => p.pair.shared.length || p.pair.possible.length);
-  const none = peers.filter((p) => !p.pair.shared.length);
-  const blocks = found.map((p) => {
+  // One block per peer, all alphabetical: never grouped or ordered by what they share.
+  const blocks = peers.map((p) => {
     const shared = p.pair.shared.length
       ? `<ul class="shared-list">${
         p.pair.shared.map((x) =>
@@ -408,7 +409,7 @@ function sharedHtml(v: EntityView, base: string): string {
           }</ul></li>`
         ).join("")
       }</ul>`
-      : "";
+      : `<p class="gap">No shared contributors or endorsers found.</p>`;
     const possible = p.pair.possible.map((m) =>
       `<p class="gap">Possibly the same, kept separate because the names or details don't match exactly: ${
         m.a.map(esc).join(" / ")
@@ -419,13 +420,7 @@ function sharedHtml(v: EntityView, base: string): string {
     }</span></h5>${shared}${possible}</section>`;
   }).join("");
   const body = peers.length
-    ? `${blocks}${
-      none.length
-        ? `<p><strong>No shared contributors or endorsers found with:</strong> ${
-          none.map((p) => entityLink(p.entity, base)).join("; ")
-        }.</p>`
-        : ""
-    }`
+    ? blocks
     : `<p class="gap">No other candidate or measure side in ${
       esc(place)
     } is in finished research yet.</p>`;
@@ -561,7 +556,7 @@ function keptRun(e: Entity, runs: Map<number, RunInfo> | undefined): string {
 
 /** The run an entity kept to one run belongs to, read off its key (personRef). */
 export function keptRunId(e: Entity): string | null {
-  return keptApart(e.key) === "run" ? e.key.match(/\|run ([^|]+)$/)![1] : null;
+  return keptToRun(e.key);
 }
 
 export interface SearchOptions {

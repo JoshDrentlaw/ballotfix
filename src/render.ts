@@ -14,7 +14,7 @@ import {
   SIDE_LABEL,
   type Tie,
 } from "./finance.ts";
-import { type EntityRef, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
+import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
 import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
@@ -422,9 +422,7 @@ function moneyHtml(
 ): string {
   if (!finance) return "";
   if (!s) {
-    return `<section class="sec money"><h4>${
-      esc(title)
-    }</h4><p class="gap">Not looked up in this run.</p></section>`;
+    return `<section class="sec money"><h4>${titleHtml}</h4><p class="gap">Not looked up in this run.</p></section>`;
   }
   const totals = s.totals.length
     ? `<ul class="meta totals">${
@@ -511,7 +509,8 @@ function tieHtml(label: string, t: Tie): string {
 }
 
 function kindLabel(key: string, kind: string): string {
-  return key.includes("|donor ") ? "individual" : kind;
+  const kept = keptApart(key);
+  return kept === "row" || kept === "work" ? "individual" : kind;
 }
 
 function possibleHtml(p: PairConnections): string {

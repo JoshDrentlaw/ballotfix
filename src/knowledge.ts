@@ -196,7 +196,7 @@ export function personRef(
   ambiguousIn?: string,
 ): EntityRef {
   const r = ref("person", name, [state, jurisdiction]);
-  return ambiguousIn ? { ...r, key: `${r.key}|run ${ambiguousIn}` } : r;
+  return ambiguousIn ? { ...r, key: `${r.key}|${KEPT}run ${ambiguousIn}` } : r;
 }
 
 /** Scoped like a person: a same-named organization elsewhere is a different entity. */
@@ -208,9 +208,22 @@ export function officeRef(state: string, jurisdiction: string, office: string): 
   return ref("office", office, [state, jurisdiction]);
 }
 
+/**
+ * Marks the parts of a key that keep an entity apart from same-named ones
+ * (personRef, contributorRef). nameKey never yields "~", so no name can
+ * look like one of these parts.
+ */
+const KEPT = "~";
+
+/** "(2026-11-03 election)": tells same-labeled measures of different years apart by name. */
+const electionOf = (m: MeasureQuery) => `(${m.electionDate} election)`;
+
 /** Measure letters are reused across jurisdictions and years, so both are part of the identity. */
 export function measureRef(m: MeasureQuery): EntityRef {
-  return ref("measure", m.label, [m.state, m.jurisdiction, m.electionDate]);
+  return {
+    ...ref("measure", m.label, [m.state, m.jurisdiction, m.electionDate]),
+    name: `${m.label} ${electionOf(m)}`,
+  };
 }
 
 /** The supporters or the opponents of one measure. */
@@ -219,7 +232,7 @@ export function sideRef(m: MeasureQuery, side: "support" | "oppose"): EntityRef 
   return {
     ...measure,
     kind: "side",
-    name: `${side === "support" ? "Supporters" : "Opponents"} of ${m.label}`,
+    name: `${side === "support" ? "Supporters" : "Opponents"} of ${m.label} ${electionOf(m)}`,
     key: `side:${measure.key.slice("measure:".length)}|${side}`,
   };
 }
@@ -287,7 +300,7 @@ export function contributorRef(
   const identifies = work.every((w) => !NOT_IDENTIFYING.test(w));
   return {
     ...person,
-    key: `${person.key}|donor ${identifies ? work.join("|") : `row ${row}`}`,
+    key: `${person.key}|${KEPT}donor ${identifies ? work.join("|") : `row ${row}`}`,
   };
 }
 
@@ -299,10 +312,15 @@ export function contributorRef(
  * occupation and employer (contributorRef). Null for the plain rule.
  */
 export function keptApart(key: string): "run" | "row" | "work" | null {
-  if (/\|run [^|]+$/.test(key)) return "run";
-  if (key.includes("|donor row ")) return "row";
-  if (key.includes("|donor ")) return "work";
+  if (new RegExp(`\\|${KEPT}run [^|]+$`).test(key)) return "run";
+  if (key.includes(`|${KEPT}donor row `)) return "row";
+  if (key.includes(`|${KEPT}donor `)) return "work";
   return null;
+}
+
+/** The run an entity kept to one run belongs to (personRef), or null. */
+export function keptToRun(key: string): string | null {
+  return key.match(new RegExp(`\\|${KEPT}run ([^|]+)$`))?.[1] ?? null;
 }
 
 /** Words that don't make a different organization by themselves, for flagging near misses only. */
@@ -575,7 +593,9 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
 export function projectMeasure(m: MeasureDossier, runId: string): Projection {
   if (m.status === "pending") return { entities: [], claims: [], relations: [] };
   const measure = measureRef(m.query);
-  if (m.official_title) measure.name = `${m.query.label}: ${m.official_title}`;
+  if (m.official_title) {
+    measure.name = `${m.query.label}: ${m.official_title} ${electionOf(m.query)}`;
+  }
   const sides = { support: sideRef(m.query, "support"), oppose: sideRef(m.query, "oppose") };
   const ctx = namedEntities(m.context, m.query.state, m.query.jurisdiction);
   // Each side's case is also about that side, so the graph can compare the two.

@@ -181,7 +181,7 @@ export class RunStore extends RecordTable<RunRecord> {
   newerDone(run: RunRecord): string | null {
     const r = this.db.get(
       `SELECT id FROM runs WHERE status = 'done' AND id != ?1 AND created_at > ?2
-       AND coalesce(json_extract(body, '$.choice_id'), id) = ?3
+       AND coalesce(CASE WHEN json_valid(body) THEN json_extract(body, '$.choice_id') END, id) = ?3
        ORDER BY created_at DESC, id LIMIT 1`,
       run.id,
       run.created_at,

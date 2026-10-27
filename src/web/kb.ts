@@ -103,6 +103,9 @@ export type GraphTie =
     citations: StoredCitation[];
   };
 
+/** Everyone tied to an entity by money or support, by entity id (KnowledgeBase.tiesOf). */
+export type Ties = Map<number, { entity: Entity; ties: GraphTie[] }>;
+
 /** An entity tied to both sides of a comparison, with every tie and its source. */
 export interface SharedConnection {
   entity: Entity;
@@ -464,7 +467,7 @@ export class KnowledgeBase {
        FROM relations rel JOIN entities e ON e.id = rel.subject_id
        JOIN relation_citations rc ON rc.relation_id = rel.id JOIN sources s ON s.id = rc.source_id
        WHERE rel.relation = 'contributed_to' AND rel.object_id = ?1
-       ORDER BY 1, 12`,
+       ORDER BY rel_id, url`,
       entityId,
     );
     const out: StoredContribution[] = [];
@@ -505,10 +508,10 @@ export class KnowledgeBase {
   /**
    * The others a candidate or measure side can be compared with: every other
    * candidate (a person on a ballot) and every measure side in the same place.
-   * Alphabetical. Empty for any other entity.
+   * Alphabetical. Null for any other entity: it isn't compared with anyone.
    */
-  peersOf(e: Entity): Entity[] {
-    if (!this.isComparable(e)) return [];
+  peersOf(e: Entity): Entity[] | null {
+    if (!this.isComparable(e)) return null;
     return this.db.all(
       `SELECT ${E} FROM entities e WHERE e.scope = ?1 AND e.id != ?2 AND (e.kind = 'side'
          OR (e.kind = 'person' AND EXISTS (SELECT 1 FROM relations r
@@ -596,8 +599,8 @@ export class KnowledgeBase {
    * contributed to it (contributed_to, with the filing's words and page), and
    * who verified claims about it in SUPPORT_SECTIONS name. Keyed by entity id.
    */
-  tiesOf(entityId: number): Map<number, { entity: Entity; ties: GraphTie[] }> {
-    const out = new Map<number, { entity: Entity; ties: GraphTie[] }>();
+  tiesOf(entityId: number): Ties {
+    const out: Ties = new Map();
     // One row per tie and citation, in order; consecutive rows of one tie are grouped.
     let last: { id: string; tie: GraphTie } | null = null;
     const add = (id: string, r: Row, tie: () => GraphTie) => {
@@ -664,8 +667,12 @@ export class KnowledgeBase {
    * two subjects in one jurisdiction only ever share that jurisdiction's
    * entities; nothing is matched on name here.
    */
-  sharedBetween(aId: number, bId: number): SharedConnection[] {
-    const a = this.tiesOf(aId), b = this.tiesOf(bId);
+  sharedBetween(
+    aId: number,
+    bId: number,
+    a: Ties = this.tiesOf(aId),
+    b: Ties = this.tiesOf(bId),
+  ): SharedConnection[] {
     return [...a.values()].flatMap((x) => {
       const y = b.get(x.entity.id);
       return y && x.entity.id !== aId && x.entity.id !== bId
@@ -678,17 +685,21 @@ export class KnowledgeBase {
    * Two entities in one place compared: what they share (sharedBetween) and
    * the near misses between everything each is tied to, flagged by the same
    * nearMisses the page view uses. Entities in different places share
-   * nothing here, whatever their names.
+   * nothing here, whatever their names. `aTies` lets a page comparing one
+   * entity with many read its ties once.
    */
-  between(a: Entity, b: Entity): GraphPair {
+  between(a: Entity, b: Entity, aTies: Ties = this.tiesOf(a.id)): GraphPair {
     if (a.scope !== b.scope) return { shared: [], possible: [] };
-    const others = (m: Map<number, { entity: Entity }>) =>
+    const bTies = this.tiesOf(b.id);
+    // Keys carry their scope, so ties are already in a's place; the scope check is
+    // defense in depth, since mixing places is the one thing this view must never do.
+    const others = (m: Ties) =>
       [...m.values()].map((x) => x.entity)
         .filter((x) => x.id !== a.id && x.id !== b.id && x.scope === a.scope);
-    const ta = others(this.tiesOf(a.id)), tb = others(this.tiesOf(b.id));
     return {
-      shared: this.sharedBetween(a.id, b.id).filter((x) => x.entity.scope === a.scope),
-      possible: nearMisses(ta, tb),
+      shared: this.sharedBetween(a.id, b.id, aTies, bTies)
+        .filter((x) => x.entity.scope === a.scope),
+      possible: nearMisses(others(aTies), others(bTies)),
     };
   }
 
