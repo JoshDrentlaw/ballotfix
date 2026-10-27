@@ -156,6 +156,15 @@ fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 
 .walk .mid { color: var(--muted); font-weight: 400; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
+.st { margin: 4px 0 0; }
+details.ctx { display: inline-block; }
+details.ctx[open] { display: inline; }
+details.ctx > summary, .ctx-eg { display: inline-block; list-style: none; font-size: .72rem; font-weight: 700; line-height: 1.5; color: var(--accent); border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; margin: 0 2px 0 4px; vertical-align: 1px; }
+details.ctx > summary { min-width: 32px; text-align: center; }
+details.ctx > summary::-webkit-details-marker { display: none; }
+details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg); }
+.ctx-body { display: block; font-size: .9rem; border-left: 3px solid var(--accent); padding: 4px 10px; margin: 6px 0; }
+.ctx-body .meta { display: block; }
 .stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
 .card .stance { font-size: .85rem; }
 .stance .basis { color: var(--fg); }
@@ -187,12 +196,12 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <h3><a href="#sample-candidate-a">Sample Candidate A</a></h3>
   <p class="desig">Small Business Owner</p>
   
-  <p class="cov">Sourced facts found in 2 of 8 sections.</p>
+  <p class="cov">Sourced facts found in 3 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-b">Sample Candidate B</a></h3>
   <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
   
-  <p class="cov">Sourced facts found in 2 of 8 sections.</p>
+  <p class="cov">Sourced facts found in 3 of 8 sections.</p>
 </li><li class="card">
   <h3><a href="#sample-candidate-c">Sample Candidate C</a></h3>
   <p class="desig">Ballot designation not found</p>
@@ -214,7 +223,11 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
   <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
-</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-opinion">Opinion / claim</span>
+  <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
+  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · 2026-09-02</p>
+</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -237,7 +250,11 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
   <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
   <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
-</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-opinion">Opinion / claim</span>
+  <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
+  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · 2026-09-02</p>
+</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -255,6 +272,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
   <p class="back"><a href="#top">Back to all candidates</a></p>
 </article>
+<section class="sec names"><h4>Names in these facts</h4><p>A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. The same names were looked up the same way, whichever candidate or side they came up for.</p><details class="unverified"><summary>1 note not shown because the cited page was never retrieved</summary><ul class="facts"><li class="fact"><p><strong>Example Labor Council Local 99:</strong> Placeholder: a council of construction trade unions in Example County.</p><p class="meta"><a href="https://example.org/never-opened/labor" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</p></li></ul></details></section>
 
 
 <footer>

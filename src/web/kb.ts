@@ -38,6 +38,8 @@ export interface StoredClaim {
   statement: string;
   evidence_type: EvidenceType;
   verified: boolean;
+  /** "subject": the claim is about this entity; "named": its statement names it. */
+  role: string;
   citations: StoredCitation[];
 }
 
@@ -179,6 +181,14 @@ export class KnowledgeBase {
         claim,
         entityId(c.subject),
       );
+      for (const key of c.named) {
+        this.db.run(
+          `INSERT INTO claim_entities (claim_id, entity_id, role) VALUES (?, ?, 'named')
+           ON CONFLICT DO NOTHING`,
+          claim,
+          entityId(key),
+        );
+      }
       for (const cite of c.citations) {
         const source = Number(
           this.db.get(
@@ -252,25 +262,28 @@ export class KnowledgeBase {
     return r ? toEntity(r) : null;
   }
 
-  /** Claims about an entity, across every run, newest run first, in dossier order. */
+  /**
+   * Claims about an entity, or naming it, across every run, newest run first,
+   * in dossier order. A claim both about and naming it appears once per role.
+   */
   claimsAbout(entityId: number): StoredClaim[] {
     const rows = this.db.all(
       `SELECT c.id, c.run_id, c.section, c.issue, c.statement, c.evidence_type, c.verified,
-              s.url, ci.source_name, ci.author, ci.published
+              ce.role, s.url, ci.source_name, ci.author, ci.published
        FROM claim_entities ce
        JOIN claims c ON c.id = ce.claim_id
        JOIN runs r ON r.id = c.run_id
        JOIN citations ci ON ci.claim_id = c.id
        JOIN sources s ON s.id = ci.source_id
        WHERE ce.entity_id = ?
-       ORDER BY r.created_at DESC, c.id, s.id`,
+       ORDER BY r.created_at DESC, c.id, ce.role, s.id`,
       entityId,
     );
     const out: StoredClaim[] = [];
     for (const r of rows) {
       const id = Number(r.id);
       let claim = out.at(-1);
-      if (claim?.id !== id) {
+      if (claim?.id !== id || claim.role !== String(r.role)) {
         claim = {
           id,
           run_id: String(r.run_id),
@@ -279,6 +292,7 @@ export class KnowledgeBase {
           statement: String(r.statement),
           evidence_type: r.evidence_type as EvidenceType,
           verified: Number(r.verified) === 1,
+          role: String(r.role),
           citations: [],
         };
         out.push(claim);

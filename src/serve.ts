@@ -15,6 +15,9 @@
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
  *   BALLOTFIX_MERGE_MODEL  model for the one low-effort call per finished run that merges
  *                        duplicate claims (default: the research model); "off" skips it
+ *   BALLOTFIX_CONTEXT_MODEL  model for the one low-effort call per finished run that writes
+ *                        short sourced notes on names in the facts, with a few capped web
+ *                        searches (default: the research model); "off" skips it
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
@@ -59,9 +62,17 @@ const researcher = () =>
 const mergeModel = env("BALLOTFIX_MERGE_MODEL");
 const merger = () =>
   new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), mergeModel, effort: effort as Effort });
+const contextModel = env("BALLOTFIX_CONTEXT_MODEL");
+const contextWriter = () =>
+  new AnthropicResearcher({
+    model: env("BALLOTFIX_MODEL"),
+    contextModel,
+    effort: effort as Effort,
+  });
 const jobs = new JobRunner(store, researcher, {
   log: (m) => console.log(m),
   makeMerger: mergeModel === "off" ? undefined : merger,
+  makeContextWriter: contextModel === "off" ? undefined : contextWriter,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 

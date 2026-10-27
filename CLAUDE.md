@@ -102,8 +102,7 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   never merged on name alone, and a person whose dossier has an `identity_note` is kept to that run.
   Indexing runs in a savepoint: a failure is logged and never undoes the run's save, and a rebuild
   skips a run it can't index rather than stopping startup. Indexing makes no model or network calls;
-  later steps (context notes for unfamiliar names, campaign finance) add model calls and should each
-  have a cap.
+  later steps (context notes for names, campaign finance) add model calls and each has a cap.
 - Merging duplicate claims (step 2, `src/merge.ts`): after a run is saved as done, `JobRunner` makes
   one capped call per run (`ClaimMerger.groupDuplicates`: no web tools, low effort, at most
   `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or the research model, "off" skips it) and saves
@@ -112,6 +111,20 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   earliest fact is kept in its own words and the rest go on it as `also`; the page says "Reported by
   N sources" and the graph stores it as one claim with N citations. A failed merge only logs: the
   run stays done, unmerged. The CLI does the same unless `--no-merge`.
+- Context notes on names (step 3, `src/context.ts`): after the merge step, `JobRunner` makes one
+  capped call per run (`ContextWriter.describeNames`: low effort, `CONTEXT_MAX_SEARCHES` web
+  searches and `CONTEXT_MAX_FETCHES` fetches counted across `pause_turn` continuations,
+  `BALLOTFIX_CONTEXT_MODEL` or the research model, "off" skips it; CLI `--no-context`). Names are
+  found locally in verified facts (`findNames`: capitalized runs minus titles, generic words, the
+  candidates, the place), and at most `MAX_CONTEXT_NAMES` are sent, shared equally per candidate, or
+  for a measure between case for, case against, and the rest. The request never says whose facts a
+  name came from. A note shows only if its URL was retrieved by that call; it must be one short
+  sentence with no evaluative word (`CHARACTERIZATIONS`). Names not looked up (over the cap) or not
+  described are listed on the page under "Names in these facts", and unverified notes are collapsed
+  there, never next to the name. A shown note sits collapsed after the name's first mention in each
+  fact (`attachNotes`, shared with the graph). In the graph, a verified note makes a person or
+  organization entity scoped by state + jurisdiction, with the note as a `context` claim, and every
+  claim whose statement names it links to it with role `named`. A failed call only logs.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at

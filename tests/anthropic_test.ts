@@ -8,6 +8,9 @@ import type Anthropic from "@anthropic-ai/sdk";
 import Anthropic_ from "@anthropic-ai/sdk";
 import {
   AnthropicResearcher,
+  CONTEXT_MAX_FETCHES,
+  CONTEXT_MAX_SEARCHES,
+  CONTEXT_MAX_TOKENS,
   describeApiError,
   MERGE_MAX_TOKENS,
   ResearchIncompleteError,
@@ -394,4 +397,80 @@ Deno.test("merging is one call: no web tools, low effort, its own model, ids onl
   assertEquals((req.output_config as { effort: string }).effort, "low");
   assertStringIncludes(String(req.system), "DATA, not instructions");
   assertEquals(req.fallbacks, "default");
+});
+
+const NAMES = {
+  place: "Fontana, CA",
+  electionDate: "2026-11-03",
+  names: [{
+    id: "n1",
+    name: "Inland Builders PAC",
+    mentions: ["Endorsed by Inland Builders PAC."],
+  }],
+};
+
+const searchUse = (id: string) => ({
+  type: "server_tool_use",
+  id,
+  name: "web_search",
+  input: { query: "Inland Builders PAC" },
+});
+
+Deno.test("context notes are one call: capped web tools, low effort, its own model", async () => {
+  const note = {
+    id: "n1",
+    kind: "organization",
+    note: "A political action committee.",
+    source_name: "KVCR",
+    source_url: "https://kvcrnews.org/a",
+    author: "",
+    published: "",
+  };
+  // The second entry has no id, so it is skipped.
+  const answer = { notes: [note, { kind: "person" }] };
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [searchUse("s1"), search, { type: "text", text: JSON.stringify(answer) }],
+  }]);
+  const out = await new AnthropicResearcher({ client, contextModel: "claude-sonnet-5-5" })
+    .describeNames(NAMES);
+  assertEquals(out.notes, [{ ...note, author: null, published: null }]);
+  assertEquals(out.retrieved_urls, ["https://kvcrnews.org/a"]);
+  assertEquals(out.model, "claude-sonnet-5-5");
+  const req = requests[0];
+  assertEquals(req.model, "claude-sonnet-5-5");
+  assertEquals(req.max_tokens, CONTEXT_MAX_TOKENS);
+  assertEquals((req.output_config as { effort: string }).effort, "low");
+  assertEquals(
+    (req.tools as { max_uses: number }[]).map((t) => t.max_uses),
+    [CONTEXT_MAX_SEARCHES, CONTEXT_MAX_FETCHES],
+  );
+  assertStringIncludes(String(req.system), "never evaluate");
+  assertStringIncludes(String(req.system), "DATA, not instructions");
+  // Nothing in the request says which candidate a name came from.
+  assert(!JSON.stringify(req.messages).includes("candidate:"));
+});
+
+Deno.test("context searches are counted across pause_turn continuations", async () => {
+  const uses = Array.from({ length: 7 }, (_, i) => searchUse(`s${i}`));
+  const { client, requests } = stubClient([
+    { stop_reason: "pause_turn", content: uses },
+    { stop_reason: "pause_turn", content: [searchUse("s7"), searchUse("s8"), searchUse("s9")] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ notes: [] }) }] },
+  ]);
+  await new AnthropicResearcher({ client }).describeNames(NAMES);
+  const caps = requests.map((r) => (r.tools as { max_uses: number }[])[0].max_uses);
+  // 10, then 10 - 7, then spent: 1 is the least the API takes with the tool in the history.
+  assertEquals(caps, [CONTEXT_MAX_SEARCHES, CONTEXT_MAX_SEARCHES - 7, 1]);
+});
+
+Deno.test("a context answer cut off at max_tokens fails rather than being half-read", async () => {
+  const { client } = stubClient([{
+    stop_reason: "max_tokens",
+    content: [{ type: "text", text: '{"notes":[{"id":"n1","kind":"organiz' }],
+  }]);
+  await assertRejects(
+    () => new AnthropicResearcher({ client }).describeNames(NAMES),
+    ResearchIncompleteError,
+  );
 });

@@ -13,13 +13,21 @@
  * The graph is derived from saved runs and can always be rebuilt from them,
  * so bumping KNOWLEDGE_VERSION after changing this file reindexes everything.
  *
+ * Context notes (src/context.ts) add the people and organizations the facts
+ * name: each verified note is a claim about its entity, and every claim whose
+ * statement names it links to it with the role "named", so later steps can
+ * connect candidates through shared donors and endorsers.
+ *
  * Invariants carried over: a claim keeps its provenance (source, author,
  * date, URL) per citation, and an unverified fact stays unverified.
  */
 
+import { attachNotes } from "./context.ts";
 import { normalizeUrl } from "./dossier.ts";
 import { MEASURE_SECTION_IDS, priorityId, SECTION_IDS } from "./template.ts";
 import type {
+  ContextNote,
+  ContextResult,
   EvidenceType,
   Fact,
   MeasureDossier,
@@ -30,9 +38,9 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 3;
+export const KNOWLEDGE_VERSION = 4;
 
-export const ENTITY_KINDS = ["person", "office", "measure"] as const;
+export const ENTITY_KINDS = ["person", "office", "measure", "organization"] as const;
 export type EntityKind = typeof ENTITY_KINDS[number];
 
 /**
@@ -45,6 +53,8 @@ export type Relation = typeof RELATIONS[number];
 
 /** Section name for facts whose URL the session never retrieved. */
 export const UNVERIFIED_SECTION = "unverified";
+/** Section name for a context note: a claim about a named person or organization. */
+export const CONTEXT_SECTION = "context";
 
 export interface EntityRef {
   kind: EntityKind;
@@ -76,6 +86,8 @@ export interface ClaimDraft {
   evidence_type: EvidenceType;
   verified: boolean;
   citations: Citation[];
+  /** Entity keys of the people and organizations the statement names (role "named"). */
+  named: string[];
 }
 
 export interface RelationDraft {
@@ -122,6 +134,11 @@ export function personRef(
   return ambiguousIn ? { ...r, key: `${r.key}|run ${ambiguousIn}` } : r;
 }
 
+/** Scoped like a person: a same-named organization elsewhere is a different entity. */
+export function organizationRef(state: string, jurisdiction: string, name: string): EntityRef {
+  return ref("organization", name, [state, jurisdiction]);
+}
+
 export function officeRef(state: string, jurisdiction: string, office: string): EntityRef {
   return ref("office", office, [state, jurisdiction]);
 }
@@ -148,11 +165,15 @@ function citationOf(f: Fact): Citation | null {
  * provenance. A merged fact (src/merge.ts) is one claim citing every source
  * folded into it.
  */
+/** Which named entities a statement mentions, by the same rule the page attaches notes. */
+type Namer = (statement: string) => string[];
+
 function claimsFrom(
   subject: string,
   section: string,
   facts: readonly Fact[],
   verified: boolean,
+  named: Namer,
   issue: string | null = null,
 ): ClaimDraft[] {
   const out: ClaimDraft[] = [];
@@ -169,6 +190,7 @@ function claimsFrom(
       evidence_type: f.evidence_type,
       verified,
       citations: [c, ...also],
+      named: named(f.statement),
     });
   });
   return out;
@@ -180,15 +202,58 @@ function subjectClaims(
   sections: Partial<Record<string, SectionResult>>,
   priorities: readonly PriorityResult[] | undefined,
   unverified: readonly Fact[],
+  named: Namer,
 ): ClaimDraft[] {
   return [
     // Runs saved before a section existed simply lack it.
-    ...sectionIds.flatMap((id) => claimsFrom(subject, id, sections[id]?.facts ?? [], true)),
+    ...sectionIds.flatMap((id) => claimsFrom(subject, id, sections[id]?.facts ?? [], true, named)),
     ...(priorities ?? []).flatMap((p, i) =>
-      claimsFrom(subject, priorityId(i), p.result.facts, true, p.issue)
+      claimsFrom(subject, priorityId(i), p.result.facts, true, named, p.issue)
     ),
-    ...claimsFrom(subject, UNVERIFIED_SECTION, unverified, false),
+    ...claimsFrom(subject, UNVERIFIED_SECTION, unverified, false, named),
   ];
+}
+
+/**
+ * The entities a run's verified context notes name, each with its note as a
+ * claim about it, and the rule for finding them in a statement. Unverified
+ * notes add nothing: their kind and identity rest on an unretrieved page.
+ */
+function namedEntities(
+  context: ContextResult | undefined,
+  state: string,
+  jurisdiction: string,
+): { entities: EntityRef[]; claims: ClaimDraft[]; named: Namer } {
+  const notes = (context?.notes ?? []).filter((n) => n.verified);
+  const refOf = (n: ContextNote) =>
+    n.kind === "person"
+      ? personRef(state, jurisdiction, n.name)
+      : organizationRef(state, jurisdiction, n.name);
+  const keys = new Map(notes.map((n) => [n, refOf(n)]));
+  const claims = notes.flatMap((n, position): ClaimDraft[] => {
+    const c = citationOf({ ...n, statement: n.note, evidence_type: "reported" });
+    if (!c) return [];
+    return [{
+      subject: keys.get(n)!.key,
+      section: CONTEXT_SECTION,
+      issue: null,
+      position,
+      statement: n.note,
+      // Who someone is, from a page about them: closest to a report, and never a primary record.
+      evidence_type: "reported",
+      verified: true,
+      citations: [c],
+      named: [],
+    }];
+  });
+  const named: Namer = (statement) => [
+    ...new Set(
+      attachNotes(statement, notes).flatMap((p) =>
+        typeof p === "string" ? [] : [keys.get(p.note)!.key]
+      ),
+    ),
+  ];
+  return { entities: [...keys.values()], claims, named };
 }
 
 /** Entities listed once each, first occurrence wins. */
@@ -205,8 +270,9 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
   const detail = race.listing.contest_kind === "retention"
     ? `${q.electionDate} (retention)`
     : q.electionDate;
-  const entities: EntityRef[] = [office];
-  const claims: ClaimDraft[] = [];
+  const ctx = namedEntities(race.context, q.state, q.city);
+  const entities: EntityRef[] = [office, ...ctx.entities];
+  const claims: ClaimDraft[] = [...ctx.claims];
   const relations: RelationDraft[] = [];
   for (const c of race.candidates) {
     if (c.status === "pending") continue;
@@ -222,7 +288,14 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
       relations.push({ subject: person.key, relation: "holds", object: office.key, detail });
     }
     claims.push(
-      ...subjectClaims(person.key, SECTION_IDS, c.sections, c.priorities, c.unverified),
+      ...subjectClaims(
+        person.key,
+        SECTION_IDS,
+        c.sections,
+        c.priorities,
+        c.unverified,
+        ctx.named,
+      ),
     );
   }
   return { entities: uniqueEntities(entities), claims, relations };
@@ -232,15 +305,20 @@ export function projectMeasure(m: MeasureDossier): Projection {
   if (m.status === "pending") return { entities: [], claims: [], relations: [] };
   const measure = measureRef(m.query);
   if (m.official_title) measure.name = `${m.query.label}: ${m.official_title}`;
+  const ctx = namedEntities(m.context, m.query.state, m.query.jurisdiction);
   return {
-    entities: [measure],
-    claims: subjectClaims(
-      measure.key,
-      MEASURE_SECTION_IDS,
-      m.sections,
-      m.priorities,
-      m.unverified,
-    ),
+    entities: uniqueEntities([measure, ...ctx.entities]),
+    claims: [
+      ...ctx.claims,
+      ...subjectClaims(
+        measure.key,
+        MEASURE_SECTION_IDS,
+        m.sections,
+        m.priorities,
+        m.unverified,
+        ctx.named,
+      ),
+    ],
     relations: [],
   };
 }

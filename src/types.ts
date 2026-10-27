@@ -231,6 +231,8 @@ export interface RaceDossier {
   /** Blind spots that apply to every run of phase 0, shown every time. */
   standing_gaps: string[];
   generated_at: string;
+  /** Notes on names in the facts (src/context.ts). Absent until that step has run. */
+  context?: ContextResult;
 }
 
 /** One ballot measure to research. */
@@ -273,6 +275,8 @@ export interface MeasureDossier {
   model: string | null;
   error: string | null;
   generated_at: string;
+  /** Notes on names in the facts (src/context.ts). Absent until that step has run. */
+  context?: ContextResult;
 }
 
 /** One section's verified facts, as the merge step shows them to a model. */
@@ -288,6 +292,78 @@ export interface MergeBlock {
  */
 export interface ClaimMerger {
   groupDuplicates(blocks: MergeBlock[]): Promise<string[][]>;
+}
+
+/**
+ * A name found in a run's verified facts, as the context step sends it. The
+ * request says where the election is, never which candidate or side the
+ * name came from, so every name is looked up the same way.
+ */
+export interface NameToDescribe {
+  id: string;
+  name: string;
+  /** Statements that name it, cut short, for telling same-named entities apart. */
+  mentions: string[];
+}
+
+export interface ContextRequest {
+  /** City or jurisdiction and state, e.g. "Fontana, CA". */
+  place: string;
+  electionDate: string;
+  names: NameToDescribe[];
+}
+
+/** What a ContextWriter returns for one name, before provenance checks. */
+export interface RawContextNote {
+  id: string;
+  /** person, organization, skip (no note needed), or unknown (couldn't identify or source). */
+  kind: string;
+  note: string;
+  source_name: string;
+  source_url: string;
+  author: string | null;
+  published: string | null;
+}
+
+export interface RawContextResult {
+  notes: RawContextNote[];
+  retrieved_urls: string[];
+  model: string;
+}
+
+/**
+ * Writes short, sourced notes on who or what a name is. One capped call per
+ * run; src/context.ts picks the names and checks every note that comes back.
+ */
+export interface ContextWriter {
+  describeNames(request: ContextRequest): Promise<RawContextResult>;
+}
+
+export const CONTEXT_KINDS = ["person", "organization"] as const;
+export type ContextKind = typeof CONTEXT_KINDS[number];
+
+/** Who or what a name in the facts is, with provenance like a fact's. */
+export interface ContextNote {
+  /** As written in the facts; the page attaches the note where this text appears. */
+  name: string;
+  kind: ContextKind;
+  note: string;
+  source_name: string;
+  source_url: string;
+  author: string | null;
+  published: string | null;
+  /** False when the cited page was never retrieved: never shown next to the name. */
+  verified: boolean;
+}
+
+/** The context step's result for one run. Absent on runs it didn't reach. */
+export interface ContextResult {
+  notes: ContextNote[];
+  /** Names found in the facts but not sent, over the cap. The page lists them. */
+  not_looked_up: string[];
+  /** Names sent that came back with no note the page can show. */
+  not_described: string[];
+  model: string | null;
 }
 
 /**

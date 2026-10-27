@@ -4,7 +4,8 @@
  * predictable and avoids rate limits. A small queue holds the rest.
  */
 
-import { mergeMeasure, mergeRace, type MergeResult } from "../merge.ts";
+import { contextForMeasure, contextForRace } from "../context.ts";
+import { mergeMeasure, mergeRace } from "../merge.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
 import type {
@@ -13,7 +14,10 @@ import type {
   BallotReader,
   CandidateSource,
   ClaimMerger,
+  ContextWriter,
+  MeasureDossier,
   MeasureQuery,
+  RaceDossier,
   RaceQuery,
   ResearchPort,
 } from "../types.ts";
@@ -31,6 +35,18 @@ export interface JobRunnerOptions {
    * finished run is saved, so the page doesn't wait on it. Omit to skip.
    */
   makeMerger?: () => ClaimMerger;
+  /**
+   * Writes context notes on the names in a done run's facts: one call per run,
+   * after the merge step, then saved again. Omit to skip.
+   */
+  makeContextWriter?: () => ContextWriter;
+}
+
+/** One step that runs after a run is saved as done: what it changed, and what to log. */
+interface AfterStep<T> {
+  dossier: T;
+  changed: boolean;
+  log: string[];
 }
 
 export class QueueFullError extends Error {}
@@ -54,6 +70,7 @@ export class JobRunner {
   readonly #now: () => Date;
   readonly #log: (msg: string) => void;
   readonly #makeMerger: (() => ClaimMerger) | undefined;
+  readonly #makeContextWriter: (() => ContextWriter) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
 
@@ -65,29 +82,84 @@ export class JobRunner {
     this.#now = opts.now ?? (() => new Date());
     this.#log = opts.log ?? (() => {});
     this.#makeMerger = opts.makeMerger;
+    this.#makeContextWriter = opts.makeContextWriter;
   }
 
   /**
-   * Folds duplicate claims into one with several sources, then saves again.
-   * The run is already saved as done, so a failure here only logs: the
-   * research stands, unmerged.
+   * Runs one step on a run already saved as done, and saves again if it
+   * changed anything. A failure only logs: the research stands as it was.
+   * Returns the dossier the next step should start from.
    */
-  async #mergeClaims<T>(
+  async #after<T>(
     id: string,
-    merge: (m: ClaimMerger) => Promise<MergeResult<T>>,
+    what: string,
+    dossier: T,
+    step: (() => Promise<AfterStep<T>>) | undefined,
+    save: (dossier: T) => Promise<void>,
+  ): Promise<T> {
+    if (!step) return dossier;
+    try {
+      const r = await step();
+      for (const line of r.log) this.#log(`[${id}] ${line}`);
+      if (!r.changed) return dossier;
+      await save(r.dossier);
+      return r.dossier;
+    } catch (err) {
+      this.#log(`[${id}] ${what} failed: ${err instanceof Error ? err.message : err}`);
+      return dossier;
+    }
+  }
+
+  /** Merging duplicate claims, then context notes on names: each a step of its own. */
+  async #afterDone<T extends RaceDossier | MeasureDossier>(
+    id: string,
+    done: T,
+    merge: (
+      d: T,
+      m: ClaimMerger,
+    ) => Promise<{ dossier: T; groups: number; sent: number; skipped: number }>,
+    context: (
+      d: T,
+      w: ContextWriter,
+    ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number }>,
     save: (dossier: T) => Promise<void>,
   ): Promise<void> {
-    if (!this.#makeMerger) return;
-    try {
-      const r = await merge(this.#makeMerger());
-      if (r.sent) this.#log(`[${id}] merged ${r.groups} duplicate claim(s) among ${r.sent} facts`);
-      if (r.skipped) this.#log(`[${id}] left ${r.skipped} facts unmerged (over the cap)`);
-      if (r.groups) await save(r.dossier);
-    } catch (err) {
-      this.#log(
-        `[${id}] merging duplicate claims failed: ${err instanceof Error ? err.message : err}`,
-      );
-    }
+    const makeMerger = this.#makeMerger, makeWriter = this.#makeContextWriter;
+    const merged = await this.#after(
+      id,
+      "merging duplicate claims",
+      done,
+      makeMerger && (async () => {
+        const r = await merge(done, makeMerger());
+        return {
+          dossier: r.dossier,
+          changed: r.groups > 0,
+          log: [
+            ...(r.sent ? [`merged ${r.groups} duplicate claim(s) among ${r.sent} facts`] : []),
+            ...(r.skipped ? [`left ${r.skipped} facts unmerged (over the cap)`] : []),
+          ],
+        };
+      }),
+      save,
+    );
+    await this.#after(
+      id,
+      "context notes",
+      merged,
+      makeWriter && (async () => {
+        const r = await context(merged, makeWriter());
+        return {
+          dossier: r.dossier,
+          // Saved even with nothing to show, so the page can say what wasn't looked up.
+          changed: true,
+          log: [
+            ...(r.sent ? [`wrote ${r.shown} context note(s) for ${r.sent} names`] : []),
+            ...(r.skipped ? [`left ${r.skipped} names without a note (over the cap)`] : []),
+          ],
+        };
+      }),
+      save,
+    );
   }
 
   /** Races (and measures) waiting or running. */
@@ -168,11 +240,15 @@ export class JobRunner {
           status: result.status === "failed" ? "failed" : "done",
           error: result.error,
         });
-        await this.#mergeClaims(
-          run.id,
-          (m) => mergeMeasure(result, m),
-          (d) => save({ measure_result: d }),
-        );
+        if (result.status === "ok") {
+          await this.#afterDone(
+            run.id,
+            result,
+            mergeMeasure,
+            contextForMeasure,
+            (d) => save({ measure_result: d }),
+          );
+        }
         return;
       }
       const race = await runRace(run.query, this.#makePort(), {
@@ -184,7 +260,13 @@ export class JobRunner {
         onUpdate: (partial) => save({ race: partial }),
       });
       await save({ race, status: "done" });
-      await this.#mergeClaims(run.id, (m) => mergeRace(race, m), (d) => save({ race: d }));
+      await this.#afterDone(
+        run.id,
+        race,
+        mergeRace,
+        contextForRace,
+        (d) => save({ race: d }),
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${run.id}] failed: ${msg}`);

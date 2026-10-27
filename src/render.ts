@@ -5,10 +5,13 @@
  * only http(s) URLs ever become links. The page has no scripts at all.
  */
 
+import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import { coveredSections, incumbencyNote } from "./dossier.ts";
 import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
+  ContextNote,
+  ContextResult,
   EvidenceType,
   Fact,
   MeasureDossier,
@@ -69,23 +72,64 @@ function factMeta(f: Fact): string {
   ].join(" · ");
 }
 
+/** Context notes the page shows next to names; [] for runs without them. */
+type Notes = readonly ContextNote[];
+
+function noteMeta(n: ContextNote): string {
+  return [
+    link(n.source_url, n.source_name),
+    n.author ? `by ${esc(n.author)}` : "",
+    n.published ? esc(n.published) : "date not stated",
+  ].filter(Boolean).join(" · ");
+}
+
+/**
+ * A fact's statement, with a collapsed note after each name that has one
+ * (src/context.ts). Without notes it is the plain paragraph it always was;
+ * with them it is a div, since a <details> can't sit inside a <p>.
+ */
+function statementHtml(statement: string, notes: Notes): string {
+  const pieces = attachNotes(statement, notes);
+  if (pieces.every((p) => typeof p === "string")) return `<p>${esc(statement)}</p>`;
+  // Punctuation right after a name stays with it, not alone under an open note.
+  const stuck = (i: number) => {
+    const next = pieces[i + 1];
+    return typeof next === "string" ? next.match(/^[.,;:!?)\]"'”’]+/)?.[0] ?? "" : "";
+  };
+  return `<div class="st">${
+    pieces.map((p, i) =>
+      typeof p === "string"
+        ? esc(i > 0 ? p.slice(stuck(i - 1).length) : p)
+        : `<span class="named">${
+          esc(p.text + stuck(i))
+        }</span><details class="ctx"><summary aria-label="${
+          p.note.kind === "person" ? "Who is" : "What is"
+        } ${esc(p.text)}?">${
+          p.note.kind === "person" ? "who?" : "what?"
+        }</summary><span class="ctx-body">${esc(p.note.note)} <span class="meta">${
+          noteMeta(p.note)
+        }</span></span></details>`
+    ).join("")
+  }</div>`;
+}
+
 /**
  * One fact. A merged one (src/merge.ts) shows once, with every outlet that
  * reported it and, collapsed, how each of the others worded it.
  */
-function factItem(f: Fact): string {
+function factItem(f: Fact, notes: Notes = []): string {
   const also = f.also ?? [];
   const tag = `<span class="ev ev-${f.evidence_type}">${EVIDENCE_LABEL[f.evidence_type]}</span>`;
   if (!also.length) {
     return `<li class="fact">
   ${tag}
-  <p>${esc(f.statement)}</p>
+  ${statementHtml(f.statement, notes)}
   <p class="meta">${factMeta(f)}</p>
 </li>`;
   }
   return `<li class="fact merged">
   ${tag} <span class="nsrc">Reported by ${also.length + 1} sources</span>
-  <p>${esc(f.statement)}</p>
+  ${statementHtml(f.statement, notes)}
   <ul class="meta srcs">${[f, ...also].map((x) => `<li>${factMeta(x)}</li>`).join("")}</ul>
   <details class="wording"><summary>How each source put it</summary><ul>${
     [f, ...also].map((x) =>
@@ -131,11 +175,14 @@ const NOT_IN_THIS_RUN: SectionResult = {
 function sectionHtml(
   title: string,
   r: SectionResult | undefined,
+  notes: Notes,
   tag = "h4",
   between = "",
 ): string {
   r ??= NOT_IN_THIS_RUN;
-  const facts = r.facts.length ? `<ul class="facts">${r.facts.map(factItem).join("")}</ul>` : "";
+  const facts = r.facts.length
+    ? `<ul class="facts">${r.facts.map((f) => factItem(f, notes)).join("")}</ul>`
+    : "";
   const gap = r.gap_note ? `<p class="gap">${esc(r.gap_note)}</p>` : "";
   const searched = r.searched.length
     ? `<p class="searched">Looked at: ${r.searched.map(esc).join("; ")}</p>`
@@ -172,10 +219,14 @@ function stanceBadge(x: PriorityResult, subject: Subject): string {
 }
 
 /** The voter's own issues, first, so what they asked about is what they see first. */
-function prioritiesHtml(p: readonly PriorityResult[] | undefined, subject: Subject): string {
+function prioritiesHtml(
+  p: readonly PriorityResult[] | undefined,
+  subject: Subject,
+  notes: Notes,
+): string {
   if (!p?.length) return "";
   return `<section class="priorities"><h4>On what you said matters to you</h4>${
-    p.map((x) => sectionHtml(x.issue, x.result, "h5", stanceBadge(x, subject))).join("")
+    p.map((x) => sectionHtml(x.issue, x.result, notes, "h5", stanceBadge(x, subject))).join("")
   }</section>`;
 }
 
@@ -197,7 +248,11 @@ export function stanceSummary(p: readonly PriorityResult[] | undefined, subject:
   ).join("");
 }
 
-function gapsAndUnverified(gaps: readonly string[], unverified: readonly Fact[]): string {
+function gapsAndUnverified(
+  gaps: readonly string[],
+  unverified: readonly Fact[],
+  notes: Notes,
+): string {
   const g = gaps.length
     ? `<section class="sec"><h4>What this run couldn't check</h4><ul class="gaps">${
       gaps.map((x) => `<li>${esc(x)}</li>`).join("")
@@ -208,12 +263,50 @@ function gapsAndUnverified(gaps: readonly string[], unverified: readonly Fact[])
       unverified.length === 1 ? "" : "s"
     } not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
-<ul class="facts">${unverified.map(factItem).join("")}</ul></details>`
+<ul class="facts">${unverified.map((f) => factItem(f, notes)).join("")}</ul></details>`
     : "";
   return g + u;
 }
 
-function dossierSection(d: CandidateDossier, next?: CandidateDossier): string {
+/**
+ * What the context step did for this page: how notes work, and every name it
+ * couldn't describe or never looked up, so a missing note is never silent.
+ * Nothing for runs from before the step, or where it didn't run.
+ */
+function namesHtml(c: ContextResult | undefined): string {
+  if (!c) return "";
+  const shown = c.notes.filter((n) => n.verified);
+  const unverified = c.notes.filter((n) => !n.verified);
+  const list = (names: readonly string[]) => names.map(esc).join("; ");
+  const parts = [
+    shown.length
+      ? `<p>A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. The same names were looked up the same way, whichever candidate or side they came up for.</p>`
+      : "",
+    c.not_described.length
+      ? `<p><strong>No sourced note found for:</strong> ${list(c.not_described)}.</p>`
+      : "",
+    c.not_looked_up.length
+      ? `<p><strong>Not looked up</strong> (each run looks up at most ${MAX_CONTEXT_NAMES} names, shared equally): ${
+        list(c.not_looked_up)
+      }.</p>`
+      : "",
+    unverified.length
+      ? `<details class="unverified"><summary>${unverified.length} note${
+        unverified.length === 1 ? "" : "s"
+      } not shown because the cited page was never retrieved</summary><ul class="facts">${
+        unverified.map((n) =>
+          `<li class="fact"><p><strong>${esc(n.name)}:</strong> ${esc(n.note)}</p><p class="meta">${
+            noteMeta(n)
+          }</p></li>`
+        ).join("")
+      }</ul></details>`
+      : "",
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  return `<section class="sec names"><h4>Names in these facts</h4>${parts.join("")}</section>`;
+}
+
+function dossierSection(d: CandidateDossier, notes: Notes, next?: CandidateDossier): string {
   const c = d.candidate;
   if (d.status === "pending") {
     return `<article class="dossier pending" id="${slug(c.name)}">
@@ -221,7 +314,7 @@ function dossierSection(d: CandidateDossier, next?: CandidateDossier): string {
   <p class="gap">Research on this candidate is still running. This page updates on its own.</p>
 </article>`;
   }
-  const sections = SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("");
+  const sections = SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id], notes)).join("");
 
   const identity = d.identity_note
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
@@ -233,9 +326,9 @@ function dossierSection(d: CandidateDossier, next?: CandidateDossier): string {
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
   ${identity}
-  ${prioritiesHtml(d.priorities, "candidate")}
+  ${prioritiesHtml(d.priorities, "candidate", notes)}
   ${sections}
-  ${gapsAndUnverified(d.gaps, d.unverified)}
+  ${gapsAndUnverified(d.gaps, d.unverified, notes)}
   <p class="back"><a href="#top">Back to all candidates</a>${
     next ? ` · <a href="#${slug(next.candidate.name)}">Next: ${esc(next.candidate.name)}</a>` : ""
   }</p>
@@ -389,6 +482,15 @@ fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 
 .walk .mid { color: var(--muted); font-weight: 400; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
+.st { margin: 4px 0 0; }
+details.ctx { display: inline-block; }
+details.ctx[open] { display: inline; }
+details.ctx > summary, .ctx-eg { display: inline-block; list-style: none; font-size: .72rem; font-weight: 700; line-height: 1.5; color: var(--accent); border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; margin: 0 2px 0 4px; vertical-align: 1px; }
+details.ctx > summary { min-width: 32px; text-align: center; }
+details.ctx > summary::-webkit-details-marker { display: none; }
+details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg); }
+.ctx-body { display: block; font-size: .9rem; border-left: 3px solid var(--accent); padding: 4px 10px; margin: 6px 0; }
+.ctx-body .meta { display: block; }
 .stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
 .card .stance { font-size: .85rem; }
 .stance .basis { color: var(--fg); }
@@ -517,6 +619,7 @@ export function raceBody(
     }</p>`
     : "";
   const model = r.candidates.find((c) => c.model)?.model;
+  const notes = r.context?.notes ?? [];
 
   return `<h1>${esc(raceTitle(r))}</h1>
 <p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
@@ -538,7 +641,8 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map(overviewCard).join("")}</ul>
 
-${r.candidates.map((d, i) => dossierSection(d, r.candidates[i + 1])).join("")}
+${r.candidates.map((d, i) => dossierSection(d, notes, r.candidates[i + 1])).join("")}
+${namesHtml(r.context)}
 
 ${extra.mine ?? ""}
 <footer>
@@ -583,15 +687,17 @@ export function measureBody(
   const identity = d.identity_note
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
     : "";
+  const notes = d.context?.notes ?? [];
   const body = d.status === "pending"
     ? `<p class="gap">${
       extra.stopped
         ? "Research on this measure stopped before it finished. Research it again to fill this in."
         : "Research on this measure is still running. This page updates on its own."
     }</p>`
-    : `${prioritiesHtml(d.priorities, "measure")}
-${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id])).join("")}
-${gapsAndUnverified(d.gaps, d.unverified)}`;
+    : `${prioritiesHtml(d.priorities, "measure", notes)}
+${MEASURE_SECTIONS.map((s) => sectionHtml(s.title, d.sections[s.id], notes)).join("")}
+${gapsAndUnverified(d.gaps, d.unverified, notes)}
+${namesHtml(d.context)}`;
 
   return `<h1>${esc(measureTitle(q))}</h1>
 <p class="sub">${esc(q.jurisdiction || "Jurisdiction not read")}, ${esc(q.state)} · Researched ${

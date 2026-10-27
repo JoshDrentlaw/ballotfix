@@ -7,6 +7,7 @@ import type {
   BallotReader,
   BallotReading,
   ClaimMerger,
+  ContextWriter,
   RawCandidateResearch,
   RawMeasureResearch,
   ResearchPort,
@@ -38,6 +39,19 @@ export const withFacts: RawCandidateResearch = {
         evidence_type: "primary_record",
       }],
       searched: ["city website biography", "county registrar"],
+      gap_note: null,
+    },
+    endorsements: {
+      facts: [{
+        statement:
+          "Placeholder: endorsed by Example Builders PAC and the Example Labor Council Local 99.",
+        source_name: "Example News",
+        source_url: "https://example.org/news/endorsements",
+        author: null,
+        published: "2026-09-02",
+        evidence_type: "opinion",
+      }],
+      searched: ["local news endorsements"],
       gap_note: null,
     },
     criticisms: {
@@ -73,6 +87,7 @@ export const withFacts: RawCandidateResearch = {
   gaps: ["Placeholder: the campaign finance portal could not be searched."],
   retrieved_urls: [
     "https://example.org/mayor",
+    "https://example.org/news/endorsements",
     "https://example.org/news/1",
     "https://example.org/daily/2",
   ],
@@ -157,6 +172,31 @@ export const measureFacts: RawMeasureResearch = {
       searched: ["council agendas and minutes"],
       gap_note: null,
     },
+    case_for: {
+      facts: [{
+        statement: "Placeholder: the ballot argument for it is signed by Friends of Example Parks.",
+        source_name: "Example County voter guide",
+        source_url: "https://example.org/measure-x/arguments.pdf",
+        author: null,
+        published: "2026-08",
+        evidence_type: "opinion",
+      }],
+      searched: ["voter guide ballot arguments"],
+      gap_note: null,
+    },
+    case_against: {
+      facts: [{
+        statement:
+          "Placeholder: the ballot argument against it is signed by the Example Taxpayers Association.",
+        source_name: "Example County voter guide",
+        source_url: "https://example.org/measure-x/arguments.pdf",
+        author: null,
+        published: "2026-08",
+        evidence_type: "opinion",
+      }],
+      searched: ["voter guide ballot arguments"],
+      gap_note: null,
+    },
     priority_1: {
       facts: [{
         statement: "Placeholder: the analysis says revenue may be spent only on park maintenance.",
@@ -181,6 +221,7 @@ export const measureFacts: RawMeasureResearch = {
   gaps: ["Placeholder: committee filings for the No side were not online."],
   retrieved_urls: [
     "https://example.org/measure-x/analysis.pdf",
+    "https://example.org/measure-x/arguments.pdf",
     "https://example.org/minutes/2026-07-08",
   ],
   model: "layout-sample",
@@ -205,6 +246,56 @@ export function sampleMerger(delayMs = 0): ClaimMerger {
       return blocks.map((b) =>
         b.facts.filter((f) => f.statement.includes("warehouse")).map((f) => f.id)
       );
+    },
+  };
+}
+
+/** Placeholder notes, keyed by name. One cites a page never retrieved, so that case shows too. */
+const SAMPLE_NOTES: Record<string, { kind: string; note: string; url: string }> = {
+  "Example Builders PAC": {
+    kind: "organization",
+    note: "Placeholder: a political action committee formed by home builders in Example County.",
+    url: "https://example.org/sos/committees/123",
+  },
+  "Example Labor Council Local 99": {
+    kind: "organization",
+    note: "Placeholder: a council of construction trade unions in Example County.",
+    url: "https://example.org/never-opened/labor",
+  },
+  "Friends of Example Parks": {
+    kind: "organization",
+    note: "Placeholder: a ballot measure committee formed to support Measure X.",
+    url: "https://example.org/sos/committees/456",
+  },
+  "Example Taxpayers Association": {
+    kind: "organization",
+    note: "Placeholder: a nonprofit that takes positions on local tax measures in Example County.",
+    url: "https://example.org/eta/about",
+  },
+};
+
+/** Placeholder context notes; names it has no note for come back "unknown". */
+export function sampleContextWriter(delayMs = 0): ContextWriter {
+  return {
+    describeNames: async ({ names }) => {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return {
+        notes: names.map((n) => {
+          const s = SAMPLE_NOTES[n.name];
+          return {
+            id: n.id,
+            kind: s?.kind ?? "unknown",
+            note: s?.note ?? "",
+            source_name: s ? "Example Secretary of State (placeholder)" : "",
+            source_url: s?.url ?? "",
+            author: null,
+            published: s ? "2026-07" : null,
+          };
+        }),
+        retrieved_urls: Object.values(SAMPLE_NOTES).map((s) => s.url)
+          .filter((u) => !u.includes("never-opened")),
+        model: "layout-sample",
+      };
     },
   };
 }
