@@ -9,12 +9,18 @@
 import { BallotJobs, JobRunner } from "../src/web/jobs.ts";
 import { createApp } from "../src/web/server.ts";
 import { openStores } from "../src/web/store.ts";
-import { sampleBallotReader, sampleMerger, samplePort } from "./sample_data.ts";
+import {
+  sampleBallotReader,
+  sampleContextWriter,
+  sampleMerger,
+  samplePort,
+} from "./sample_data.ts";
 
 const dir = await Deno.makeTempDir({ prefix: "ballotfix-demo-" });
 const { runs: store, ballots: ballotStore, choices } = await openStores(dir);
 const jobs = new JobRunner(store, () => samplePort(3000), {
   makeMerger: () => sampleMerger(1500),
+  makeContextWriter: () => sampleContextWriter(1500),
 });
 const ballots = new BallotJobs(ballotStore, () => sampleBallotReader(3000));
 const port = Number(Deno.env.get("PORT") ?? "8788");

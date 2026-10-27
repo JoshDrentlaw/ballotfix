@@ -8,6 +8,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
+import { contextForRace, raceContextFailed } from "./context.ts";
 import { mergeRace } from "./merge.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
@@ -19,11 +20,12 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
-                    [--no-merge]
+                    [--no-merge] [--no-context]
   deno task dossier --render <saved.json> [--out out]
 
 Writes <out>/<city>-<office>-<election>.json and .html. After research, one low-effort call
-merges facts that several sources report into one (--no-merge skips it).
+merges facts that several sources report into one (--no-merge skips it), and one more, with a
+few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
 Needs ANTHROPIC_API_KEY in the environment or in .env (not needed for --render).`;
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -61,10 +63,11 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help", "merge"],
-    negatable: ["merge"],
+    boolean: ["help", "merge", "context"],
+    negatable: ["merge", "context"],
     default: {
       merge: true,
+      context: true,
       state: "CA",
       office: "Mayor",
       election: "2026-11-03",
@@ -135,6 +138,19 @@ async function main(): Promise<number> {
       if (merged.sent) console.error(`Merged ${merged.groups} duplicate claim(s).`);
     } catch (err) {
       console.error(`Merging duplicate claims failed; writing them unmerged. ${err}`);
+    }
+  }
+
+  if (args.context) {
+    try {
+      const c = await contextForRace(race, researcher);
+      race = c.dossier;
+      if (c.sent) console.error(`Wrote ${c.shown} context note(s) for ${c.sent} names.`);
+      if (c.skipped) console.error(`${c.skipped} names not looked up (over the cap).`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Context notes failed; the page lists the names without them. ${msg}`);
+      race = raceContextFailed(race, msg);
     }
   }
 
