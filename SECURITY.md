@@ -42,4 +42,6 @@ Never disable TLS verification or unset `HTTPS_PROXY`.
 
 All research content is untrusted. The generated page escapes every string, allows only http(s)
 links (with `rel="noopener noreferrer nofollow"`), contains no JavaScript, and sets a
-Content-Security-Policy of `default-src 'none'; style-src 'unsafe-inline'`.
+Content-Security-Policy of `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:`.
+The image sources exist only for the app's own icons (the embedded favicon and
+`/apple-touch-icon.png`); the renderer never emits `<img>`.

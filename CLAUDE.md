@@ -104,6 +104,10 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   skips a run it can't index rather than stopping startup. Indexing makes no model or network calls;
   later steps (merging duplicate claims, context notes for unfamiliar names, campaign finance) add
   model calls and should each have a cap.
+- Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
+  them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
+  `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at
+  `/apple-touch-icon.png` ahead of the password check.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
 ## Verifying UI changes

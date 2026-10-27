@@ -381,6 +381,43 @@ export interface PageOptions {
   back?: { href: string; label: string };
 }
 
+/**
+ * The app icon: a ballot of unmarked ovals under a magnifying lens (research, never a
+ * pick). Kept identical to static/icon.svg, which is the copy for use outside the page.
+ */
+export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <g id="sheet">
+      <rect x="11" y="9" width="32" height="42" rx="4" fill="#fbfaf7" />
+      <g fill="none" stroke="#28536b" stroke-width="2.2" stroke-linecap="round">
+        <ellipse cx="18.5" cy="19" rx="2.8" ry="2" />
+        <ellipse cx="18.5" cy="29" rx="2.8" ry="2" />
+        <ellipse cx="18.5" cy="39" rx="2.8" ry="2" />
+        <path d="M25 19h12M25 29h12M25 39h12" />
+      </g>
+    </g>
+    <clipPath id="lens"><circle cx="35" cy="40" r="8" /></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#28536b" />
+  <use href="#sheet" />
+  <g clip-path="url(#lens)">
+    <rect width="64" height="64" fill="#1f4357" />
+    <use href="#sheet" transform="translate(35 40) scale(1.6) translate(-35 -40)" />
+  </g>
+  <circle cx="35" cy="40" r="10" fill="none" stroke="#f3d39b" stroke-width="4" />
+  <path d="M42.5 47.5l8.5 8.5" stroke="#f3d39b" stroke-width="6" stroke-linecap="round" />
+</svg>`;
+
+/** Embedded as data: so exported pages stay self-contained. */
+const ICON_HREF = `data:image/svg+xml;base64,${btoa(ICON_SVG)}`;
+
+/** The page's Content-Security-Policy; the server sends the same one as a header. */
+export const CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'";
+
+/** Where the app serves static/apple-touch-icon.png (under its base path). */
+export const TOUCH_ICON_PATH = "/apple-touch-icon.png";
+
 /** Full HTML document with a strict CSP: no scripts, no external resources. */
 export function page(title: string, body: string, opts: PageOptions = {}): string {
   const refresh = opts.refreshSeconds
@@ -399,7 +436,9 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<link rel="icon" type="image/svg+xml" href="${ICON_HREF}">
+${opts.nav ? `<link rel="apple-touch-icon" href="${base}${TOUCH_ICON_PATH}">` : ""}
 ${refresh}
 <title>${esc(title)}</title>
 <style>${STYLES}</style>
