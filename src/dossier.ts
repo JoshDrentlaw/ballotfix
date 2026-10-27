@@ -44,7 +44,7 @@ import {
 
 /** Phase 0's permanent blind spots. Shown on every page, every run. */
 export const STANDING_GAPS: readonly string[] = [
-  "Phase 0 researches with general web search only. It does not yet read campaign finance portals, council minutes, or budget documents directly, so records that search engines don't index are likely missing.",
+  "Phase 0 researches with general web search, plus one capped lookup of campaign finance filings per run. It does not read council minutes or budget documents directly, and filing portals behind a login or JavaScript can't be read, so records that search engines don't index are likely missing.",
   "Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.",
   "Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.",
   "PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.",

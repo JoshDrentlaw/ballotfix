@@ -10,6 +10,12 @@ import {
   measureContextFailed,
   raceContextFailed,
 } from "../context.ts";
+import {
+  financeForMeasure,
+  financeForRace,
+  measureFinanceFailed,
+  raceFinanceFailed,
+} from "../finance.ts";
 import { mergeMeasure, mergeRace } from "../merge.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
@@ -20,6 +26,7 @@ import type {
   CandidateSource,
   ClaimMerger,
   ContextWriter,
+  FinanceResearcher,
   MeasureDossier,
   MeasureQuery,
   RaceDossier,
@@ -45,7 +52,47 @@ export interface JobRunnerOptions {
    * after the merge step, then saved again. Omit to skip.
    */
   makeContextWriter?: () => ContextWriter;
+  /**
+   * Reads contributions off campaign finance filings: one call per run, after
+   * the context step, then saved again. Omit to skip.
+   */
+  makeFinanceResearcher?: () => FinanceResearcher;
 }
+
+/** What one finished run needs for the steps after it, race or measure. */
+interface AfterSteps<T> {
+  merge: (
+    d: T,
+    m: ClaimMerger,
+  ) => Promise<{ dossier: T; groups: number; sent: number; skipped: number }>;
+  context: (
+    d: T,
+    w: ContextWriter,
+  ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number }>;
+  contextFailed: (d: T, error: string) => T;
+  finance: (
+    d: T,
+    f: FinanceResearcher,
+  ) => Promise<{ dossier: T; sent: number; shown: number; left_out: number }>;
+  financeFailed: (d: T, error: string) => T;
+  save: (dossier: T) => Promise<void>;
+}
+
+const RACE_STEPS = {
+  merge: mergeRace,
+  context: contextForRace,
+  contextFailed: raceContextFailed,
+  finance: financeForRace,
+  financeFailed: raceFinanceFailed,
+} satisfies Omit<AfterSteps<RaceDossier>, "save">;
+
+const MEASURE_STEPS = {
+  merge: mergeMeasure,
+  context: contextForMeasure,
+  contextFailed: measureContextFailed,
+  finance: financeForMeasure,
+  financeFailed: measureFinanceFailed,
+} satisfies Omit<AfterSteps<MeasureDossier>, "save">;
 
 /** One step that runs after a run is saved as done: what it changed, and what to log. */
 interface AfterStep<T> {
@@ -76,6 +123,7 @@ export class JobRunner {
   readonly #log: (msg: string) => void;
   readonly #makeMerger: (() => ClaimMerger) | undefined;
   readonly #makeContextWriter: (() => ContextWriter) | undefined;
+  readonly #makeFinanceResearcher: (() => FinanceResearcher) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
   #post = new Set<Promise<void>>();
@@ -89,13 +137,15 @@ export class JobRunner {
     this.#log = opts.log ?? (() => {});
     this.#makeMerger = opts.makeMerger;
     this.#makeContextWriter = opts.makeContextWriter;
+    this.#makeFinanceResearcher = opts.makeFinanceResearcher;
   }
 
   /**
    * Runs one step on a run already saved as done, and saves again if it
    * changed anything. A failure only logs, and saves what `failed` makes of
    * it, if anything, so the page can say what is missing: the research
-   * stands as it was. Returns the dossier the next step should start from.
+   * stands as it was. Returns the dossier the next step should start from:
+   * the marked one when that was saved, so the next save keeps the record.
    */
   async #after<T>(
     id: string,
@@ -116,35 +166,35 @@ export class JobRunner {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${id}] ${what} failed: ${msg}`);
       const marked = failed(dossier, msg);
-      if (marked !== dossier) {
-        await save(marked).catch((e) => this.#log(`[${id}] could not record that: ${e}`));
+      if (marked === dossier) return dossier;
+      try {
+        await save(marked);
+        return marked;
+      } catch (e) {
+        this.#log(`[${id}] could not record that: ${e}`);
+        return dossier;
       }
-      return dossier;
     }
   }
 
-  /** Merging duplicate claims, then context notes on names: each a step of its own. */
+  /**
+   * Merging duplicate claims, then context notes on names, then campaign
+   * finance: each a step of its own, each starting from what the last saved.
+   */
   async #afterDone<T extends RaceDossier | MeasureDossier>(
     id: string,
     done: T,
-    merge: (
-      d: T,
-      m: ClaimMerger,
-    ) => Promise<{ dossier: T; groups: number; sent: number; skipped: number }>,
-    context: (
-      d: T,
-      w: ContextWriter,
-    ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number }>,
-    contextFailed: (d: T, error: string) => T,
-    save: (dossier: T) => Promise<void>,
+    steps: AfterSteps<T>,
   ): Promise<void> {
     const makeMerger = this.#makeMerger, makeWriter = this.#makeContextWriter;
+    const makeFinance = this.#makeFinanceResearcher;
+    const { save } = steps;
     const merged = await this.#after(
       id,
       "merging duplicate claims",
       done,
       makeMerger && (async () => {
-        const r = await merge(done, makeMerger());
+        const r = await steps.merge(done, makeMerger());
         return {
           dossier: r.dossier,
           changed: r.groups > 0,
@@ -156,12 +206,12 @@ export class JobRunner {
       }),
       save,
     );
-    await this.#after(
+    const noted = await this.#after(
       id,
       "context notes",
       merged,
       makeWriter && (async () => {
-        const r = await context(merged, makeWriter());
+        const r = await steps.context(merged, makeWriter());
         return {
           dossier: r.dossier,
           // Unchanged only when the facts name no one; otherwise the page lists what was found.
@@ -173,7 +223,26 @@ export class JobRunner {
         };
       }),
       save,
-      contextFailed,
+      steps.contextFailed,
+    );
+    await this.#after(
+      id,
+      "campaign finance",
+      noted,
+      makeFinance && (async () => {
+        const r = await steps.finance(noted, makeFinance());
+        return {
+          dossier: r.dossier,
+          // Every subject gets a result, even an empty one with a gap note.
+          changed: r.dossier !== noted,
+          log: [
+            ...(r.sent ? [`kept ${r.shown} contribution(s) for ${r.sent} subject(s)`] : []),
+            ...(r.left_out ? [`listed ${r.left_out} contribution(s) over the cap`] : []),
+          ],
+        };
+      }),
+      save,
+      steps.financeFailed,
     );
   }
 
@@ -268,14 +337,10 @@ export class JobRunner {
           error: result.error,
         });
         if (result.status === "ok") {
-          this.#background(this.#afterDone(
-            run.id,
-            result,
-            mergeMeasure,
-            contextForMeasure,
-            measureContextFailed,
-            (d) => save({ measure_result: d }),
-          ));
+          this.#background(this.#afterDone(run.id, result, {
+            ...MEASURE_STEPS,
+            save: (d) => save({ measure_result: d }),
+          }));
         }
         return;
       }
@@ -288,14 +353,10 @@ export class JobRunner {
         onUpdate: (partial) => save({ race: partial }),
       });
       await save({ race, status: "done" });
-      this.#background(this.#afterDone(
-        run.id,
-        race,
-        mergeRace,
-        contextForRace,
-        raceContextFailed,
-        (d) => save({ race: d }),
-      ));
+      this.#background(this.#afterDone(run.id, race, {
+        ...RACE_STEPS,
+        save: (d) => save({ race: d }),
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${run.id}] failed: ${msg}`);

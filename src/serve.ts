@@ -18,6 +18,9 @@
  *   BALLOTFIX_CONTEXT_MODEL  model for the one low-effort call per finished run that writes
  *                        short sourced notes on names in the facts, with a few capped web
  *                        searches (default: the research model); "off" skips it
+ *   BALLOTFIX_FINANCE_MODEL  model for the one low-effort call per finished run that reads
+ *                        contributions off campaign finance filings, with capped web searches
+ *                        and fetches (default: the research model); "off" skips it
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
@@ -69,10 +72,18 @@ const contextWriter = () =>
     contextModel,
     effort: effort as Effort,
   });
+const financeModel = env("BALLOTFIX_FINANCE_MODEL");
+const financeResearcher = () =>
+  new AnthropicResearcher({
+    model: env("BALLOTFIX_MODEL"),
+    financeModel,
+    effort: effort as Effort,
+  });
 const jobs = new JobRunner(store, researcher, {
   log: (m) => console.log(m),
   makeMerger: mergeModel === "off" ? undefined : merger,
   makeContextWriter: contextModel === "off" ? undefined : contextWriter,
+  makeFinanceResearcher: financeModel === "off" ? undefined : financeResearcher,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 

@@ -1,5 +1,11 @@
 import { assert, assertEquals } from "@std/assert";
-import { KNOWLEDGE_VERSION, nameKey, personRef, projectRace } from "../src/knowledge.ts";
+import {
+  KNOWLEDGE_VERSION,
+  measureRef,
+  nameKey,
+  personRef,
+  projectRace,
+} from "../src/knowledge.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { openStores, type RunRecord } from "../src/web/store.ts";
 import type { BallotCandidate, MeasureQuery, RaceDossier, RawFact } from "../src/types.ts";
@@ -165,7 +171,9 @@ Deno.test("a finished measure is indexed under its label, jurisdiction, and elec
     error: null,
     race: null,
   });
-  const e = s.runs.knowledge.entity("measure:ca|city of fontana|2026 11 03|measure x")!;
+  // "City of Fontana" on the ballot and "Fontana" for a race are one place.
+  assertEquals(measureRef(m).key, "measure:ca|fontana|2026 11 03|measure x");
+  const e = s.runs.knowledge.entity(measureRef(m).key)!;
   assertEquals(e.kind, "measure");
   assertEquals(s.runs.knowledge.claimsAbout(e.id).map((c) => c.evidence_type), ["primary_record"]);
   s.db.close();

@@ -92,6 +92,36 @@ const MIGRATIONS = [
   UPDATE ballots SET status = coalesce(json_extract(body, '$.status'), '');
   CREATE INDEX ballots_by_status ON ballots (status);
   `,
+  `
+  -- Contributions are relations, and one contributor can give to one candidate
+  -- several times in a run: the detail (amount, date, filing, row) is part of
+  -- what makes a relation distinct. The graph is derived data, rebuilt from
+  -- saved runs after this (KNOWLEDGE_VERSION 5), so the old rows can go.
+  DROP TABLE relations;
+  CREATE TABLE relations (
+    id INTEGER PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES runs (id) ON DELETE CASCADE,
+    subject_id INTEGER NOT NULL REFERENCES entities (id),
+    relation TEXT NOT NULL,
+    object_id INTEGER NOT NULL REFERENCES entities (id),
+    detail TEXT
+  ) STRICT;
+  CREATE UNIQUE INDEX relations_unique
+    ON relations (run_id, subject_id, relation, object_id, coalesce(detail, ''));
+  CREATE INDEX relations_by_subject ON relations (subject_id);
+  CREATE INDEX relations_by_object ON relations (object_id);
+
+  -- Where a relation was read (a filing page), like a claim's citations.
+  CREATE TABLE relation_citations (
+    relation_id INTEGER NOT NULL REFERENCES relations (id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources (id),
+    source_name TEXT NOT NULL,
+    author TEXT,
+    published TEXT,
+    PRIMARY KEY (relation_id, source_id)
+  ) STRICT;
+  CREATE INDEX relation_citations_by_source ON relation_citations (source_id);
+  `,
 ];
 
 export type Row = Record<string, unknown>;

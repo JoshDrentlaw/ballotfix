@@ -9,6 +9,7 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
 import { contextForRace, raceContextFailed } from "./context.ts";
+import { financeForRace, raceFinanceFailed } from "./finance.ts";
 import { mergeRace } from "./merge.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
@@ -20,12 +21,14 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
-                    [--no-merge] [--no-context]
+                    [--no-merge] [--no-context] [--no-finance]
   deno task dossier --render <saved.json> [--out out]
 
 Writes <out>/<city>-<office>-<election>.json and .html. After research, one low-effort call
 merges facts that several sources report into one (--no-merge skips it), and one more, with a
 few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
+A last capped call reads contributions off the candidates' campaign finance filings, so the page
+can show who they share as contributors and endorsers (--no-finance skips it).
 Needs ANTHROPIC_API_KEY in the environment or in .env (not needed for --render).`;
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -63,11 +66,12 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help", "merge", "context"],
-    negatable: ["merge", "context"],
+    boolean: ["help", "merge", "context", "finance"],
+    negatable: ["merge", "context", "finance"],
     default: {
       merge: true,
       context: true,
+      finance: true,
       state: "CA",
       office: "Mayor",
       election: "2026-11-03",
@@ -151,6 +155,21 @@ async function main(): Promise<number> {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`Context notes failed; the page lists the names without them. ${msg}`);
       race = raceContextFailed(race, msg);
+    }
+  }
+
+  if (args.finance) {
+    try {
+      const f = await financeForRace(race, researcher);
+      race = f.dossier;
+      if (f.sent) console.error(`Kept ${f.shown} contribution(s) from campaign finance filings.`);
+      if (f.left_out) {
+        console.error(`${f.left_out} contribution(s) listed but not kept (over the cap).`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Campaign finance lookup failed; the page says so for each candidate. ${msg}`);
+      race = raceFinanceFailed(race, msg);
     }
   }
 

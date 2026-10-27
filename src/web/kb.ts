@@ -4,12 +4,14 @@
  */
 
 import {
+  type ContributionDetail,
   type EntityKind,
   KNOWLEDGE_VERSION,
   type Projection,
   projectMeasure,
   projectRace,
   type Relation,
+  SUPPORT_SECTIONS,
 } from "../knowledge.ts";
 import type { EvidenceType } from "../types.ts";
 import type { Db, Row } from "./db.ts";
@@ -52,6 +54,30 @@ export interface Link {
   detail: string | null;
 }
 
+/** How an entity is tied to one side of a comparison. */
+export type GraphTie =
+  | {
+    kind: "contribution";
+    run_id: string;
+    detail: ContributionDetail;
+    citations: StoredCitation[];
+  }
+  | {
+    /** Named in a verified claim in a SUPPORT_SECTIONS section about that side. */
+    kind: "named";
+    run_id: string;
+    section: string;
+    statement: string;
+    citations: StoredCitation[];
+  };
+
+/** An entity tied to both sides of a comparison, with every tie and its source. */
+export interface SharedConnection {
+  entity: Entity;
+  a: GraphTie[];
+  b: GraphTie[];
+}
+
 export interface KnowledgeStats {
   entities: number;
   claims: number;
@@ -62,7 +88,7 @@ export interface KnowledgeStats {
 /** What a finished run contributes to the graph; nothing for an unfinished one. */
 export function projectRun(run: RunRecord): Projection | null {
   if (run.status !== "done") return null;
-  if (run.measure) return run.measure_result ? projectMeasure(run.measure_result) : null;
+  if (run.measure) return run.measure_result ? projectMeasure(run.measure_result, run.id) : null;
   return run.race ? projectRace(run.race, run.id) : null;
 }
 
@@ -117,8 +143,10 @@ export class KnowledgeBase {
         runId,
       )),
       sources: ids(this.db.all(
-        `SELECT DISTINCT ci.source_id AS id FROM citations ci JOIN claims c ON c.id = ci.claim_id
-         WHERE c.run_id = ?`,
+        `SELECT ci.source_id AS id FROM citations ci JOIN claims c ON c.id = ci.claim_id
+         WHERE c.run_id = ?1
+         UNION SELECT rc.source_id FROM relation_citations rc
+         JOIN relations rel ON rel.id = rc.relation_id WHERE rel.run_id = ?1`,
         runId,
       )),
     };
@@ -137,7 +165,9 @@ export class KnowledgeBase {
     }
     for (const id of candidates.sources) {
       this.db.run(
-        "DELETE FROM sources WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM citations WHERE source_id = ?1)",
+        `DELETE FROM sources WHERE id = ?1
+         AND NOT EXISTS (SELECT 1 FROM citations WHERE source_id = ?1)
+         AND NOT EXISTS (SELECT 1 FROM relation_citations WHERE source_id = ?1)`,
         id,
       );
     }
@@ -181,6 +211,14 @@ export class KnowledgeBase {
         claim,
         entityId(c.subject),
       );
+      for (const key of c.also_about ?? []) {
+        this.db.run(
+          `INSERT INTO claim_entities (claim_id, entity_id, role) VALUES (?, ?, 'subject')
+           ON CONFLICT DO NOTHING`,
+          claim,
+          entityId(key),
+        );
+      }
       for (const key of c.named) {
         this.db.run(
           `INSERT INTO claim_entities (claim_id, entity_id, role) VALUES (?, ?, 'named')
@@ -190,19 +228,11 @@ export class KnowledgeBase {
         );
       }
       for (const cite of c.citations) {
-        const source = Number(
-          this.db.get(
-            `INSERT INTO sources (url_key, url) VALUES (?, ?)
-             ON CONFLICT (url_key) DO UPDATE SET url_key = excluded.url_key RETURNING id`,
-            cite.url_key,
-            cite.url,
-          )!.id,
-        );
         this.db.run(
           `INSERT INTO citations (claim_id, source_id, source_name, author, published)
            VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
           claim,
-          source,
+          this.#source(cite),
           cite.source_name,
           cite.author,
           cite.published,
@@ -210,16 +240,41 @@ export class KnowledgeBase {
       }
     }
     for (const r of p.relations) {
-      this.db.run(
+      const rel = this.db.get(
         `INSERT INTO relations (run_id, subject_id, relation, object_id, detail)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`,
         runId,
         entityId(r.subject),
         r.relation,
         entityId(r.object),
         r.detail,
       );
+      // A relation is only ever cited when it was written: an exact repeat adds nothing.
+      if (!rel) continue;
+      for (const cite of r.citations ?? []) {
+        this.db.run(
+          `INSERT INTO relation_citations (relation_id, source_id, source_name, author, published)
+           VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+          Number(rel.id),
+          this.#source(cite),
+          cite.source_name,
+          cite.author,
+          cite.published,
+        );
+      }
     }
+  }
+
+  /** One source row per page. */
+  #source(cite: { url_key: string; url: string }): number {
+    return Number(
+      this.db.get(
+        `INSERT INTO sources (url_key, url) VALUES (?, ?)
+         ON CONFLICT (url_key) DO UPDATE SET url_key = excluded.url_key RETURNING id`,
+        cite.url_key,
+        cite.url,
+      )!.id,
+    );
   }
 
   /**
@@ -231,7 +286,15 @@ export class KnowledgeBase {
   rebuild(log: (msg: string) => void = () => {}): { indexed: number; skipped: number } {
     return this.db.tx(() => {
       for (
-        const t of ["claim_entities", "citations", "claims", "relations", "sources", "entities"]
+        const t of [
+          "claim_entities",
+          "citations",
+          "claims",
+          "relation_citations",
+          "relations",
+          "sources",
+          "entities",
+        ]
       ) {
         this.db.run(`DELETE FROM ${t}`);
       }
@@ -327,6 +390,94 @@ export class KnowledgeBase {
       run_id: String(r.run_id),
       detail: strOrNull(r.detail),
     }));
+  }
+
+  /**
+   * Everyone tied to an entity by money or support, across every run: who
+   * contributed to it (contributed_to, with the filing's words and page), and
+   * who verified claims about it in SUPPORT_SECTIONS name. Keyed by entity id.
+   */
+  tiesOf(entityId: number): Map<number, { entity: Entity; ties: GraphTie[] }> {
+    const out = new Map<number, { entity: Entity; ties: GraphTie[] }>();
+    // One row per tie and citation, in order; consecutive rows of one tie are grouped.
+    let last: { id: string; tie: GraphTie } | null = null;
+    const add = (id: string, r: Row, tie: () => GraphTie) => {
+      if (last?.id !== id) {
+        const e = toEntity(r);
+        const got = out.get(e.id) ?? { entity: e, ties: [] };
+        last = { id, tie: tie() };
+        got.ties.push(last.tie);
+        out.set(e.id, got);
+      }
+      last.tie.citations.push({
+        url: String(r.url),
+        source_name: String(r.source_name),
+        author: strOrNull(r.author),
+        published: strOrNull(r.published),
+      });
+    };
+    for (
+      const r of this.db.all(
+        `SELECT rel.id AS tie_id, rel.run_id, rel.detail, e.id, e.kind, e.key, e.name,
+                s.url, rc.source_name, rc.author, rc.published
+         FROM relations rel
+         JOIN entities e ON e.id = rel.subject_id
+         JOIN relation_citations rc ON rc.relation_id = rel.id
+         JOIN sources s ON s.id = rc.source_id
+         WHERE rel.relation = 'contributed_to' AND rel.object_id = ?
+         ORDER BY rel.id, s.id`,
+        entityId,
+      )
+    ) {
+      add(`r${r.tie_id}`, r, () => ({
+        kind: "contribution",
+        run_id: String(r.run_id),
+        detail: JSON.parse(String(r.detail)) as ContributionDetail,
+        citations: [],
+      }));
+    }
+    const sections = SUPPORT_SECTIONS.map((x) => `'${x}'`).join(", ");
+    for (
+      const r of this.db.all(
+        `SELECT c.id AS claim_id, c.run_id, c.section, c.statement, e.id, e.kind, e.key, e.name,
+                s.url, ci.source_name, ci.author, ci.published
+         FROM claim_entities about
+         JOIN claims c ON c.id = about.claim_id
+         JOIN claim_entities n ON n.claim_id = c.id AND n.role = 'named'
+         JOIN entities e ON e.id = n.entity_id
+         JOIN citations ci ON ci.claim_id = c.id
+         JOIN sources s ON s.id = ci.source_id
+         WHERE about.entity_id = ? AND about.role = 'subject' AND c.verified = 1
+           AND c.section IN (${sections})
+         ORDER BY c.id, e.id, s.id`,
+        entityId,
+      )
+    ) {
+      add(`c${r.claim_id}|${r.id}`, r, () => ({
+        kind: "named",
+        run_id: String(r.run_id),
+        section: String(r.section),
+        statement: String(r.statement),
+        citations: [],
+      }));
+    }
+    return out;
+  }
+
+  /**
+   * The contributors and endorsers two entities share: every entity tied to
+   * both (tiesOf), by entity identity only. Entity keys carry their scope, so
+   * two subjects in one jurisdiction only ever share that jurisdiction's
+   * entities; nothing is matched on name here.
+   */
+  sharedBetween(aId: number, bId: number): SharedConnection[] {
+    const a = this.tiesOf(aId), b = this.tiesOf(bId);
+    return [...a.values()].flatMap((x) => {
+      const y = b.get(x.entity.id);
+      return y && x.entity.id !== aId && x.entity.id !== bId
+        ? [{ entity: x.entity, a: x.ties, b: y.ties }]
+        : [];
+    }).sort((p, q) => p.entity.name.localeCompare(q.entity.name));
   }
 
   stats(): KnowledgeStats {

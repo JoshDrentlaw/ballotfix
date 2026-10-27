@@ -233,6 +233,8 @@ export interface RaceDossier {
   generated_at: string;
   /** Notes on names in the facts (src/context.ts). Absent until that step has run. */
   context?: ContextResult;
+  /** Contributions from campaign finance filings (src/finance.ts). Absent until that step has run. */
+  finance?: FinanceResult;
 }
 
 /** One ballot measure to research. */
@@ -277,6 +279,8 @@ export interface MeasureDossier {
   generated_at: string;
   /** Notes on names in the facts (src/context.ts). Absent until that step has run. */
   context?: ContextResult;
+  /** Contributions from campaign finance filings (src/finance.ts). Absent until that step has run. */
+  finance?: FinanceResult;
 }
 
 /** One section's verified facts, as the merge step shows them to a model. */
@@ -370,6 +374,182 @@ export interface ContextResult {
   not_needed?: string[];
   model: string | null;
   /** Why the call failed, when it did; every name found is then in not_looked_up. */
+  error?: string;
+}
+
+/**
+ * Whose money the finance step looks up: a candidate's own committees, or the
+ * committees supporting or opposing a measure. The same instruction for each.
+ */
+export interface FinanceSubject {
+  id: string;
+  /** The candidate's name, or the measure's label for both sides. */
+  name: string;
+  role: "candidate" | "support" | "oppose";
+}
+
+export interface FinanceRequest {
+  /** City or jurisdiction and state, e.g. "Fontana, CA". */
+  place: string;
+  /** The office, or the measure's label and question. */
+  contest: string;
+  electionDate: string;
+  /** In ballot order; for a measure, support then oppose. */
+  subjects: FinanceSubject[];
+  /** Most contributions asked for per subject: the same for every subject. */
+  perSubject: number;
+}
+
+/** One itemized contribution as the model read it off a filing, before checks. */
+export interface RawContribution {
+  /** The committee that filed the report, as the filing names it. */
+  filer: string;
+  contributor: string;
+  /** individual, organization, or unknown, from the record's contributor code. */
+  contributor_type: string;
+  occupation: string;
+  employer: string;
+  amount: string;
+  date: string;
+  filing_period: string;
+  /** Which report and schedule, e.g. "Form 460, Schedule A". */
+  filing: string;
+  source_name: string;
+  source_url: string;
+}
+
+/** A total as the filing's summary page records it, before checks. */
+export interface RawFinanceTotal {
+  filer: string;
+  /** The line's own label, e.g. "Total contributions received, calendar year to date". */
+  label: string;
+  amount: string;
+  filing_period: string;
+  source_name: string;
+  source_url: string;
+}
+
+export interface RawFinanceSubject {
+  id: string;
+  committees: string[];
+  searched: string[];
+  gap_note: string;
+  /** What the filings list beyond what was returned, in the record's terms. */
+  not_listed: string;
+  totals: RawFinanceTotal[];
+  contributions: RawContribution[];
+}
+
+/** A filing portal the call couldn't read, and why. */
+export interface RawPortalGap {
+  portal: string;
+  url: string;
+  problem: string;
+  note: string;
+}
+
+export interface RawFinanceResult {
+  subjects: RawFinanceSubject[];
+  portal_gaps: RawPortalGap[];
+  retrieved_urls: string[];
+  model: string;
+}
+
+/**
+ * Reads contributions off campaign finance filings (Form 460 and the like). One
+ * capped call per run; src/finance.ts sets the share and checks everything back.
+ */
+export interface FinanceResearcher {
+  findContributions(request: FinanceRequest): Promise<RawFinanceResult>;
+}
+
+export const CONTRIBUTOR_TYPES = ["individual", "organization", "unknown"] as const;
+export type ContributorType = typeof CONTRIBUTOR_TYPES[number];
+
+/**
+ * One itemized contribution, every field as the record states it. Empty
+ * optional fields are null. Never rounded, summed, or reworded.
+ */
+export interface Contribution {
+  filer: string;
+  contributor: string;
+  contributor_type: ContributorType;
+  occupation: string | null;
+  employer: string | null;
+  amount: string;
+  date: string | null;
+  filing_period: string | null;
+  filing: string | null;
+  source_name: string;
+  source_url: string;
+  /** False when the cited page was never retrieved: never shown as fact. */
+  verified: boolean;
+}
+
+/** A total as recorded on a filing. Only ones on a retrieved page are kept. */
+export interface FinanceTotal {
+  filer: string;
+  label: string;
+  amount: string;
+  filing_period: string | null;
+  source_name: string;
+  source_url: string;
+}
+
+export const PORTAL_PROBLEMS = [
+  "scanned_pdf",
+  "login_required",
+  "javascript_only",
+  "not_found",
+  "other",
+] as const;
+export type PortalProblem = typeof PORTAL_PROBLEMS[number];
+
+export interface PortalGap {
+  portal: string;
+  url: string | null;
+  problem: PortalProblem;
+  note: string;
+}
+
+/** One candidate's (or one side's) money, as the finance step found it. */
+export interface FinanceSubjectResult {
+  /** The candidate's name, or the measure's label. */
+  subject: string;
+  /** For a measure: which side. Absent for a candidate. */
+  side?: "support" | "oppose";
+  /**
+   * For a candidate: their index in the race's candidates. Matched on this,
+   * not the name, so two candidates with one name never share a result.
+   */
+  candidate?: number;
+  /** Committees the call looked at, as named. */
+  committees: string[];
+  totals: FinanceTotal[];
+  /** Verified, kept, at most the run's per-subject share. */
+  contributions: Contribution[];
+  /** Cited a page the call never retrieved. Collapsed on the page, never matched. */
+  unverified: Contribution[];
+  /** Verified contributions over the share, as "contributor, amount": listed, not kept. */
+  left_out: string[];
+  /** What the filings list beyond what came back, in the record's terms. */
+  not_listed: string | null;
+  /** Rows not shown: incomplete, or unverified past the share. */
+  dropped: number;
+  searched: string[];
+  /** Always set when nothing verified was found: say why, never silence. */
+  gap_note: string | null;
+}
+
+/** The finance step's result for one run. Absent on runs it didn't reach. */
+export interface FinanceResult {
+  /** In ballot order; for a measure, support then oppose. */
+  subjects: FinanceSubjectResult[];
+  /** Contributions kept per subject in this run: the same for everyone. */
+  per_subject: number;
+  portal_gaps: PortalGap[];
+  model: string | null;
+  /** Why the call failed, when it did; every subject then carries a gap note. */
   error?: string;
 }
 

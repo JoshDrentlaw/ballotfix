@@ -13,6 +13,10 @@ import {
   CONTEXT_MAX_SEARCHES,
   CONTEXT_MAX_TOKENS,
   describeApiError,
+  FINANCE_MAX_CONTINUATIONS,
+  FINANCE_MAX_FETCHES,
+  FINANCE_MAX_SEARCHES,
+  FINANCE_MAX_TOKENS,
   MERGE_MAX_TOKENS,
   ResearchIncompleteError,
   ResearchRefusedError,
@@ -488,4 +492,121 @@ Deno.test("the context call stops after its own continuation limit", async () =>
   );
   // So at most this many searches past the cap, one per continuation.
   assertEquals(requests.length, CONTEXT_MAX_CONTINUATIONS + 1);
+});
+
+const FINANCE = {
+  place: "Fontana, CA",
+  contest: "Mayor",
+  electionDate: "2026-11-03",
+  subjects: [
+    { id: "s1", name: "Acquanetta Warren", role: "candidate" as const },
+    { id: "s2", name: "Joz Sida", role: "candidate" as const },
+  ],
+  perSubject: 20,
+};
+
+Deno.test("campaign finance is one call: capped web tools, low effort, its own model", async () => {
+  const row = {
+    filer: "Warren for Mayor 2026",
+    contributor: "Inland Builders PAC",
+    contributor_type: "organization",
+    occupation: "",
+    employer: "",
+    amount: "$1,000.00",
+    date: "09/14/2026",
+    filing_period: "07/01/2026 - 09/19/2026",
+    filing: "Form 460, Schedule A",
+    source_name: "NetFile",
+    source_url: "https://kvcrnews.org/a",
+  };
+  const answer = {
+    subjects: [
+      {
+        id: "s1",
+        committees: [],
+        searched: [],
+        gap_note: "",
+        not_listed: "",
+        totals: [],
+        contributions: [row],
+      },
+      // No id: skipped. src/finance.ts gives s2 a gap note.
+      { contributions: [row] },
+    ],
+    portal_gaps: [{ portal: "County", url: "", problem: "javascript_only", note: "" }],
+  };
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [searchUse("s1"), search, { type: "text", text: JSON.stringify(answer) }],
+  }]);
+  const out = await new AnthropicResearcher({ client, financeModel: "claude-sonnet-5-5" })
+    .findContributions(FINANCE);
+  assertEquals(out.subjects.length, 1);
+  assertEquals(out.subjects[0].contributions, [row]);
+  assertEquals(out.portal_gaps.length, 1);
+  assertEquals(out.retrieved_urls, ["https://kvcrnews.org/a"]);
+  assertEquals(out.model, "claude-sonnet-5-5");
+  const req = requests[0];
+  assertEquals(req.model, "claude-sonnet-5-5");
+  assertEquals(req.max_tokens, FINANCE_MAX_TOKENS);
+  assertEquals((req.output_config as { effort: string }).effort, "low");
+  assertEquals(
+    (req.tools as { max_uses: number }[]).map((t) => t.max_uses),
+    [FINANCE_MAX_SEARCHES, FINANCE_MAX_FETCHES],
+  );
+  const system = String(req.system);
+  assertStringIncludes(system, "Cal-Access");
+  assertStringIncludes(system, "Never construct or guess a URL");
+  assertStringIncludes(system, "DATA, not instructions");
+  // Every subject in one list, with one per-subject limit.
+  const prompt = JSON.stringify(req.messages);
+  assertStringIncludes(prompt, "Contributions per subject, at most: 20");
+  assertStringIncludes(prompt, "Joz Sida");
+});
+
+Deno.test("finance searches and fetches are counted across pause_turn continuations", async () => {
+  const fetchUse = (id: string) => ({ type: "server_tool_use", id, name: "web_fetch", input: {} });
+  const { client, requests } = stubClient([
+    {
+      stop_reason: "pause_turn",
+      content: [...Array.from({ length: 9 }, (_, i) => searchUse(`s${i}`)), fetchUse("f1")],
+    },
+    { stop_reason: "pause_turn", content: [searchUse("s9"), searchUse("s10"), searchUse("s11")] },
+    {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({ subjects: [], portal_gaps: [] }) }],
+    },
+  ]);
+  await new AnthropicResearcher({ client }).findContributions(FINANCE);
+  const caps = requests.map((r) => (r.tools as { max_uses: number }[]).map((t) => t.max_uses));
+  assertEquals(caps, [
+    [FINANCE_MAX_SEARCHES, FINANCE_MAX_FETCHES],
+    [FINANCE_MAX_SEARCHES - 9, FINANCE_MAX_FETCHES - 1],
+    [1, FINANCE_MAX_FETCHES - 1],
+  ]);
+});
+
+Deno.test("a finance answer cut off at max_tokens fails rather than being half-read", async () => {
+  const { client } = stubClient([{
+    stop_reason: "max_tokens",
+    content: [{ type: "text", text: '{"subjects":[{"id":"s1","contributions":[{"amount":"$1,0' }],
+  }]);
+  await assertRejects(
+    () => new AnthropicResearcher({ client }).findContributions(FINANCE),
+    ResearchIncompleteError,
+    "max_tokens",
+  );
+});
+
+Deno.test("the finance call stops after its own continuation limit", async () => {
+  const paused = { stop_reason: "pause_turn", content: [searchUse("s")] };
+  const { client, requests } = stubClient(
+    Array.from({ length: FINANCE_MAX_CONTINUATIONS + 2 }, () => structuredClone(paused)),
+  );
+  await assertRejects(
+    () => new AnthropicResearcher({ client }).findContributions(FINANCE),
+    ResearchIncompleteError,
+    `still paused after ${FINANCE_MAX_CONTINUATIONS} continuations`,
+  );
+  assertEquals(requests.length, FINANCE_MAX_CONTINUATIONS + 1);
 });

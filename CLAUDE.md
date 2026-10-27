@@ -130,6 +130,30 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   scoped by state + jurisdiction, with the note as a `context` claim, and every claim whose
   statement names it links to it with role `named`. The steps after a run is done (merge, context)
   run beside the race queue, not in it, so the next race doesn't wait on them.
+- Campaign finance and shared connections (step 4, `src/finance.ts`): after the context step,
+  `JobRunner` makes one capped call per run (`FinanceResearcher.findContributions`: low effort,
+  `BALLOTFIX_FINANCE_MODEL` or the research model, "off" skips it; CLI `--no-finance`), asking for
+  itemized contributions (Form 460/497 on the city's or county's portal, Cal-Access for state
+  committees) for every candidate in ballot order, a failed one too, or for a measure's support and
+  oppose committees. Searches and fetches are counted across continuations
+  (`FINANCE_MAX_SEARCHES`/`FETCHES` + `FINANCE_MAX_CONTINUATIONS`); max_tokens fails the call. Every
+  subject gets the same share (`shareFor`: `MAX_FINANCE_CONTRIBUTIONS` split equally, at most
+  `MAX_CONTRIBUTIONS_PER_SUBJECT`); verified rows over it are listed on the page, not kept. A row is
+  shown only if its URL was retrieved by that call (else collapsed as unverified, never matched);
+  fields stay as the record states them, and a row with a field too long or missing filer,
+  contributor, or amount is dropped and counted, never cut. A subject with nothing gets a gap note;
+  a failed call gives every subject one and records `finance.error`. Unreadable portals are
+  `portal_gaps`, shown as coverage gaps. Matching (`contributorRef`): an organization by the
+  named-entity rule exactly; an individual also needs the same identifying occupation and employer,
+  else it is its own entity; an unknown type is never matched. Near misses ("Smith Development" /
+  "... LLC", same-named retirees) are listed as "possibly the same, kept separate". Jurisdictions
+  compare without a leading "City of" (`jurisdictionKey`). The race and measure pages show each
+  subject's money the same way (alphabetical, totals only as the filing's own lines) and a collapsed
+  "Shared connections" view for every pair (`raceConnections`, `measureConnections`): contributors,
+  and endorsers via verified context notes in `SUPPORT_SECTIONS`. In the graph, a contribution is a
+  `contributed_to` relation with the filing's words as detail and its page in `relation_citations`;
+  a measure's two sides are `side` entities its case for/against are also about;
+  `KnowledgeBase.sharedBetween` answers what two entities share.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at
