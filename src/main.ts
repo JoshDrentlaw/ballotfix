@@ -8,6 +8,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
+import { mergeRace } from "./merge.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
 import { parsePriorities } from "./dossier.ts";
@@ -18,9 +19,11 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
+                    [--no-merge]
   deno task dossier --render <saved.json> [--out out]
 
-Writes <out>/<city>-<office>-<election>.json and .html.
+Writes <out>/<city>-<office>-<election>.json and .html. After research, one low-effort call
+merges facts that several sources report into one (--no-merge skips it).
 Needs ANTHROPIC_API_KEY in the environment or in .env (not needed for --render).`;
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -58,8 +61,16 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help"],
-    default: { state: "CA", office: "Mayor", election: "2026-11-03", out: "out", concurrency: "3" },
+    boolean: ["help", "merge"],
+    negatable: ["merge"],
+    default: {
+      merge: true,
+      state: "CA",
+      office: "Mayor",
+      election: "2026-11-03",
+      out: "out",
+      concurrency: "3",
+    },
   });
   if (args.help) {
     console.log(USAGE);
@@ -110,12 +121,22 @@ async function main(): Promise<number> {
     effort: effort as typeof EFFORTS[number],
   });
 
-  const race = await runRace(query, researcher, {
+  let race = await runRace(query, researcher, {
     candidates: args.candidates ? parseCandidates(args.candidates, args.incumbent) : undefined,
     priorities,
     concurrency,
     onProgress: (m) => console.error(m),
   });
+
+  if (args.merge) {
+    try {
+      const merged = await mergeRace(race, researcher);
+      race = merged.dossier;
+      if (merged.sent) console.error(`Merged ${merged.groups} duplicate claim(s).`);
+    } catch (err) {
+      console.error(`Merging duplicate claims failed; writing them unmerged. ${err}`);
+    }
+  }
 
   const base = slug(`${query.city}-${query.office}-${query.electionDate}`);
   console.log(`Wrote ${await write(args.out, base, race)}`);

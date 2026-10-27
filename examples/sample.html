@@ -47,6 +47,13 @@ p, li { overflow-wrap: anywhere; }
 .ev { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
 .ev-primary_record { color: var(--ev-primary); } .ev-reported { color: var(--ev-reported); }
 .ev-opinion { color: var(--ev-opinion); } .ev-unsourced { color: var(--ev-unsourced); }
+.nsrc { font-size: .78rem; color: var(--muted); }
+.srcs { list-style: none; padding: 0; margin: 2px 0 0; }
+.srcs li { margin: 2px 0; }
+.wording { font-size: .9rem; margin-top: 4px; }
+.wording summary { color: var(--muted); font-size: .85rem; }
+.wording ul { margin: 4px 0 0; padding-left: 20px; }
+.wording .src { color: var(--muted); }
 .gap { font-style: italic; color: var(--muted); margin: 4px 0; }
 .gaps { margin: 0; padding-left: 20px; }
 details.unverified { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -202,10 +209,11 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-reported">Reported</span>
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
+  <span class="ev ev-reported">Reported</span> <span class="nsrc">Reported by 2 sources</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
+  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
+  <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
@@ -224,10 +232,11 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-reported">Reported</span>
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
+  <span class="ev ev-reported">Reported</span> <span class="nsrc">Reported by 2 sources</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</p>
+  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
+  <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
@@ -250,6 +259,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
 
 <footer>
 <p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>
+<p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
 <p>Generated by Ballot Fix using AI-assisted web research (layout-sample). It can be wrong. Check anything that matters to your vote at the linked source.</p>
 </footer>
 </main>

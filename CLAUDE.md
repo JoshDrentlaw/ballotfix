@@ -102,8 +102,16 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   never merged on name alone, and a person whose dossier has an `identity_note` is kept to that run.
   Indexing runs in a savepoint: a failure is logged and never undoes the run's save, and a rebuild
   skips a run it can't index rather than stopping startup. Indexing makes no model or network calls;
-  later steps (merging duplicate claims, context notes for unfamiliar names, campaign finance) add
-  model calls and should each have a cap.
+  later steps (context notes for unfamiliar names, campaign finance) add model calls and should each
+  have a cap.
+- Merging duplicate claims (step 2, `src/merge.ts`): after a run is saved as done, `JobRunner` makes
+  one capped call per run (`ClaimMerger.groupDuplicates`: no web tools, low effort, at most
+  `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or the research model, "off" skips it) and saves
+  again. The model only returns groups of ids; `merge.ts` keeps a group only if it is all verified
+  facts in one section of one candidate or measure, with one evidence type, one fact per outlet. The
+  earliest fact is kept in its own words and the rest go on it as `also`; the page says "Reported by
+  N sources" and the graph stores it as one claim with N citations. A failed merge only logs: the
+  run stays done, unmerged. The CLI does the same unless `--no-merge`.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at

@@ -13,6 +13,8 @@
  *   BALLOTFIX_DATA_DIR  where ballotfix.db is kept (default data): runs, ballot readings,
  *                        the voter's notes and picks, and the knowledge graph
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
+ *   BALLOTFIX_MERGE_MODEL  model for the one low-effort call per finished run that merges
+ *                        duplicate claims (default: the research model); "off" skips it
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
@@ -54,7 +56,13 @@ await ballotStore.markInterrupted(now);
 
 const researcher = () =>
   new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), effort: effort as Effort });
-const jobs = new JobRunner(store, researcher, { log: (m) => console.log(m) });
+const mergeModel = env("BALLOTFIX_MERGE_MODEL");
+const merger = () =>
+  new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), mergeModel, effort: effort as Effort });
+const jobs = new JobRunner(store, researcher, {
+  log: (m) => console.log(m),
+  makeMerger: mergeModel === "off" ? undefined : merger,
+});
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
