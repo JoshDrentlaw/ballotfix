@@ -400,7 +400,7 @@ function moneyHtml(
     s.dropped
       ? `<p class="gap">${s.dropped} more row${
         s.dropped === 1 ? "" : "s"
-      } came back incomplete, or past the limit without a retrieved page, and aren't shown.</p>`
+      } came back incomplete, repeated, or past the limit without a retrieved page, and aren't shown.</p>`
       : "",
     s.committees.length
       ? `<p class="searched">Committees looked at: ${s.committees.map(esc).join("; ")}</p>`
@@ -540,6 +540,7 @@ function dossierSection(
   notes: Notes,
   next?: CandidateDossier,
   finance?: FinanceResult,
+  money?: FinanceSubjectResult,
 ): string {
   const c = d.candidate;
   if (d.status === "pending") {
@@ -562,13 +563,7 @@ function dossierSection(
   ${identity}
   ${prioritiesHtml(d.priorities, "candidate", notes)}
   ${sections}
-  ${
-    moneyHtml(
-      finance,
-      finance?.subjects.find((s) => !s.side && s.subject === c.name),
-      "Contributions on file",
-    )
-  }
+  ${moneyHtml(finance, money, "Contributions on file")}
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
   <p class="back"><a href="#top">Back to all candidates</a>${
     next ? ` · <a href="#${slug(next.candidate.name)}">Next: ${esc(next.candidate.name)}</a>` : ""
@@ -894,7 +889,17 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map(overviewCard).join("")}</ul>
 
-${r.candidates.map((d, i) => dossierSection(d, notes, r.candidates[i + 1], r.finance)).join("")}
+${
+    r.candidates.map((d, i) =>
+      dossierSection(
+        d,
+        notes,
+        r.candidates[i + 1],
+        r.finance,
+        r.finance?.subjects.find((s) => s.candidate === i),
+      )
+    ).join("")
+  }
 ${portalGapsHtml(r.finance)}
 ${
     !r.candidates.length || r.candidates.some((c) => c.status === "pending") ? "" : sharedHtml(

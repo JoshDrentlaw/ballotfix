@@ -518,6 +518,11 @@ export interface FinanceSubjectResult {
   subject: string;
   /** For a measure: which side. Absent for a candidate. */
   side?: "support" | "oppose";
+  /**
+   * For a candidate: their index in the race's candidates. Matched on this,
+   * not the name, so two candidates with one name never share a result.
+   */
+  candidate?: number;
   /** Committees the call looked at, as named. */
   committees: string[];
   totals: FinanceTotal[];

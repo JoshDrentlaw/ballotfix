@@ -13,6 +13,7 @@ import {
   MAX_CONTRIBUTIONS_PER_SUBJECT,
   MAX_FIELD_CHARS,
   MAX_FINANCE_CONTRIBUTIONS,
+  MAX_NOTE_CHARS,
   measureConnections,
   NOTHING_FOUND,
   raceConnections,
@@ -21,6 +22,7 @@ import {
 } from "../src/finance.ts";
 import {
   contributorRef,
+  jurisdictionKey,
   organizationRef,
   personRef,
   projectRace,
@@ -190,8 +192,8 @@ Deno.test("a row stands only on a retrieved page, kept exactly as the record sta
       gift("No Amount", "TBD"),
       gift("", "$10"),
       gift("Too Long", "$10", { filing: long }),
-      // The same row twice counts once.
-      gift("Inland Builders PAC", "$1,000.00"),
+      // The same row twice counts once, and is counted.
+      gift("Inland Builders PAC", "$1,000.00", { contributor_type: "pac?" }),
     ], {
       totals: [
         {
@@ -232,8 +234,8 @@ Deno.test("a row stands only on a retrieved page, kept exactly as the record sta
   assertEquals(c.contributor_type, "unknown");
   assertEquals(s.unverified.map((u) => u.contributor), ["Hidden Donor"]);
   assertEquals(s.totals.map((t) => t.label), ["Total contributions received"]);
-  // Three bad rows, plus the unretrieved total.
-  assertEquals(s.dropped, 4);
+  // Three bad rows, the repeat, and the unretrieved total.
+  assertEquals(s.dropped, 5);
   assertEquals(f.portal_gaps, [{
     portal: "County",
     url: null,
@@ -457,8 +459,8 @@ Deno.test("contributions join the graph as cited relations, and the graph answer
   );
   const p = projectRace(dossier, "run-1");
   const gifts = p.relations.filter((r) => r.relation === "contributed_to");
-  // The unverified row adds nothing; the repeated row on a second page is one row (deduped).
-  assertEquals(gifts.length, 3);
+  // The unverified row adds nothing; a same-looking row on a second page may be a second gift.
+  assertEquals(gifts.length, 4);
   assert(gifts.every((g) => g.citations?.length === 1));
   assertEquals(JSON.parse(gifts[0].detail!).amount, "$1,000");
 
@@ -482,7 +484,7 @@ Deno.test("contributions join the graph as cited relations, and the graph answer
   const shared = kb.sharedBetween(warren.id, sida.id);
   assertEquals(shared.map((x) => x.entity.name), ["Inland Builders PAC"]);
   const [pac] = shared;
-  assertEquals(pac.a.filter((t) => t.kind === "contribution").length, 2);
+  assertEquals(pac.a.filter((t) => t.kind === "contribution").length, 3);
   assertEquals(pac.a.filter((t) => t.kind === "named").length, 1);
   const gave = pac.b.find((t) => t.kind === "contribution")!;
   assert(gave.kind === "contribution");
@@ -491,7 +493,7 @@ Deno.test("contributions join the graph as cited relations, and the graph answer
   assertEquals(kb.sharedBetween(warren.id, third.id), []);
   // Re-saving the run replaces its relations rather than adding to them.
   await s.runs.save({ ...(await s.runs.get("run-1"))!, updated_at: "2026-10-02T00:00:00Z" });
-  assertEquals(kb.sharedBetween(warren.id, sida.id)[0].a.length, 3);
+  assertEquals(kb.sharedBetween(warren.id, sida.id)[0].a.length, 4);
   s.db.close();
 });
 
@@ -576,4 +578,122 @@ Deno.test("the job runner reads filings after context notes, and a failure leave
   assertEquals(kept.race!.context?.error, "context down");
   assert(logs.some((l) => l.includes("campaign finance failed: response hit max_tokens")));
   s.db.close();
+});
+
+const ONE = {
+  labels: [{ subject: "Acquanetta Warren", candidate: 0 }],
+  request: {
+    subjects: [{ id: "s1", name: "Acquanetta Warren", role: "candidate" as const }],
+    perSubject: 5,
+  },
+};
+
+Deno.test("a long explanation is kept, cut and marked, never dropped like a record field", () => {
+  const long = "Placeholder explanation. ".repeat(40);
+  const f = checkFinance(ONE, {
+    subjects: [subject("s1", [], { gap_note: long, not_listed: long })],
+    portal_gaps: [{ portal: "County e-filing", url: "", problem: "javascript_only", note: long }],
+    retrieved_urls: [],
+    model: "fake",
+  });
+  const [s] = f.subjects;
+  assertEquals(s.gap_note!.length, MAX_NOTE_CHARS + 1);
+  assert(s.gap_note!.endsWith("…"));
+  assert(s.not_listed!.endsWith("…"));
+  assertEquals(f.portal_gaps.length, 1);
+  assert(f.portal_gaps[0].note.endsWith("…"));
+});
+
+Deno.test("a row repeated exactly counts once; a retrieved copy of an unretrieved row still stands", () => {
+  const f = checkFinance(ONE, {
+    subjects: [subject("s1", [
+      gift("Inland Builders PAC", "$1,000", { source_url: NEVER }),
+      gift("Inland Builders PAC", "$1,000"),
+      gift("Inland Builders PAC", "$1,000"),
+      // Same day, same amount, another filing: possibly a second check, so kept.
+      gift("Inland Builders PAC", "$1,000", { filing: "Form 497" }),
+    ])],
+    portal_gaps: [],
+    retrieved_urls: [FILING],
+    model: "fake",
+  });
+  const [s] = f.subjects;
+  assertEquals(s.contributions.map((c) => c.filing), ["Form 460, Schedule A", "Form 497"]);
+  assertEquals(s.unverified.length, 1);
+  assertEquals(s.dropped, 1);
+});
+
+Deno.test("placeholder occupations and employers never make two same-named people one", () => {
+  const row = (occupation: string, employer: string) => ({
+    contributor: "John Smith",
+    contributor_type: "individual" as const,
+    occupation,
+    employer,
+  });
+  for (
+    const [o, e] of [
+      ["INFORMATION REQUESTED PER BEST EFFORTS", "INFORMATION REQUESTED PER BEST EFFORTS"],
+      ["Not Applicable", "Not Applicable"],
+      ["Owner", "Self-Employed"],
+      ["N/A", "N/A"],
+      ["Engineer", ""],
+    ]
+  ) {
+    const a = contributorRef("CA", "Fontana", row(o, e), "1")!.key;
+    const b = contributorRef("CA", "Fontana", row(o, e), "2")!.key;
+    assert(a !== b, `${o} / ${e}`);
+  }
+});
+
+Deno.test("near misses are flagged in any word order, and beside an exact match", async () => {
+  const pat = { contributor_type: "individual", occupation: "Engineer", employer: "Acme Co" };
+  const { dossier } = await financeForRace(
+    await race(),
+    researcher({
+      "Acquanetta Warren": [
+        gift("DOE, PAT", "$100", pat),
+        gift("Smith Development", "$500"),
+        gift("Smith Development LLC", "$500"),
+      ],
+      "Joz Sida": [gift("Pat Doe", "$100", pat), gift("Smith Development", "$750")],
+    }),
+  );
+  const [ws] = raceConnections(dossier);
+  assertEquals(ws.shared.map((x) => x.ref.name), ["Smith Development"]);
+  const possible = ws.possible.map((p) => [p.a.sort().join(" / "), p.b.join(" / ")]);
+  assertEquals(possible.sort(), [
+    ["DOE, PAT", "Pat Doe"],
+    ["Smith Development / Smith Development LLC", "Smith Development"],
+  ]);
+});
+
+Deno.test("a county is one place however it is written, and still not its namesake city", () => {
+  assertEquals(jurisdictionKey("County of San Bernardino"), "san bernardino county");
+  assertEquals(jurisdictionKey("San Bernardino County"), "san bernardino county");
+  assert(jurisdictionKey("City of San Bernardino") !== jurisdictionKey("County of San Bernardino"));
+  assertEquals(jurisdictionKey("City & County of San Francisco"), "san francisco");
+  assertEquals(jurisdictionKey("City and County of San Francisco"), "san francisco");
+});
+
+Deno.test("two candidates with one name each keep their own money", async () => {
+  const twins: BallotCandidate[] = [
+    { name: "Maria Garcia", ballot_designation: "Teacher", incumbent: false },
+    { name: "Maria Garcia", ballot_designation: "Nurse", incumbent: false },
+  ];
+  const d = await runRace(QUERY, new FakeResearch(listing(twins), {}), { candidates: twins });
+  const r: FinanceResearcher = {
+    findContributions: (req) =>
+      Promise.resolve({
+        subjects: req.subjects.map((s, i) => subject(s.id, [gift(`Donor ${i}`, "$1")])),
+        portal_gaps: [],
+        retrieved_urls: [FILING],
+        model: "fake",
+      }),
+  };
+  const { dossier } = await financeForRace(d, r);
+  assertEquals(dossier.finance!.subjects.map((s) => s.candidate), [0, 1]);
+  const page = renderRace(dossier);
+  assert(page.indexOf("Donor 0") < page.indexOf("Donor 1"));
+  const [pair] = raceConnections(dossier);
+  assertEquals(pair.shared, []);
 });

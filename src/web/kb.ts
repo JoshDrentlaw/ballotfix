@@ -55,7 +55,7 @@ export interface Link {
 }
 
 /** How an entity is tied to one side of a comparison. */
-export type Tie =
+export type GraphTie =
   | {
     kind: "contribution";
     run_id: string;
@@ -74,8 +74,8 @@ export type Tie =
 /** An entity tied to both sides of a comparison, with every tie and its source. */
 export interface SharedConnection {
   entity: Entity;
-  a: Tie[];
-  b: Tie[];
+  a: GraphTie[];
+  b: GraphTie[];
 }
 
 export interface KnowledgeStats {
@@ -397,66 +397,69 @@ export class KnowledgeBase {
    * contributed to it (contributed_to, with the filing's words and page), and
    * who verified claims about it in SUPPORT_SECTIONS name. Keyed by entity id.
    */
-  tiesOf(entityId: number): Map<number, { entity: Entity; ties: Tie[] }> {
-    const out = new Map<number, { entity: Entity; ties: Tie[] }>();
-    const add = (r: Row, tie: Tie) => {
-      const e = toEntity(r);
-      const got = out.get(e.id) ?? { entity: e, ties: [] };
-      got.ties.push(tie);
-      out.set(e.id, got);
+  tiesOf(entityId: number): Map<number, { entity: Entity; ties: GraphTie[] }> {
+    const out = new Map<number, { entity: Entity; ties: GraphTie[] }>();
+    // One row per tie and citation, in order; consecutive rows of one tie are grouped.
+    let last: { id: string; tie: GraphTie } | null = null;
+    const add = (id: string, r: Row, tie: () => GraphTie) => {
+      if (last?.id !== id) {
+        const e = toEntity(r);
+        const got = out.get(e.id) ?? { entity: e, ties: [] };
+        last = { id, tie: tie() };
+        got.ties.push(last.tie);
+        out.set(e.id, got);
+      }
+      last.tie.citations.push({
+        url: String(r.url),
+        source_name: String(r.source_name),
+        author: strOrNull(r.author),
+        published: strOrNull(r.published),
+      });
     };
-    const cites = (rows: Row[]) =>
-      rows.map((c) => ({
-        url: String(c.url),
-        source_name: String(c.source_name),
-        author: strOrNull(c.author),
-        published: strOrNull(c.published),
-      }));
     for (
       const r of this.db.all(
-        `SELECT rel.id AS rel_id, rel.run_id, rel.detail, e.id, e.kind, e.key, e.name
-         FROM relations rel JOIN entities e ON e.id = rel.subject_id
+        `SELECT rel.id AS tie_id, rel.run_id, rel.detail, e.id, e.kind, e.key, e.name,
+                s.url, rc.source_name, rc.author, rc.published
+         FROM relations rel
+         JOIN entities e ON e.id = rel.subject_id
+         JOIN relation_citations rc ON rc.relation_id = rel.id
+         JOIN sources s ON s.id = rc.source_id
          WHERE rel.relation = 'contributed_to' AND rel.object_id = ?
-         ORDER BY rel.id`,
+         ORDER BY rel.id, s.id`,
         entityId,
       )
     ) {
-      add(r, {
+      add(`r${r.tie_id}`, r, () => ({
         kind: "contribution",
         run_id: String(r.run_id),
         detail: JSON.parse(String(r.detail)) as ContributionDetail,
-        citations: cites(this.db.all(
-          `SELECT s.url, rc.source_name, rc.author, rc.published FROM relation_citations rc
-           JOIN sources s ON s.id = rc.source_id WHERE rc.relation_id = ? ORDER BY s.id`,
-          Number(r.rel_id),
-        )),
-      });
+        citations: [],
+      }));
     }
     const sections = SUPPORT_SECTIONS.map((x) => `'${x}'`).join(", ");
     for (
       const r of this.db.all(
-        `SELECT c.id AS claim_id, c.run_id, c.section, c.statement, e.id, e.kind, e.key, e.name
+        `SELECT c.id AS claim_id, c.run_id, c.section, c.statement, e.id, e.kind, e.key, e.name,
+                s.url, ci.source_name, ci.author, ci.published
          FROM claim_entities about
          JOIN claims c ON c.id = about.claim_id
          JOIN claim_entities n ON n.claim_id = c.id AND n.role = 'named'
          JOIN entities e ON e.id = n.entity_id
+         JOIN citations ci ON ci.claim_id = c.id
+         JOIN sources s ON s.id = ci.source_id
          WHERE about.entity_id = ? AND about.role = 'subject' AND c.verified = 1
            AND c.section IN (${sections})
-         ORDER BY c.id`,
+         ORDER BY c.id, e.id, s.id`,
         entityId,
       )
     ) {
-      add(r, {
+      add(`c${r.claim_id}|${r.id}`, r, () => ({
         kind: "named",
         run_id: String(r.run_id),
         section: String(r.section),
         statement: String(r.statement),
-        citations: cites(this.db.all(
-          `SELECT s.url, ci.source_name, ci.author, ci.published FROM citations ci
-           JOIN sources s ON s.id = ci.source_id WHERE ci.claim_id = ? ORDER BY s.id`,
-          Number(r.claim_id),
-        )),
-      });
+        citations: [],
+      }));
     }
     return out;
   }

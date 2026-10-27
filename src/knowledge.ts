@@ -147,11 +147,14 @@ export function nameKey(s: string): string {
 /**
  * A jurisdiction as part of an identity: "City of Fontana" (how a ballot
  * names who placed a measure) and "Fontana" (how a race names its city) are
- * one place. Only a city's or town's own prefix comes off: "County of San
- * Bernardino" stays apart from the city of San Bernardino.
+ * one place, as are "County of X" and "X County". "County of San Bernardino"
+ * stays apart from the city of San Bernardino.
  */
 export function jurisdictionKey(j: string): string {
-  return nameKey(j).replace(/^(the )?(city and county|city|town|village) of /, "");
+  const k = nameKey(j).replace(/^(the )?(city (and )?county|city|town|village) of /, "");
+  // "County of San Bernardino" is how a ballot names it; "San Bernardino County" a race.
+  const county = k.match(/^county of (.+)$/);
+  return county ? `${county[1]} county` : k;
 }
 
 function ref(kind: EntityKind, name: string, scope: string[]): EntityRef {
@@ -213,25 +216,35 @@ export function noteRef(n: ContextNote, state: string, jurisdiction: string): En
 }
 
 /**
- * What a filing says about an individual's work, when it says nothing that
- * tells two same-named people apart.
+ * What a filing says about an individual's work when it says nothing that
+ * tells two same-named people apart: blanks, placeholders for a missing
+ * answer ("Information requested per best efforts"), and statuses many
+ * people share. Matched on the whole normalized field.
  */
-const NOT_IDENTIFYING = new Set([
-  "",
-  "n a",
-  "na",
-  "none",
-  "not employed",
-  "unemployed",
-  "retired",
-  "self",
-  "self employed",
-  "homemaker",
-  "student",
-  "information requested",
-  "requested",
-  "unknown",
-]);
+const NOT_IDENTIFYING = new RegExp(
+  "^(?:" + [
+    "",
+    "n ?a",
+    "none",
+    "not applicable",
+    "not employed",
+    "unemployed",
+    "retired",
+    "self",
+    "self employed",
+    "self employed owner",
+    "owner",
+    "business owner",
+    "homemaker",
+    "student",
+    "unknown",
+    "refused",
+    "declined",
+    "pending",
+    "(?:information |info )?requested.*",
+    ".*best efforts?.*",
+  ].join("|") + ")$",
+);
 
 /**
  * The entity a contribution's contributor is, or null when the record doesn't
@@ -255,7 +268,7 @@ export function contributorRef(
   if (c.contributor_type !== "individual") return null;
   const person = personRef(state, jurisdiction, c.contributor);
   const work = [c.occupation ?? "", c.employer ?? ""].map(nameKey);
-  const identifies = work.every((w) => !NOT_IDENTIFYING.has(w));
+  const identifies = work.every((w) => !NOT_IDENTIFYING.test(w));
   return {
     ...person,
     key: `${person.key}|donor ${identifies ? work.join("|") : `row ${row}`}`,
@@ -436,8 +449,8 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
   const entities: EntityRef[] = [office, ...ctx.entities];
   const claims: ClaimDraft[] = [...ctx.claims];
   const relations: RelationDraft[] = [];
-  const people = new Map<string, EntityRef>();
-  for (const c of race.candidates) {
+  const people = new Map<number, EntityRef>();
+  for (const [i, c] of race.candidates.entries()) {
     if (c.status === "pending") continue;
     const person = personRef(
       q.state,
@@ -445,7 +458,7 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
       c.candidate.name,
       c.identity_note ? runId : undefined,
     );
-    people.set(c.candidate.name, person);
+    people.set(i, person);
     entities.push(person);
     relations.push({ subject: person.key, relation: "candidate_for", object: office.key, detail });
     if (c.candidate.incumbent) {
@@ -466,7 +479,7 @@ export function projectRace(race: RaceDossier, runId: string): Projection {
     race.finance,
     q.state,
     q.city,
-    (s) => people.get(s.subject) ?? null,
+    (s) => s.candidate === undefined ? null : people.get(s.candidate) ?? null,
     runId,
   );
   return {

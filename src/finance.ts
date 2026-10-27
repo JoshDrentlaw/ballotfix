@@ -65,6 +65,8 @@ export const MAX_CONTRIBUTIONS_PER_SUBJECT = 20;
 export const MAX_TOTALS_PER_SUBJECT = 4;
 /** Longer than any field a filing has: a row with one is dropped, never cut. */
 export const MAX_FIELD_CHARS = 200;
+/** The model's own explanations (gap notes, portal problems) are cut here, marked; not dropped. */
+export const MAX_NOTE_CHARS = 600;
 /** Committees, searches, and portal gaps listed, at most. */
 const MAX_LIST = 10;
 
@@ -81,8 +83,8 @@ export function shareFor(subjects: number): number {
 
 interface Plan {
   request: FinanceRequest;
-  /** Per subject id, the result's label and side. */
-  labels: { subject: string; side?: "support" | "oppose" }[];
+  /** Per subject id, the result's label, and its side or candidate index. */
+  labels: { subject: string; side?: "support" | "oppose"; candidate?: number }[];
 }
 
 /**
@@ -91,10 +93,12 @@ interface Plan {
  */
 function racePlan(race: RaceDossier): Plan {
   const q = race.query;
-  const names = race.candidates.filter((c) => c.status !== "pending").map((c) => c.candidate.name);
-  const subjects: FinanceSubject[] = names.map((name, i) => ({
+  const listed = race.candidates.flatMap((c, candidate) =>
+    c.status === "pending" ? [] : [{ subject: c.candidate.name, candidate }]
+  );
+  const subjects: FinanceSubject[] = listed.map((l, i) => ({
     id: `s${i + 1}`,
-    name,
+    name: l.subject,
     role: "candidate",
   }));
   return {
@@ -105,7 +109,7 @@ function racePlan(race: RaceDossier): Plan {
       subjects,
       perSubject: shareFor(subjects.length),
     },
-    labels: names.map((subject) => ({ subject })),
+    labels: listed,
   };
 }
 
@@ -138,6 +142,12 @@ const TOO_LONG = Symbol("too long");
 function field(v: unknown): string | typeof TOO_LONG {
   const s = typeof v === "string" ? v.trim() : "";
   return s.length > MAX_FIELD_CHARS ? TOO_LONG : s;
+}
+
+/** An explanation, not a record's field: kept, and cut with a mark when long. */
+function note(v: unknown): string {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.length > MAX_NOTE_CHARS ? `${s.slice(0, MAX_NOTE_CHARS)}…` : s;
 }
 
 function list(v: unknown): string[] {
@@ -202,10 +212,24 @@ function toTotal(raw: RawFinanceSubject["totals"][number], retrieved: ReadonlySe
   } satisfies FinanceTotal;
 }
 
-/** The same row twice (one filing quoted twice, or two pages of one report) counts once. */
+/**
+ * A row repeated in the answer, every field and the page alike, counts once
+ * (and is counted as dropped). Two same-looking rows from different pages,
+ * or differing in any field, are both kept: they may be two contributions.
+ */
 function rowKey(c: Contribution): string {
-  return [c.filer, c.contributor, c.amount, c.date ?? "", c.filing_period ?? ""]
-    .map(nameKey).join("|");
+  return JSON.stringify([
+    c.filer,
+    c.contributor,
+    c.contributor_type,
+    c.occupation,
+    c.employer,
+    c.amount,
+    c.date,
+    c.filing_period,
+    c.filing,
+    normalizeUrl(c.source_url),
+  ]);
 }
 
 export const NOTHING_FOUND =
@@ -227,7 +251,10 @@ function checkSubject(
       continue;
     }
     const k = rowKey(c);
-    if (seen.has(k)) continue;
+    if (seen.has(k)) {
+      dropped++;
+      continue;
+    }
     seen.add(k);
     (c.verified ? verified : unverified).push(c);
   }
@@ -240,38 +267,38 @@ function checkSubject(
   // The answer is asked for largest first, so the share keeps the same kind of row for everyone.
   const kept = verified.slice(0, share);
   dropped += Math.max(0, unverified.length - share);
-  const gap = field(raw?.gap_note);
-  const notListed = field(raw?.not_listed);
+  const gap = note(raw?.gap_note);
+  const notListed = note(raw?.not_listed);
   return {
     subject: label.subject,
     ...(label.side ? { side: label.side } : {}),
+    ...(label.candidate !== undefined ? { candidate: label.candidate } : {}),
     committees: list(raw?.committees),
     totals,
     contributions: kept,
     unverified: unverified.slice(0, share),
     left_out: verified.slice(share).map((c) => `${c.contributor}, ${c.amount}`),
-    not_listed: typeof notListed === "string" && notListed ? notListed : null,
+    not_listed: notListed || null,
     dropped,
     searched: list(raw?.searched),
-    gap_note: kept.length ? (typeof gap === "string" && gap ? gap : null) : (
-      typeof gap === "string" && gap ? gap : NOTHING_FOUND
-    ),
+    gap_note: gap || (kept.length ? null : NOTHING_FOUND),
   };
 }
 
 function checkPortalGaps(raw: unknown): PortalGap[] {
   return (Array.isArray(raw) ? raw : []).flatMap((g): PortalGap[] => {
     const o = (g ?? {}) as Record<string, unknown>;
-    const portal = field(o.portal), note = field(o.note), url = field(o.url);
+    // Only the name has to be short; a gap with a long explanation is still a gap.
+    const portal = note(o.portal).slice(0, MAX_FIELD_CHARS), url = field(o.url);
     const problem = field(o.problem);
-    if (typeof portal !== "string" || !portal || typeof note !== "string") return [];
+    if (!portal) return [];
     return [{
       portal,
       url: typeof url === "string" && normalizeUrl(url) !== null ? url : null,
       problem: (PORTAL_PROBLEMS as readonly unknown[]).includes(problem)
         ? problem as PortalProblem
         : "other",
-      note,
+      note: note(o.note),
     }];
   }).slice(0, MAX_LIST);
 }
@@ -405,15 +432,21 @@ const SUFFIXES = new Set(
   political action`).split(/\s+/),
 );
 
-/** For flagging names that may be one entity: never used to match. */
+/**
+ * For flagging names that may be one entity, never for matching: without
+ * corporate suffixes, and in any word order, since filings write
+ * individuals "DOE, JANE" where facts say "Jane Doe".
+ */
 function looseKey(name: string): string {
-  return nameKey(name).split(" ").filter((w) => !SUFFIXES.has(w)).join(" ");
+  return nameKey(name).split(" ").filter((w) => w && !SUFFIXES.has(w)).sort().join(" ");
 }
 
 function party(
   label: string,
   money: FinanceSubjectResult | undefined,
-  // The graph reads support from the same sections, so the page and the graph agree.
+  // The graph (KnowledgeBase.tiesOf) reads support from the same sections and matches by the
+  // same entity keys. It works across runs and doesn't flag near misses; this page view
+  // works from one dossier, so a downloaded page needs no database.
   support: readonly {
     section: typeof SUPPORT_SECTIONS[number];
     result: SectionResult | undefined;
@@ -455,21 +488,27 @@ export function compare(a: Party, b: Party): PairConnections {
     if (y) shared.push({ ref: x.ref, a: x.ties, b: y.ties });
   }
   shared.sort((p, q) => nameKey(p.ref.name).localeCompare(nameKey(q.ref.name)));
+  // Per loose key, every entity (by key) and untyped name each party has under it.
   const loose = (p: Party) => {
-    const m = new Map<string, Set<string>>();
-    const put = (name: string) => {
+    const m = new Map<string, Map<string, string>>();
+    const put = (key: string, name: string) => {
       const k = looseKey(name);
-      if (k) m.set(k, (m.get(k) ?? new Set()).add(name));
+      if (k) m.set(k, (m.get(k) ?? new Map()).set(key, name));
     };
-    for (const [key, x] of p.ties) if (!(a.ties.has(key) && b.ties.has(key))) put(x.ref.name);
-    p.untyped.forEach(put);
+    for (const [key, x] of p.ties) put(key, x.ref.name);
+    // An untyped contributor is never one entity with anything, even a same-named one.
+    p.untyped.forEach((name) => put(`untyped:${p === a ? "a" : "b"}:${name}`, name));
     return m;
   };
   const la = loose(a), lb = loose(b);
   const possible: PossibleMatch[] = [];
-  for (const [k, names] of la) {
-    const other = lb.get(k);
-    if (other) possible.push({ a: [...names], b: [...other] });
+  for (const [k, ea] of la) {
+    const eb = lb.get(k);
+    if (!eb) continue;
+    // A near miss is anything under the key that isn't the very entity the other side has.
+    const unmatched = [...ea.keys()].some((x) => !eb.has(x)) ||
+      [...eb.keys()].some((x) => !ea.has(x));
+    if (unmatched) possible.push({ a: [...ea.values()], b: [...eb.values()] });
   }
   return { a: a.label, b: b.label, shared, possible };
 }
@@ -482,15 +521,14 @@ function pairs(parties: readonly Party[]): PairConnections[] {
 export function raceConnections(race: RaceDossier): PairConnections[] {
   const q = race.query;
   const scope = { state: q.state, jurisdiction: q.city, notes: race.context };
-  const done = race.candidates.filter((c) => c.status !== "pending");
-  return pairs(done.map((c, i) =>
-    party(
+  return pairs(race.candidates.flatMap((c, i) =>
+    c.status === "pending" ? [] : [party(
       c.candidate.name,
-      race.finance?.subjects.find((s) => !s.side && s.subject === c.candidate.name),
+      race.finance?.subjects.find((s) => s.candidate === i),
       c.status === "ok" ? [{ section: "endorsements", result: c.sections.endorsements }] : [],
       scope,
       i,
-    )
+    )]
   ));
 }
 
