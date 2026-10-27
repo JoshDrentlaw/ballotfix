@@ -13,7 +13,9 @@
  *   POST /ballots               upload photos/PDF of a ballot, then redirect to it
  *   GET  /ballots/:id           reading progress, then the contests found, for review
  *   POST /ballots/:id/research  start races and measures the user picked
+ *   GET  /ballots/:id/researched what has research, in ballot order, with the quick read on each
  *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
+ *   POST /ballots/:id/picks     save picks and notes (from the sheet, or the ballot page)
  *   GET  /healthz
  */
 
@@ -31,6 +33,7 @@ import type {
 import { type BallotJobs, type JobRunner, QueueFullError, type SubmitExtras } from "./jobs.ts";
 import {
   ballotPage,
+  type BallotWalk,
   choiceOptions,
   DEFAULT_FORM,
   type FormValues,
@@ -43,6 +46,7 @@ import {
   messagePage,
   type PickItem,
   picksPage,
+  researchedPage,
   runPage,
   withSaved,
 } from "./pages.ts";
@@ -584,6 +588,44 @@ export function ballotChoiceId(ballotId: string, key: string): string {
   return `${ballotId}-${key}`;
 }
 
+type SheetChange = { it: PickItem; p: { picks: string[]; notes: string } };
+
+/**
+ * The picks and notes posted for a ballot's items, validated all together so
+ * an error never half-saves them. Items not on the posted form are left
+ * alone, so a page showing only some of them can't clear the rest.
+ */
+export function parseSheet(
+  items: readonly PickItem[],
+  form: FormData,
+): { ok: true; changes: SheetChange[] } | { ok: false; status: number; error: string } {
+  const changes: SheetChange[] = [];
+  for (const it of items) {
+    const k = `_${it.key}`;
+    if (!form.has(`seen${k}`) && !form.has(`pick${k}`) && !form.has(`notes${k}`)) continue;
+    const p = parseChoice(
+      { options: withSaved(it.options, it.choice?.picks), max: it.max },
+      form,
+      k,
+    );
+    if (!p.ok) return { ok: false, status: 400, error: `${it.heading}: ${p.error}` };
+    const same = (it.choice?.notes ?? "") === p.notes &&
+      JSON.stringify(it.choice?.picks ?? []) === JSON.stringify(p.picks);
+    // Saved elsewhere (a research page, another tab) since this page was loaded:
+    // writing this page's older copy back would undo that.
+    if (!same && field(form, `seen${k}`) !== (it.choice?.updated_at ?? "")) {
+      return {
+        ok: false,
+        status: 409,
+        error:
+          `${it.heading} was changed somewhere else after you opened this page. Nothing was saved; here is the current version, so redo your changes.`,
+      };
+    }
+    if (!same) changes.push({ it, p });
+  }
+  return { ok: true, changes };
+}
+
 export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
   const BASE = (o.basePath ?? "").replace(/\/+$/, "");
   /** Ballot ids whose contests are being started right now. */
@@ -635,6 +677,28 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     }));
   };
 
+  /** A ballot run's place among the ballot's researched items, in ballot order. */
+  const walkFor = async (run: RunRecord): Promise<BallotWalk | undefined> => {
+    const link = run.ballot;
+    const b = link && o.ballots ? await o.ballots.store.get(link.id) : null;
+    if (!b?.reading) return undefined;
+    const r = b.reading;
+    const keys = [
+      ...r.contests.map((_, i) => String(i)),
+      ...measuresOf(r).map((_, i) => measureKey(i)),
+    ].filter((k) => b.started[k]);
+    const at = keys.findIndex((k) => b.started[k] === run.id);
+    const step = (k: string | undefined) =>
+      k ? { href: `${BASE}/races/${b.started[k]}`, label: ballotItem(b, k)?.heading ?? "" } : null;
+    return {
+      href: `${BASE}/ballots/${b.id}/researched#item-${link!.key}`,
+      position: at + 1,
+      total: keys.length,
+      prev: at > 0 ? step(keys[at - 1]) : null,
+      next: at >= 0 ? step(keys[at + 1]) : null,
+    };
+  };
+
   const researchOff = () =>
     html(messagePage("Research is off", "ANTHROPIC_API_KEY isn't set on the server.", BASE), 503);
 
@@ -684,53 +748,49 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
     }
 
-    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/picks)?$/);
+    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/researched|\/picks)?$/);
     if (!m) return null;
     const [, id, suffix] = m;
     const b = isRunId(id) ? await ballots.store.get(id) : null;
     if (!b) {
       return html(messagePage("Not found", "There's no saved ballot at that address.", BASE), 404);
     }
-    const view = () => ({ canResearch: o.canResearch, available: o.jobs.available, base: BASE });
+    const view = async (rec: BallotRecord = b, items?: PickItem[]) => ({
+      canResearch: o.canResearch,
+      available: o.jobs.available,
+      base: BASE,
+      choices: Boolean(o.choices),
+      items: items ?? await pickItems(rec),
+    });
 
-    if (!suffix && req.method === "GET") return html(ballotPage(b, view()));
+    if (!suffix && req.method === "GET") {
+      return html(ballotPage(b, { ...await view(), saved: url.searchParams.has("saved") }));
+    }
+    if (suffix === "/researched" && req.method === "GET") {
+      if (!b.reading) return html(ballotPage(b, await view()));
+      return html(researchedPage(b, await pickItems(b), { base: BASE }));
+    }
     if (suffix === "/picks" && req.method === "GET") {
       return html(picksPage(b, await pickItems(b), BASE, { saved: url.searchParams.has("saved") }));
     }
     if (suffix === "/picks" && req.method === "POST" && o.choices) {
       const form = await req.formData();
       const items = await pickItems(b);
-      // Validate everything before saving anything, so an error never half-saves the sheet.
-      const parsed = [];
-      for (const it of items) {
-        const p = parseChoice(
-          { options: withSaved(it.options, it.choice?.picks), max: it.max },
-          form,
-          `_${it.key}`,
+      // Posted from the ballot page's "Save" button: answer there.
+      const fromBallot = url.searchParams.get("from") === "ballot";
+      const parsed = parseSheet(items, form);
+      if (!parsed.ok) {
+        // On a conflict, show the current version rather than the stale typing.
+        const keep = parsed.status === 409 ? undefined : form;
+        return html(
+          fromBallot
+            ? ballotPage(b, { ...await view(b, items), form: keep, error: parsed.error })
+            : picksPage(b, items, BASE, { error: parsed.error, form: keep }),
+          parsed.status,
         );
-        if (!p.ok) {
-          return html(
-            picksPage(b, items, BASE, { error: `${it.heading}: ${p.error}`, form }),
-            400,
-          );
-        }
-        const same = (it.choice?.notes ?? "") === p.notes &&
-          JSON.stringify(it.choice?.picks ?? []) === JSON.stringify(p.picks);
-        // Saved elsewhere (a research page, another tab) since this sheet was loaded:
-        // writing this sheet's older copy back would undo that.
-        if (!same && field(form, `seen_${it.key}`) !== (it.choice?.updated_at ?? "")) {
-          return html(
-            picksPage(b, items, BASE, {
-              error:
-                `${it.heading} was changed somewhere else after you opened this page. Nothing was saved; here is the current version, so redo your changes.`,
-            }),
-            409,
-          );
-        }
-        if (!same) parsed.push({ it, p });
       }
-      for (const { it, p } of parsed) await saveChoice(o.choices, it.choiceId, p);
-      return redirect(`${BASE}/ballots/${b.id}/picks?saved=1`);
+      for (const { it, p } of parsed.changes) await saveChoice(o.choices, it.choiceId, p);
+      return redirect(`${BASE}/ballots/${b.id}${fromBallot ? "" : "/picks"}?saved=1`);
     }
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
@@ -741,7 +801,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       if (starting.has(b.id)) {
         return html(
           ballotPage(b, {
-            ...view(),
+            ...await view(),
             error: "These contests are already being started. Reload this page in a moment.",
           }),
           409,
@@ -760,8 +820,25 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
             } can be started right now. Choose fewer, then add the rest when those finish.`
             : "Other races are researching right now. Try again when one finishes.";
         }
+        // Picks and notes typed on the same page are saved along with starting research.
+        const items = o.choices ? await pickItems(fresh) : undefined;
+        const sheet = o.choices && items
+          ? parseSheet(items, form)
+          : { ok: true as const, changes: [] };
+        if (!sheet.ok && sheet.status === 409) {
+          // Same as the picks page: show the current version, not the stale typing,
+          // or resubmitting it would overwrite what was saved elsewhere.
+          return html(ballotPage(fresh, { ...await view(fresh, items), error: sheet.error }), 409);
+        }
+        if (!sheet.ok) error ??= sheet.error;
         if (!parsed.ok || error) {
-          return html(ballotPage(fresh, { ...view(), form, error: error ?? undefined }), 400);
+          return html(
+            ballotPage(fresh, { ...await view(fresh, items), form, error: error ?? undefined }),
+            400,
+          );
+        }
+        if (o.choices && sheet.ok) {
+          for (const { it, p } of sheet.changes) await saveChoice(o.choices, it.choiceId, p);
         }
         const started = { ...fresh.started };
         let last = "";
@@ -785,9 +862,11 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           updated = { ...fresh, started, updated_at: new Date().toISOString() };
           await ballots.store.save(updated);
         }
-        if (error) return html(ballotPage(updated, { ...view(), form, error }), 429);
+        if (error) return html(ballotPage(updated, { ...await view(updated), form, error }), 429);
         return redirect(
-          parsed.picks.length === 1 ? `${BASE}/races/${last}` : `${BASE}/ballots/${b.id}`,
+          parsed.picks.length === 1
+            ? `${BASE}/races/${last}`
+            : `${BASE}/ballots/${b.id}/researched`,
         );
       } finally {
         starting.delete(b.id);
@@ -863,6 +942,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         runPage(run, o.canResearch, BASE, {
           choices: Boolean(o.choices),
           choice: await choiceFor(run),
+          walk: await walkFor(run),
           ...extra,
         });
       if (!suffix && req.method === "GET") {

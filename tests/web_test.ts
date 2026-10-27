@@ -444,8 +444,10 @@ Deno.test("an uploaded ballot is read, reviewed, and the picked contest research
   assertEquals(run.race!.listing.source_name, "Your uploaded ballot, edited by you");
 
   const after = await (await app(new Request(`http://app.test${loc}`))).text();
-  assertStringIncludes(after, `href="/races/${run.id}"`);
   assert(!after.includes(`name="pick" value="0"`), "a started contest can't be started twice");
+  // Started items move to their own tab.
+  const researched = await (await app(new Request(`http://app.test${loc}/researched`))).text();
+  assertStringIncludes(researched, `href="/races/${run.id}"`);
 
   // Rerunning keeps the edited-ballot source.
   const rerun = await app(post(`/races/${run.id}/rerun`, {}));
@@ -552,7 +554,7 @@ Deno.test("a queue that fills partway keeps the user's edits and an honest count
   assertStringIncludes(body, "queue is full");
   assertStringIncludes(body, `value="Fontana (corrected)"`);
   assertStringIncludes(body, `name="pick" value="1" checked`);
-  assertStringIncludes(body, "Up to 3 contests or measures can be started right now");
+  assertStringIncludes(body, "up to 3 can start now");
   s.port.release();
   await s.jobs.idle();
 });
@@ -748,7 +750,7 @@ Deno.test("a measure and a judge picked from the ballot are researched, with the
     ["priorities", "housing costs\n\nparks; Parks"],
   ]));
   assertEquals(go.status, 303);
-  assertEquals(go.headers.get("location"), loc);
+  assertEquals(go.headers.get("location"), `${loc}/researched`);
   s.port.release();
   await s.jobs.idle();
 
@@ -788,7 +790,8 @@ Deno.test("a measure and a judge picked from the ballot are researched, with the
   // Both items are marked started, and a rerun keeps the measure and the issues.
   const review = await (await s.app(new Request(`http://app.test${loc}`))).text();
   assert(!review.includes(`name="pick_measure"`));
-  assertStringIncludes(review, `href="/races/${measure.id}"`);
+  const researched = await (await s.app(new Request(`http://app.test${loc}/researched`))).text();
+  assertStringIncludes(researched, `href="/races/${measure.id}"`);
   await s.app(post(`/races/${measure.id}/rerun`, {}));
   await s.jobs.idle();
   const again = (await s.store.list())[0];
@@ -1059,4 +1062,150 @@ Deno.test("a saved pick that is no longer listed survives saving the form", asyn
   assertStringIncludes(page, `value="Joz Sda" checked`);
   await s.app(postForm(`/races/${run.id}/choice`, [["pick", "Joz Sda"], ["notes", "typo?"]]));
   assertEquals((await s.choices.get(`${id}-0`))!.picks, ["Joz Sda"]);
+});
+
+Deno.test("picks can be marked on the ballot page before anything is researched", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  const review = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  // Each card carries the candidates as pick options, with their designations.
+  assertStringIncludes(review, `type="radio" name="pick_0" value="Acquanetta Warren"`);
+  assertStringIncludes(review, `name="pick_m1" value="Yes"`);
+  assertStringIncludes(review, `formaction="/ballots/${id}/picks?from=ballot" formnovalidate`);
+  assertStringIncludes(review, `href="/ballots/${id}/picks"`, "the picks tab is always there");
+
+  const save = await s.app(postForm(`${loc}/picks?from=ballot`, [
+    ["pick", "1"], // A research checkbox: ignored by a save.
+    ["pick_0", "Joz Sida"],
+    ["seen_0", ""],
+    ["notes_0", "Read the debate coverage"],
+    ["pick_m0", ""],
+    ["seen_m0", ""],
+  ]));
+  assertEquals(save.status, 303);
+  assertEquals(save.headers.get("location"), `${loc}?saved=1`);
+  assertEquals((await s.choices.get(`${id}-0`))!.picks, ["Joz Sida"]);
+  assertEquals(await s.store.list(), [], "saving picks starts no research");
+  const after = await (await s.app(new Request(`http://app.test${loc}?saved=1`))).text();
+  assertStringIncludes(after, "Your pick: <strong>Joz Sida</strong>");
+  assertStringIncludes(after, `value="Joz Sida" checked`);
+
+  // An error comes back on the ballot page, keeping what was typed.
+  const bad = await s.app(postForm(`${loc}/picks?from=ballot`, [
+    ["pick_0", "Someone Else"],
+    ["seen_0", (await s.choices.get(`${id}-0`))!.updated_at],
+    ["notes_0", "typed this"],
+  ]));
+  assertEquals(bad.status, 400);
+  const badPage = await bad.text();
+  assertStringIncludes(badPage, "<title>Your ballot</title>");
+  assertStringIncludes(badPage, "typed this");
+});
+
+Deno.test("a page posting only some items leaves the others' picks alone", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  await s.app(postForm(`${loc}/picks`, [["pick_m0", "No"], ["notes_m0", "too vague"]]));
+  await s.app(postForm(`${loc}/picks`, [["pick_0", "Joz Sida"], ["seen_0", ""]]));
+  const m0 = (await s.choices.get(`${id}-m0`))!;
+  assertEquals([m0.picks, m0.notes], [["No"], "too vague"]);
+});
+
+Deno.test("picks typed on the ballot page are saved when research starts", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  const go = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick_1", "Pat Example"],
+    ["seen_1", ""],
+  ]));
+  assertEquals(go.status, 303);
+  assertEquals((await s.choices.get(`${id}-1`))!.picks, ["Pat Example"]);
+
+  // A bad pick refuses the whole post: nothing is started or saved.
+  const bad = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+    ["pick_m0", "Maybe"],
+  ]));
+  assertEquals(bad.status, 400);
+  assertEquals((await s.store.list()).length, 1);
+  assertEquals(await s.choices.get(`${id}-m0`), null);
+
+  // Saved elsewhere since the page loaded: show the saved version, not the stale typing,
+  // so resubmitting can't overwrite it.
+  const stale = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+    ["notes_m0", "typed before"],
+    ["seen_m0", "2000-01-01T00:00:00.000Z"],
+  ]));
+  assertEquals(stale.status, 409);
+  assert(!(await stale.text()).includes("typed before"));
+  assertEquals((await s.store.list()).length, 1);
+  s.port.release();
+  await s.jobs.idle();
+});
+
+Deno.test("researched items get their own tab and can be read one after another", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  const go = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+  ]));
+  assertEquals(go.headers.get("location"), `${loc}/researched`);
+  const running = await (await s.app(new Request(`http://app.test${loc}/researched`))).text();
+  assertStringIncludes(running, `http-equiv="refresh" content="10"`);
+  assertStringIncludes(running, "Researching now");
+  s.port.release();
+  await s.jobs.idle();
+
+  const runs = await s.store.list();
+  const mayor = runs.find((r) => !r.measure)!;
+  const measure = runs.find((r) => r.measure)!;
+  const tab = await (await s.app(new Request(`http://app.test${loc}/researched`))).text();
+  assert(!tab.includes(`http-equiv="refresh"`));
+  assert(tab.indexOf(">Mayor<") < tab.indexOf(">Measure X<"), "ballot order");
+  assertStringIncludes(tab, `href="/races/${mayor.id}#acquanetta-warren"`);
+  assertStringIncludes(tab, "Research failed for this candidate.");
+  assertStringIncludes(tab, `Researched <span class="count">2</span>`);
+  assertStringIncludes(tab, `To research <span class="count">3</span>`);
+
+  // Each research page links to its neighbors in ballot order and back to the tab.
+  const first = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  assertStringIncludes(first, `href="/ballots/${id}/researched#item-0">1 of 2</a>`);
+  assertStringIncludes(first, `class="next" href="/races/${measure.id}"`);
+  assert(!first.includes(`class="prev" href`));
+  const second = await (await s.app(new Request(`http://app.test/races/${measure.id}`))).text();
+  assertStringIncludes(second, `class="prev" href="/races/${mayor.id}"`);
+  assertStringIncludes(second, "2 of 2");
+  // The top bar leads back to the ballot instead of to a new race.
+  assertStringIncludes(second, `<a href="/ballots/${id}/researched#item-m0">Your ballot</a></nav>`);
+  // A race not started from a ballot has no walk.
+  const plain = await s.app(post("/races", {
+    city: "Fontana",
+    state: "CA",
+    office: "Mayor",
+    election: "2026-11-03",
+    candidates: "",
+    incumbent: "",
+  }));
+  await s.jobs.idle();
+  const solo = await (await s.app(new Request(`http://app.test${plain.headers.get("location")}`)))
+    .text();
+  assert(!solo.includes(`class="walk"`));
+  assertStringIncludes(solo, `<a href="/#new">New race</a></nav>`);
 });

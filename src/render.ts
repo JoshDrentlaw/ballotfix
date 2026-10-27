@@ -74,15 +74,20 @@ function factItem(f: Fact): string {
 </li>`;
 }
 
+/** How much of the template a finished candidate's research found sources for. */
+export function coverageLine(d: CandidateDossier): string {
+  return `<p class="cov">Sourced facts found in ${
+    coveredSections(d)
+  } of ${SECTIONS.length} sections.</p>`;
+}
+
 function overviewCard(d: CandidateDossier): string {
   const c = d.candidate;
-  const covered = coveredSections(d);
-  const total = SECTIONS.length;
   const status = d.status === "failed"
     ? `<p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>`
     : d.status === "pending"
     ? `<p class="cov cov-pending">Researching now…</p>`
-    : `<p class="cov">Sourced facts found in ${covered} of ${total} sections.</p>`;
+    : coverageLine(d);
   return `<li class="card">
   <h3><a href="#${slug(c.name)}">${esc(c.name)}</a></h3>
   <p class="desig">${
@@ -156,7 +161,7 @@ function prioritiesHtml(p: readonly PriorityResult[] | undefined, subject: Subje
  * The quick read on the overview: which of the voter's stated views the
  * record conflicts with or matches, conflicts first. Same rule for everyone.
  */
-function stanceSummary(p: readonly PriorityResult[] | undefined, subject: Subject): string {
+export function stanceSummary(p: readonly PriorityResult[] | undefined, subject: Subject): string {
   const of = (st: Stance) => (p ?? []).filter((x) => x.stance === st).map((x) => esc(x.issue));
   const lines: [Stance, string[]][] = [
     ["conflicts", of("conflicts")],
@@ -186,7 +191,7 @@ function gapsAndUnverified(gaps: readonly string[], unverified: readonly Fact[])
   return g + u;
 }
 
-function dossierSection(d: CandidateDossier): string {
+function dossierSection(d: CandidateDossier, next?: CandidateDossier): string {
   const c = d.candidate;
   if (d.status === "pending") {
     return `<article class="dossier pending" id="${slug(c.name)}">
@@ -209,7 +214,9 @@ function dossierSection(d: CandidateDossier): string {
   ${prioritiesHtml(d.priorities, "candidate")}
   ${sections}
   ${gapsAndUnverified(d.gaps, d.unverified)}
-  <p class="back"><a href="#top">Back to all candidates</a></p>
+  <p class="back"><a href="#top">Back to all candidates</a>${
+    next ? ` · <a href="#${slug(next.candidate.name)}">Next: ${esc(next.candidate.name)}</a>` : ""
+  }</p>
 </article>`;
 }
 
@@ -271,13 +278,10 @@ button.secondary, .button.secondary { background: transparent; color: var(--acce
 .mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
 .mine h2 { margin: 0; }
 .mine p { margin: 0; }
-.picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.picks li { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.picks .pick { font-size: 1.1rem; font-weight: 700; margin: 4px 0; }
+.picks .pick { grid-column: 1 / -1; font-size: 1.05rem; font-weight: 700; margin-top: 2px; }
 .picks .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
 .picks .notes { white-space: pre-line; margin: 4px 0 0; }
 .printonly { display: none; }
-.picks fieldset, .picks label { margin-top: 8px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -289,17 +293,71 @@ form.inline { display: inline; margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
 input[type=file] { padding: 10px; }
-.contests { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.contest { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
-.contest p { margin: 0; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
 fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
 fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
-.contest details { display: grid; gap: 10px; }
-.contest details label { margin-top: 10px; }
+.tabs { display: flex; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.tabs a { flex: 1; text-align: center; padding: 10px 4px; border-radius: 9px; text-decoration: none; font-weight: 600; font-size: .92rem; min-height: 44px; }
+.tabs a[aria-current=page] { background: var(--accent); color: var(--accent-fg); }
+.tabs .count { font-weight: 400; opacity: .85; }
+.items, .picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.item, .picks > li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; scroll-margin-top: 12px; }
+.item > details > summary, .picks summary { color: var(--fg); padding: 12px 0; display: grid; grid-template-columns: 1fr auto; column-gap: 8px; list-style: none; }
+.item > details > summary::-webkit-details-marker, .picks summary::-webkit-details-marker { display: none; }
+.item > details > summary::after, .picks summary::after { content: "Show"; grid-column: 2; grid-row: 1; color: var(--accent); font-size: .85rem; font-weight: 600; }
+.item > details[open] > summary::after, .picks details[open] summary::after { content: "Hide"; }
+.item-title { font-weight: 700; grid-column: 1; }
+.item-meta, .item-lean { grid-column: 1 / -1; color: var(--muted); font-size: .88rem; }
+.item-lean strong { color: var(--fg); }
+.item-body { display: grid; gap: 12px; padding: 0 0 12px; }
+.item-body details { display: grid; gap: 10px; }
+.item-body details label { margin-top: 10px; }
+.item label.research { border-top: 1px solid var(--line); }
+.item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-top: 12px; }
+.item > p { margin: 2px 0; }
+.item .actions { margin: 10px 0 12px; flex-wrap: nowrap; }
+.item .actions .button { flex: 1; min-height: 44px; padding: 10px 8px; font-size: .92rem; }
+.who { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.who li { border-top: 1px solid var(--line); padding-top: 6px; }
+.who .desig { font-size: .85rem; }
+.who .stance, .who .cov { font-size: .85rem; margin: 2px 0; }
+form.ballot { background: transparent; border: 0; padding: 0; }
+form.ballot h2 { margin-top: 8px; }
+details.settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; }
+details.settings[open] { padding-bottom: 14px; }
+details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
+details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
+details.settings[open] > div.row { margin-bottom: 14px; }
+details.banner > summary { color: var(--warn-fg); padding: 0; }
+details.banner > p { margin-top: 8px; }
+.item-lean a { display: inline-block; min-height: 44px; padding: 10px 0; text-decoration: none; color: var(--muted); }
+.item .will { display: none; grid-column: 1 / -1; color: var(--accent); font-weight: 600; font-size: .88rem; }
+.item:has(> label.research input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item:has(> label.research input:checked) .will { display: block; }
+.item:has(> label.research input:checked) .will::before { content: "✓ "; }
+/* A live count of what's checked, with no script: counters run in document order, and the bar comes last. */
+form.ballot { counter-reset: checked; }
+label.research input:checked { counter-increment: checked; }
+form.ballot:has(label.research input:checked) .bar button.go::after { content: " (" counter(checked) ")"; }
+.who a.who-name { display: block; min-height: 44px; padding: 10px 0; text-decoration: none; font-weight: 600; }
+.who a.who-name .desig { font-weight: 400; }
+.item-lean .link { color: var(--accent); text-decoration: underline; }
+.picks .pick .label { color: var(--muted); font-weight: 400; font-size: .9rem; }
+.mine form.stack { border: 0; padding: 0; margin: 0; background: transparent; }
+details.note > summary { padding: 0; }
+.bar { position: sticky; bottom: 0; z-index: 1; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 0 12px; margin-top: 4px; display: grid; gap: 6px; }
+.bar-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.bar-buttons button { flex: 1 1 120px; min-height: 44px; padding: 8px 10px; white-space: nowrap; font-size: .95rem; }
+fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 4px; }
+.bar .sub { margin: 0; font-size: .82rem; }
+.walk { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.walk a { display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 6px 10px; text-decoration: none; font-weight: 600; font-size: .9rem; min-width: 0; }
+.walk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.walk .next { justify-content: flex-end; }
+.walk .mid { color: var(--muted); font-weight: 400; }
 .priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
 .stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
@@ -309,7 +367,7 @@ h5 { font-size: 1rem; margin: 16px 0 4px; }
 .stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 /* Last, so it wins over the screen rules above. */
-@media print { nav.top, .actions, .noprint { display: none; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+@media print { nav.top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 `;
 
 export interface PageOptions {
@@ -319,6 +377,8 @@ export interface PageOptions {
   nav?: boolean;
   /** Mount prefix (e.g. "/ballotfix") for the nav's home links. Empty when served at root. */
   base?: string;
+  /** The top bar's right-hand link, already prefixed. Default: "New race". */
+  back?: { href: string; label: string };
 }
 
 /** Full HTML document with a strict CSP: no scripts, no external resources. */
@@ -327,8 +387,11 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
     ? `<meta http-equiv="refresh" content="${Math.max(2, Math.floor(opts.refreshSeconds))}">`
     : "";
   const base = opts.base ?? "";
+  const back = opts.back ?? { href: `${base}/#new`, label: "New race" };
   const nav = opts.nav
-    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${base}/#new">New race</a></nav>`
+    ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${esc(back.href)}">${
+      esc(back.label)
+    }</a></nav>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -389,7 +452,7 @@ export function raceBody(
 
   return `<h1>${esc(raceTitle(r))}</h1>
 <p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
-    esc(r.generated_at.slice(0, 10))
+    esc(readableDate(r.generated_at.slice(0, 10)))
   }</p>
 ${extra.status ?? ""}
 ${extra.actions ?? ""}
@@ -407,7 +470,7 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map(overviewCard).join("")}</ul>
 
-${r.candidates.map(dossierSection).join("")}
+${r.candidates.map((d, i) => dossierSection(d, r.candidates[i + 1])).join("")}
 
 ${extra.mine ?? ""}
 <footer>
@@ -463,7 +526,7 @@ ${gapsAndUnverified(d.gaps, d.unverified)}`;
 
   return `<h1>${esc(measureTitle(q))}</h1>
 <p class="sub">${esc(q.jurisdiction || "Jurisdiction not read")}, ${esc(q.state)} · Researched ${
-    esc(d.generated_at.slice(0, 10))
+    esc(readableDate(d.generated_at.slice(0, 10)))
   }</p>
 ${official}
 ${extra.status ?? ""}

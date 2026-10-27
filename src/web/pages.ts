@@ -2,6 +2,7 @@
 
 import { measuresOf } from "../dossier.ts";
 import {
+  coverageLine,
   esc,
   measureBody,
   measureTitle,
@@ -9,6 +10,8 @@ import {
   raceBody,
   raceTitle,
   readableDate,
+  slug,
+  stanceSummary,
   titleFor,
 } from "../render.ts";
 import { MAX_PRIORITIES, MAX_PRIORITIES_PER_LIST } from "../template.ts";
@@ -72,8 +75,19 @@ function pill(status: RunStatus): string {
   return `<span class="pill pill-${cls}">${STATUS_LABEL[status]}</span>`;
 }
 
+/** "2026-10-27T06:38:00Z" -> "Oct 27, 2026, 6:38 AM UTC". */
 function when(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : `${
+    d.toLocaleString("en-US", {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  } UTC`;
 }
 
 function progress(run: RunRecord): string {
@@ -224,7 +238,58 @@ export interface BallotPageOptions {
   error?: string;
 }
 
-/** The ballot page: reading progress, then the contests found, for review before any research. */
+/** The three views of a read ballot, as tabs at the top of each. */
+type BallotTab = "research" | "researched" | "picks";
+
+function ballotTabs(b: BallotRecord, items: readonly PickItem[], at: BallotTab, base: string) {
+  const r = b.reading;
+  const total = r ? r.contests.length + measuresOf(r).length : 0;
+  const started = Object.keys(b.started).length;
+  const decided = items.filter((x) => x.choice?.picks.length).length;
+  const href = `${base}/ballots/${esc(b.id)}`;
+  const tab = (t: BallotTab, path: string, label: string, count: string) =>
+    `<a href="${href}${path}"${
+      t === at ? ` aria-current="page"` : ""
+    }>${label} <span class="count">${count}</span></a>`;
+  return `<nav class="tabs" aria-label="This ballot">${
+    tab("research", "", "To research", String(total - started))
+  }${tab("researched", "/researched", "Researched", String(started))}${
+    tab("picks", "/picks", "Picks", `${decided} of ${total}`)
+  }</nav>`;
+}
+
+/** "Your pick: <strong>…</strong>", or "" when there's no pick yet. */
+function yourPick(choice: ChoiceRecord | null): string {
+  return choice?.picks.length ? `Your pick: <strong>${esc(choice.picks.join(", "))}</strong>` : "";
+}
+
+function leanLine(choice: ChoiceRecord | null): string {
+  return `<span class="item-lean">${yourPick(choice) || "Undecided"}${
+    choice?.notes ? " · has notes" : ""
+  }</span>`;
+}
+
+export interface BallotPageOptions {
+  canResearch: boolean;
+  /** Races the queue will take right now. */
+  available: number;
+  base?: string;
+  /** The posted review form, when re-rendering it with an error. */
+  form?: FormData;
+  error?: string;
+  /** Every item with the voter's saved pick, for the tab counts and the pick inputs. */
+  items?: PickItem[];
+  /** The app keeps notes and picks, so they can be marked here before any research. */
+  choices?: boolean;
+  /** Just saved picks: say so. */
+  saved?: boolean;
+}
+
+/**
+ * The ballot page: reading progress, then whatever hasn't been researched yet,
+ * one collapsed card per contest or measure, for review before any research.
+ * Each card can also take a pick, for contests the voter already knows about.
+ */
 export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   const base = o.base ?? "";
   const title = "Your ballot";
@@ -251,35 +316,64 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   }
 
   const r = b.reading;
+  const items = o.items ?? [];
+  const byKey = new Map(items.map((x) => [x.key, x]));
   const posted = (name: string, fallback: string) => {
     const v = o.form?.get(name);
     return typeof v === "string" ? v : fallback;
   };
   const picked = new Set(o.form?.getAll("pick").map(String) ?? []);
+  const pickedMeasures = new Set(o.form?.getAll("pick_measure").map(String) ?? []);
+
+  /** The pick and notes for one item, posted with the rest of the form. */
+  const choiceFields = (key: string, describe: Map<string, string> = new Map()) => {
+    const it = byKey.get(key);
+    if (!o.choices || !it) return "";
+    const current = o.form
+      ? o.form.getAll(`pick_${key}`).map(String).filter(Boolean)
+      : it.choice?.picks ?? [];
+    const inputs = it.options.length
+      ? `<fieldset class="plain"><legend>Leaning toward${
+        it.max > 1 ? ` (vote for up to ${it.max})` : ""
+      }</legend><p class="hint">Optional and only for you; change it any time.</p>${
+        choiceInputs(`pick_${key}`, it.options, it.max, current, describe)
+      }</fieldset>`
+      : "";
+    return `${inputs}
+<input type="hidden" name="seen_${esc(key)}" value="${esc(it.choice?.updated_at ?? "")}">
+<label>Notes <textarea name="notes_${esc(key)}" maxlength="${MAX_NOTES}">${
+      esc(posted(`notes_${key}`, it.choice?.notes ?? ""))
+    }</textarea></label>`;
+  };
 
   const contests = r.contests.map((c, i) => {
-    const runId = b.started[String(i)];
+    if (b.started[String(i)]) return "";
     const where = [
       c.jurisdiction,
       c.vote_for ? `vote for ${c.vote_for}` : "",
       `${c.candidates.length} candidate${c.candidates.length === 1 ? "" : "s"}`,
     ].filter(Boolean).map(esc).join(" · ");
-    const names = c.candidates.length
-      ? `<ol class="names">${
+    const describe = new Map(
+      c.candidates.map((p) => [
+        p.name,
+        [p.ballot_designation, p.incumbent ? "incumbent" : ""].filter(Boolean).join(" · "),
+      ]),
+    );
+    const choice = choiceFields(String(i), describe);
+    // Without pick inputs (no picks store), the names are listed on their own.
+    const names = !c.candidates.length
+      ? `<p class="gap">No candidate names could be read for this contest, so it can't be researched from here. You can still name it as one race on the home page.</p>`
+      : o.choices && byKey.get(String(i))?.options.length
+      ? ""
+      : `<ol class="names">${
         c.candidates.map((p) =>
           `<li>${esc(p.name)}${
             p.ballot_designation ? ` <span class="desig">${esc(p.ballot_designation)}</span>` : ""
           }</li>`
         ).join("")
-      }</ol>`
-      : `<p class="gap">No candidate names could be read for this contest.</p>`;
-    const choose = runId
-      ? `<p><a href="${base}/races/${esc(runId)}">Research started: view this race</a></p>`
-      : c.candidates.length
-      ? `<label class="check"><input type="checkbox" name="pick" value="${i}"${
-        picked.has(String(i)) ? " checked" : ""
-      }> Research this contest</label>
-${itemPrioritiesField(String(i), posted(`priorities_${i}`, ""))}
+      }</ol>`;
+    const fixes = c.candidates.length
+      ? `${itemPrioritiesField(String(i), posted(`priorities_${i}`, ""))}
 <details><summary>Fix what was read</summary>
   <label>Office <input name="office_${i}" maxlength="80" value="${
         esc(posted(`office_${i}`, c.office.slice(0, 80)))
@@ -302,15 +396,25 @@ ${itemPrioritiesField(String(i), posted(`priorities_${i}`, ""))}
       }"></label>
 </details>`
       : "";
-    return `<li class="contest"><h3>${
-      esc(c.office)
-    }</h3><p class="desig">${where}</p>${names}${choose}</li>`;
+    const research = c.candidates.length
+      ? `<label class="check research"><input type="checkbox" name="pick" value="${i}"${
+        picked.has(String(i)) ? " checked" : ""
+      }> Research this contest</label>`
+      : "";
+    return itemCard(
+      String(i),
+      esc(c.office),
+      where,
+      byKey.get(String(i))?.choice ?? null,
+      `${names}${choice}${fixes}`,
+      research,
+      false,
+    );
   }).join("");
 
-  const pickedMeasures = new Set(o.form?.getAll("pick_measure").map(String) ?? []);
-  const items = measuresOf(r);
-  const measureItems = items.map((m, i) => {
-    const runId = b.started[`m${i}`];
+  const measures = measuresOf(r);
+  const measureItems = measures.map((m, i) => {
+    if (b.started[`m${i}`]) return "";
     const retention = m.kind === "retention";
     const heading = retention ? m.person || m.label : m.label;
     const where = [m.jurisdiction, retention ? `retention · ${m.label}` : "measure"]
@@ -322,87 +426,233 @@ ${itemPrioritiesField(String(i), posted(`priorities_${i}`, ""))}
       : "";
     // Open the fixes when something research needs wasn't read, so it's seen before submitting.
     const missing = !m.jurisdiction || (retention && !m.person);
-    const choose = runId
-      ? `<p><a href="${base}/races/${esc(runId)}">Research started: view it</a></p>`
-      : `<label class="check"><input type="checkbox" name="pick_measure" value="${i}"${
-        pickedMeasures.has(String(i)) ? " checked" : ""
-      }> ${retention ? "Research this judge" : "Research this measure"}</label>
-${itemPrioritiesField(`m${i}`, posted(`priorities_m${i}`, ""))}
+    const fixes = `${itemPrioritiesField(`m${i}`, posted(`priorities_m${i}`, ""))}
 <details${missing ? " open" : ""}><summary>Fix what was read</summary>
   ${
-        retention
-          ? `<label>Judge's name <input name="mperson_${i}" maxlength="100" value="${
-            esc(posted(`mperson_${i}`, m.person.slice(0, 100)))
-          }"></label>`
-          : ""
-      }
+      retention
+        ? `<label>Judge's name <input name="mperson_${i}" maxlength="100" value="${
+          esc(posted(`mperson_${i}`, m.person.slice(0, 100)))
+        }"></label>`
+        : ""
+    }
   <label>${
-        retention ? "Office" : "Measure letter or number"
-      } <input name="mlabel_${i}" maxlength="80" value="${
-        esc(posted(`mlabel_${i}`, m.label.slice(0, 80)))
-      }"></label>
+      retention ? "Office" : "Measure letter or number"
+    } <input name="mlabel_${i}" maxlength="80" value="${
+      esc(posted(`mlabel_${i}`, m.label.slice(0, 80)))
+    }"></label>
   <label>Placed on the ballot by <span class="hint">City, county, district, or state, e.g. "City of Fontana".</span>
     <input name="mjur_${i}" maxlength="80" value="${
-        esc(posted(`mjur_${i}`, m.jurisdiction.slice(0, 80)))
-      }"></label>
+      esc(posted(`mjur_${i}`, m.jurisdiction.slice(0, 80)))
+    }"></label>
 </details>`;
-    return `<li class="contest"><h3>${
-      esc(heading)
-    }</h3><p class="desig">${where}</p>${question}${choose}</li>`;
+    const research =
+      `<label class="check research"><input type="checkbox" name="pick_measure" value="${i}"${
+        pickedMeasures.has(String(i)) ? " checked" : ""
+      }> ${retention ? "Research this judge" : "Research this measure"}</label>`;
+    return itemCard(
+      `m${i}`,
+      esc(heading),
+      where,
+      byKey.get(`m${i}`)?.choice ?? null,
+      `${question}${choiceFields(`m${i}`)}${fixes}`,
+      research,
+      missing,
+    );
   }).join("");
 
-  const anyLeft = r.contests.some((c, i) => c.candidates.length && !b.started[String(i)]) ||
-    items.some((_, i) => !b.started[`m${i}`]);
+  const canStart = r.contests.some((c, i) => c.candidates.length && !b.started[String(i)]) ||
+    measures.some((_, i) => !b.started[`m${i}`]);
+  const left = r.contests.some((_, i) => !b.started[String(i)]) ||
+    measures.some((_, i) => !b.started[`m${i}`]);
+  const started = Object.keys(b.started).length;
   const error = o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : "";
   const notes = r.notes
-    ? `<p class="note"><strong>Reading notes.</strong> ${esc(r.notes)}</p>`
+    ? `<details><summary>Reading notes</summary><p>${esc(r.notes)}</p></details>`
     : "";
-  const measures = items.length
-    ? `<h2>Measures and yes/no questions</h2>
-<p class="sub">In the order your ballot prints them. A measure gets what it would do, its history, who is behind each side, the money, its cost, and both sides' arguments. A judge on a retention question gets the same dossier as a candidate.</p>
-<ol class="contests">${measureItems}</ol>`
-    : "";
-  const empty = r.contests.length || items.length
+  const check =
+    `They were read by AI from your images and can be wrong. They're in the order your ballot prints them, contests first, then measures.${
+      started ? ` The ${started} already started are under Researched.` : ""
+    }`;
+  // In full until research starts; after that it's been read, so it folds to one line.
+  const banner = !left
+    ? ""
+    : started
+    ? `<details class="banner"><summary><strong>Read by AI: check against your ballot</strong></summary><p>${check}</p>${notes}</details>`
+    : `<div class="banner"><p><strong>Check these against your ballot before researching.</strong> ${check}</p>${notes}</div>`;
+  const empty = r.contests.length || measures.length
     ? ""
     : `<p class="gap">No contests or measures were found on this ballot.</p>`;
-  const submit = anyLeft
-    ? `<div class="row">
-  <label>Election date <input name="election" type="date" required value="${
-      esc(posted("election", r.election_date ?? DEFAULT_FORM.election))
-    }"></label>
-  <label>State <input name="state" required maxlength="2" value="${
-      esc(posted("state", r.state ?? DEFAULT_FORM.state))
-    }"></label>
-</div>
-<button type="submit"${o.canResearch ? "" : " disabled"}>Research what's selected</button>
-<p class="sub">Each candidate or measure costs roughly one to two dollars of API use. ${
-      o.available
-        ? `Up to ${o.available} contest${o.available === 1 ? "" : "s"} or measure${
-          o.available === 1 ? "" : "s"
-        } can be started right now.`
-        : "Other races are researching right now; try again when one finishes."
-    }</p>`
+  const done = !empty && !left
+    ? `<p class="note">Everything on this ballot has been researched or is researching. See <a href="${base}/ballots/${
+      esc(b.id)
+    }/researched">Researched</a>, and mark your picks under <a href="${base}/ballots/${
+      esc(b.id)
+    }/picks">Picks</a>.</p>`
     : "";
 
-  const picksLink = Object.keys(b.started).length
-    ? `<div class="actions"><a class="button" href="${base}/ballots/${
-      esc(b.id)
-    }/picks">Your picks so far</a></div>`
+  const election = posted("election", r.election_date ?? DEFAULT_FORM.election);
+  const state = posted("state", r.state ?? DEFAULT_FORM.state);
+  const ballotIssues = posted("priorities", "");
+  // Open when the date or state wasn't read, so the default isn't used unnoticed.
+  const issueCount = ballotIssues.split(/[\n;]/).filter((x) => x.trim()).length;
+  const settings = canStart
+    ? `<details class="settings"${
+      r.election_date && r.state && !ballotIssues ? "" : " open"
+    }><summary>Research settings <span class="item-meta">${esc(readableDate(election))} · ${
+      esc(state)
+    } · ${
+      issueCount
+        ? `${issueCount} issue${issueCount === 1 ? "" : "s"} for everything`
+        : "no issues named"
+    }</span></summary>
+<div class="row">
+  <label>Election date <input name="election" type="date" value="${esc(election)}"></label>
+  <label>State <input name="state" maxlength="2" value="${esc(state)}"></label>
+</div>
+${prioritiesField(ballotIssues, true)}</details>`
     : "";
+  const bar = left && (canStart || o.choices)
+    ? `<div class="bar">
+<div class="bar-buttons">
+${
+      canStart
+        ? `<button class="go" type="submit"${
+          o.canResearch ? "" : " disabled"
+        }>Research checked</button>`
+        : ""
+    }
+${
+      o.choices
+        ? `<button class="${
+          canStart ? "secondary" : ""
+        }" type="submit" formaction="${base}/ballots/${
+          esc(b.id)
+        }/picks?from=ballot" formnovalidate>Save picks</button>`
+        : ""
+    }
+</div>
+${
+      canStart
+        ? `<p class="sub">About $1 to $2 each · ${
+          o.available ? `up to ${o.available} can start now` : "others are researching; try later"
+        }</p>`
+        : ""
+    }
+</div>`
+    : "";
+
   const body = `<h1>${title}</h1>
 <p class="sub">Read from ${b.pages} uploaded file${b.pages === 1 ? "" : "s"}${
     r.county ? ` · ${esc(r.county)}` : ""
   } · ${esc(when(b.created_at))}</p>
-<div class="banner"><p><strong>Check these against your ballot before researching.</strong> They were read by AI from your images and can be wrong. Contests are in the order your ballot prints them, and candidates in the order printed under each.</p></div>
-${picksLink}
-${notes}${error}${empty}
-<form class="stack" method="post" action="${base}/ballots/${esc(b.id)}/research">
-${anyLeft ? prioritiesField(posted("priorities", ""), true) : ""}
-${r.contests.length ? `<h2>Contests</h2><ol class="contests">${contests}</ol>` : ""}
-${measures}
-${submit}
-</form>`;
+${ballotTabs(b, items, "research", base)}
+${banner}
+${o.saved ? `<p class="note" role="status">Saved.</p>` : ""}
+${left ? "" : notes}${error}${empty}${done}
+${
+    left
+      ? `<form class="stack ballot" method="post" action="${base}/ballots/${esc(b.id)}/research">
+${settings}
+${contests ? `<h2>Contests</h2><ol class="items">${contests}</ol>` : ""}
+${
+        measureItems
+          ? `<h2>Measures and yes/no questions</h2>
+<p class="sub">A measure gets what it would do, its history, who is behind each side, the money, its cost, and both sides' arguments. A judge on a retention question gets the same dossier as a candidate.</p>
+<ol class="items">${measureItems}</ol>`
+          : ""
+      }
+${bar}
+</form>`
+      : ""
+  }`;
   return page(title, body, { nav: true, base });
+}
+
+/** One collapsed contest or measure: name, details, and the voter's pick at a glance. */
+function itemCard(
+  key: string,
+  heading: string,
+  where: string,
+  choice: ChoiceRecord | null,
+  inside: string,
+  outside: string,
+  open: boolean,
+): string {
+  return `<li class="item" id="item-${esc(key)}"><details${open ? " open" : ""}><summary>
+<span class="item-title">${heading}</span><span class="item-meta">${where}</span>${
+    leanLine(choice)
+  }${outside ? `<span class="will" aria-hidden="true">Checked to research</span>` : ""}</summary>
+<div class="item-body">${inside}</div></details>${outside}</li>`;
+}
+
+export interface ResearchedOptions {
+  base?: string;
+}
+
+/**
+ * Everything from a ballot that has research, in ballot order, with the quick
+ * read for each candidate or measure: who conflicts with or matches the
+ * voter's stated views. The same lines the race page's overview shows, side
+ * by side so the whole ballot can be scanned without opening each one.
+ */
+export function researchedPage(b: BallotRecord, items: PickItem[], o: ResearchedOptions = {}) {
+  const base = o.base ?? "";
+  const title = "Researched";
+  const done = items.filter((x) => x.run);
+  const active = done.some((x) => x.run!.status === "queued" || x.run!.status === "running");
+  const list = done.map((x) => {
+    const run = x.run!;
+    const href = `${base}/races/${esc(run.id)}`;
+    let who = "";
+    if (run.measure) {
+      const d = run.measure_result;
+      who = d?.status === "ok" ? stanceSummary(d.priorities, "measure") : "";
+    } else if (run.race) {
+      who = `<ul class="who">${
+        run.race.candidates.map((d) => {
+          const c = d.candidate;
+          const desig = [c.ballot_designation ?? "", c.incumbent ? "Incumbent" : ""]
+            .filter(Boolean).map(esc).join(" · ");
+          const state = d.status === "pending"
+            ? `<p class="cov cov-pending">Researching now…</p>`
+            : d.status === "failed"
+            ? `<p class="cov cov-fail">Research failed for this candidate.</p>`
+            : `${stanceSummary(d.priorities, "candidate")}${coverageLine(d)}`;
+          return `<li><a class="who-name" href="${href}#${slug(c.name)}">${esc(c.name)}${
+            desig ? ` <span class="desig">${desig}</span>` : ""
+          }</a>${state}</li>`;
+        }).join("")
+      }</ul>`;
+    }
+    return `<li class="item" id="item-${esc(x.key)}"><div class="item-head"><h3><a href="${href}">${
+      esc(x.heading)
+    }</a></h3>${pill(run.status)}</div>
+<p class="desig">${esc(x.detail)}</p>
+<p class="item-lean"><a href="${href}#mine">${
+      yourPick(x.choice) || `Undecided · <span class="link">set your pick</span>`
+    }</a></p>
+${who}
+<div class="actions"><a class="button secondary" href="${href}">Open the research</a></div></li>`;
+  }).join("");
+  const asked = done.some((x) => (x.run!.priorities?.length ?? 0) > 0)
+    ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Within each contest every candidate was checked against the same issues, but the issues can differ from one contest or measure to the next. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`
+    : "";
+  const body = `<h1>${title}</h1>
+<p class="sub">From the ballot uploaded ${esc(when(b.created_at))}, in ballot order.</p>
+${ballotTabs(b, items, "researched", base)}
+${
+    active
+      ? `<p class="note" role="status">Some research is still running. This page refreshes itself every 10 seconds.</p>`
+      : ""
+  }
+${
+    done.length
+      ? `${asked}<ol class="items">${list}</ol>`
+      : `<p class="sub">Nothing from this ballot has been researched yet. Check what you want under <a href="${base}/ballots/${
+        esc(b.id)
+      }">To research</a>.</p>`
+  }`;
+  return page(title, body, { nav: true, base, ...(active ? { refreshSeconds: 10 } : {}) });
 }
 
 export const MAX_NOTES = 4000;
@@ -441,19 +691,24 @@ function choiceInputs(
   listed: readonly string[],
   max: number,
   current: readonly string[],
+  describe: ReadonlyMap<string, string> = new Map(),
 ): string {
   const options = withSaved(listed, current);
   const picked = new Set(current);
+  const text = (o: string) => {
+    const d = describe.get(o);
+    return `<span>${esc(o)}${d ? ` <span class="desig">${esc(d)}</span>` : ""}</span>`;
+  };
   return max > 1
     ? options.map((o) =>
       `<label class="check"><input type="checkbox" name="${name}" value="${esc(o)}"${
         picked.has(o) ? " checked" : ""
-      }> ${esc(o)}</label>`
+      }> ${text(o)}</label>`
     ).join("")
     : [...options, ""].map((o) =>
       `<label class="check"><input type="radio" name="${name}" value="${esc(o)}"${
         (o ? picked.has(o) : picked.size === 0) ? " checked" : ""
-      }> ${o ? esc(o) : "Undecided"}</label>`
+      }> ${o ? text(o) : "Undecided"}</label>`
     ).join("");
 }
 
@@ -497,7 +752,7 @@ function choicePanel(
   base: string,
   saved: boolean,
 ): string {
-  const head = `<section class="mine" id="mine"><h2>Your notes and pick</h2>`;
+  const head = `<section class="mine" id="mine"><h2>Your pick and notes</h2>`;
   if (active) {
     return `${head}<p class="sub">You can write notes and a preliminary pick here once research finishes.${
       choice ? ` So far: ${pickText(choice.picks)}.` : ""
@@ -516,7 +771,41 @@ function choicePanel(
   }</section>`;
 }
 
+/** A neighbor in the walk through a ballot's researched items. */
+export interface WalkStep {
+  href: string;
+  label: string;
+}
+
+/** Where a run sits among its ballot's researched items, in ballot order. */
+export interface BallotWalk {
+  /** The ballot's Researched tab. */
+  href: string;
+  /** 1-based, or 0 when this run isn't the ballot's current one for its item (an older run). */
+  position: number;
+  total: number;
+  prev: WalkStep | null;
+  next: WalkStep | null;
+}
+
+/** Previous / back to the ballot / next, so researched items can be read one after another. */
+function walkNav(w: BallotWalk): string {
+  const side = (s: WalkStep | null, cls: string, arrow: string) =>
+    s
+      ? `<a class="${cls}" href="${esc(s.href)}">${cls === "prev" ? `${arrow} ` : ""}<span>${
+        esc(s.label)
+      }</span>${cls === "next" ? ` ${arrow}` : ""}</a>`
+      : `<span class="${cls}"></span>`;
+  return `<nav class="walk" aria-label="Your ballot">${
+    side(w.prev, "prev", "←")
+  }<a class="mid" href="${esc(w.href)}">${
+    w.position ? `${w.position} of ${w.total}` : "Your ballot"
+  }</a>${side(w.next, "next", "→")}</nav>`;
+}
+
 export interface RunPageOptions {
+  /** Started from a ballot: links to the ballot and its other researched items. */
+  walk?: BallotWalk;
   /** The voter's saved notes and pick, when the app keeps them. */
   choice?: ChoiceRecord | null;
   /** Show the notes and pick panel. */
@@ -538,17 +827,18 @@ export function runPage(
     }/rerun"><button class="secondary" type="submit">Research again</button></form>`
     : "";
   const download = (run.measure ? run.measure_result : run.race) && run.status === "done"
-    ? `<a class="button" href="${base}/races/${esc(run.id)}/download">Download page</a>`
+    ? `<a class="button secondary" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
-  const mine = opts.choices
-    ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false)
-    : "";
-  const jump = opts.choices
-    ? `<a class="button secondary" href="#mine">Your notes and pick</a>`
-    : "";
-  const actions = rerun || download || jump
-    ? `<div class="actions">${jump}${download}${rerun}</div>`
-    : "";
+  const walk = opts.walk ? walkNav(opts.walk) : "";
+  const mine = `${
+    opts.choices ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false) : ""
+  }${walk}`;
+  const jump = opts.choices ? `<a class="button" href="#mine">Your pick and notes</a>` : "";
+  // Started from a ballot: the top bar leads back to it rather than to a new race.
+  const back = opts.walk ? { href: opts.walk.href, label: "Your ballot" } : undefined;
+  const actions = `${walk}${
+    rerun || download || jump ? `<div class="actions">${jump}${download}${rerun}</div>` : ""
+  }`;
 
   let status = "";
   if (active) {
@@ -573,12 +863,12 @@ export function runPage(
 ${status || `<p class="sub">No results were saved for this run.</p>`}
 ${actions}
 ${mine}`;
-      return page(title, body, { nav: true, base, ...refresh });
+      return page(title, body, { nav: true, base, back, ...refresh });
     }
     return page(
       measureTitle(run.measure),
       measureBody(run.measure_result, { status, actions, mine, stopped: !active }),
-      { nav: true, base, ...refresh },
+      { nav: true, base, back, ...refresh },
     );
   }
   if (!run.race) {
@@ -592,11 +882,12 @@ ${
     }
 ${actions}
 ${mine}`;
-    return page(title, body, { nav: true, base, ...refresh });
+    return page(title, body, { nav: true, base, back, ...refresh });
   }
   return page(raceTitle(run.race), raceBody(run.race, { status, actions, mine }), {
     nav: true,
     base,
+    back,
     ...refresh,
   });
 }
@@ -631,36 +922,52 @@ export function picksPage(
   const list = items.map((x) => {
     const current = posted(`pick_${x.key}`)?.filter(Boolean) ?? x.choice?.picks ?? [];
     const notesValue = posted(`notes_${x.key}`)?.[0] ?? x.choice?.notes ?? "";
-    const pick = `<p class="pick">${pickText(x.choice?.picks)}</p>`;
     const notes = x.choice?.notes ? `<p class="notes printonly">${esc(x.choice.notes)}</p>` : "";
     const research = x.run
-      ? `<a href="${base}/races/${esc(x.run.id)}">See the research</a>`
-      : "Not researched";
+      ? `${pill(x.run.status)} <a href="${base}/races/${esc(x.run.id)}">See the research</a>`
+      : `Not researched${
+        b.started[x.key]
+          ? ""
+          : ` · <a href="${base}/ballots/${esc(b.id)}#item-${esc(x.key)}">Research it</a>`
+      }`;
     const inputs = x.options.length
       ? `<fieldset class="plain"><legend>Change pick${
         x.max > 1 ? ` (vote for up to ${x.max})` : ""
       }</legend>${choiceInputs(`pick_${x.key}`, x.options, x.max, current)}</fieldset>`
       : "";
-    return `<li><h3>${esc(x.heading)}</h3><p class="desig">${esc(x.detail)}</p>${pick}${notes}
-<div class="noprint">${inputs}
+    // Open the one with an error in it, and any with typing to keep. Browsers post
+    // textarea newlines as CRLF, so compare the way parseChoice saves notes.
+    const typed = notesValue.replace(/\r\n/g, "\n").trim();
+    const open = o.form && (typed !== (x.choice?.notes ?? "") ||
+      JSON.stringify(current) !== JSON.stringify(x.choice?.picks ?? []));
+    return `<li id="item-${esc(x.key)}"><details${
+      open ? " open" : ""
+    }><summary><span class="item-title">${esc(x.heading)}</span><span class="item-meta">${
+      esc(x.detail)
+    }</span><span class="pick">${
+      x.choice?.picks.length ? `<span class="label">Your pick:</span> ` : ""
+    }${pickText(x.choice?.picks)}</span>${
+      x.choice?.notes ? `<span class="item-meta noprint">Has notes</span>` : ""
+    }</summary>
+<div class="noprint item-body">${inputs}
 <input type="hidden" name="seen_${esc(x.key)}" value="${esc(x.choice?.updated_at ?? "")}">
 <label>Notes <textarea name="notes_${esc(x.key)}" maxlength="${MAX_NOTES}">${
       esc(notesValue)
     }</textarea></label>
-<p class="sub">${research}</p></div></li>`;
+<p class="sub">${research}</p></div></details>${notes}</li>`;
   }).join("");
   const body = `<h1>${title}</h1>
 <p class="sub">From the ballot uploaded ${
     esc(when(b.created_at))
   } · ${decided} of ${items.length} decided. Contests in the order your ballot prints them, then measures in theirs; your ballot may mix the two.</p>
-<p class="note noprint">These are your own preliminary picks and notes, saved on this server. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
+<div class="noprint">${ballotTabs(b, items, "picks", base)}</div>
+<p class="note noprint">Your own preliminary picks and notes, researched or not, saved on this server. Tap one to change it. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
 ${o.saved ? `<p class="note noprint" role="status">Saved.</p>` : ""}
 ${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
 <form method="post" action="${base}/ballots/${esc(b.id)}/picks">
 <ol class="picks">${list}</ol>
-<div class="actions noprint"><button type="submit">Save picks and notes</button></div>
-</form>
-<p class="noprint"><a href="${base}/ballots/${esc(b.id)}">Back to your ballot</a></p>`;
+<div class="bar noprint"><button type="submit">Save picks and notes</button></div>
+</form>`;
   return page(title, body, { nav: true, base });
 }
 
