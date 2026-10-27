@@ -101,7 +101,7 @@ function emptySection(gap: string): SectionResult {
   return { facts: [], searched: [], gap_note: gap };
 }
 
-const NOTHING_FOUND = "This run found nothing it could source for this section.";
+export const NOTHING_FOUND = "This run found nothing it could source for this section.";
 
 /**
  * Validates one section and runs the provenance check: facts citing a page

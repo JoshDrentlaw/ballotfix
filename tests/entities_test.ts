@@ -376,6 +376,9 @@ Deno.test("an entity page groups facts, shows every citation and run, and never 
   );
   assertStringIncludes(text, "Nothing in finished research for:");
   assertStringIncludes(text, "Listed as the incumbent in");
+  // Everything here is from one run, so it is named once rather than under each fact.
+  assertStringIncludes(text, "Everything on this page comes from <a");
+  assert(!text.includes(`class="meta from"`));
   // Contributions: alphabetical by contributor, each as filed, no total anywhere.
   // Punctuation aside, as names compare everywhere: "<script>… Holdings" sorts as "script".
   const order = ["Inland Builders PAC", "Lee Roe", "&lt;script&gt;", "Smith Development"]
@@ -468,6 +471,8 @@ Deno.test("a rerun marks older facts; an entity only from a run no longer done d
   );
   const text = (await fetch(`/bf/entities/${warren.slug}`)).text;
   assertStringIncludes(text, `<a href="/bf/races/mayor-2">researched again since</a>`);
+  assertStringIncludes(text, `class="meta from"`);
+  assert(!text.includes("Everything on this page comes from"));
   const slug = get(personRef("CA", "Fontana", "New Person").key).slug;
   assertEquals((await fetch(`/bf/entities/${slug}`)).status, 200);
   await s.runs.save(raceRun("mayor-2", again, "2026-10-10T00:00:00Z", {
@@ -515,13 +520,16 @@ Deno.test("race and measure pages link names into the app; downloads never do", 
   const page = (await fetch("/bf/races/mayor-1")).text;
   assertStringIncludes(
     page,
-    `<h2><a href="/bf/entities/${warren.slug}">Acquanetta Warren</a></h2>`,
+    `<h2><a class="ent" href="/bf/entities/${warren.slug}">Acquanetta Warren</a></h2>`,
   );
-  assertStringIncludes(page, `<span class="named"><a href="/bf/entities/${pac.slug}">`);
-  assertStringIncludes(page, `<li><strong><a href="/bf/entities/${pac.slug}">Inland Builders PAC`);
+  assertStringIncludes(page, `<span class="named"><a class="ent" href="/bf/entities/${pac.slug}">`);
+  assertStringIncludes(
+    page,
+    `<li><strong><a class="ent" href="/bf/entities/${pac.slug}">Inland Builders PAC`,
+  );
   const mp = (await fetch("/bf/races/m-1")).text;
   const yes = get(sideRef(MEASURE, "support").key);
-  assertStringIncludes(mp, `<a href="/bf/entities/${yes.slug}">supporters</a>`);
+  assertStringIncludes(mp, `<a class="ent" href="/bf/entities/${yes.slug}">supporters</a>`);
   assert(get(measureRef(MEASURE).key));
 
   for (const path of ["/bf/races/mayor-1/download", "/bf/races/m-1/download"]) {

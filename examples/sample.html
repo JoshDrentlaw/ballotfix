@@ -10,43 +10,58 @@
 
 <title>Example City Mayor · Nov 3, 2026</title>
 <style>
-:root { --bg:#fbfaf7; --fg:#1d1d1b; --muted:#5d5b55; --line:#e2dfd7; --card:#ffffff;
-  --accent:#28536b; --accent-fg:#ffffff; --warn-bg:#fff4e0; --warn-fg:#6b4300;
-  --ev-primary:#1f6f43; --ev-reported:#28536b; --ev-opinion:#7a4d9c; --ev-unsourced:#8a3b2e; }
+:root {
+  /* Surfaces and text. */
+  --bg:#fbfaf7; --fg:#1d1d1b; --muted:#5d5b55; --line:#e2dfd7; --line-strong:#c9c4b8; --card:#ffffff; --tint:#f3f1ea;
+  --accent:#28536b; --accent-fg:#ffffff;
+  /* Notices: info is the page's standing explanations; warn is reserved for something to act on. */
+  --info-bg:#edf2f5; --warn-bg:#fff4e0; --warn-fg:#6b4300;
+  /* Evidence type: what kind of source backs a fact. Blues, purple, and grey only: red and green mean stance. */
+  --ev-opinion:#6b4592;
+  /* Stance on a voter's issue. */
+  --stance-conflicts:#a3302a; --stance-aligns:#1f6f43; --stance-mixed:#7a5200;
+  /* Job status. */
+  --ok:#1f6f43; --bad:#a3302a;
+  /* Shape. */
+  --r:10px; --r-lg:12px; --sticky:60px; }
 @media (prefers-color-scheme: dark) { :root { --bg:#161614; --fg:#ecebe6; --muted:#a8a69e;
-  --line:#34332f; --card:#1f1f1c; --accent:#8cc0dc; --accent-fg:#10202a; --warn-bg:#3a2c12; --warn-fg:#f3d39b;
-  --ev-primary:#7fd3a3; --ev-reported:#8cc0dc; --ev-opinion:#c9a3e6; --ev-unsourced:#f0a090; } }
+  --line:#34332f; --line-strong:#4a4843; --card:#1f1f1c; --tint:#262622; --accent:#8cc0dc; --accent-fg:#10202a;
+  --info-bg:#1d272d; --warn-bg:#3a2c12; --warn-fg:#f3d39b; --ev-opinion:#c9a3e6;
+  --stance-conflicts:#f0a090; --stance-aligns:#7fd3a3; --stance-mixed:#e8c27a; --ok:#7fd3a3; --bad:#f0a090; } }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 820px; margin: 0 auto; padding: 16px 16px 64px; }
-h1 { font-size: 1.55rem; line-height: 1.25; margin: 8px 0 4px; }
-h2 { font-size: 1.3rem; margin: 0; }
-h3 { font-size: 1.05rem; margin: 0 0 2px; }
-h4 { font-size: 0.9rem; margin: 22px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+h1 { font-size: 1.65rem; line-height: 1.2; margin: 8px 0 4px; }
+h2 { font-size: 1.4rem; line-height: 1.25; margin: 0; }
+h3 { font-size: 1.1rem; margin: 0 0 2px; }
+h4 { font-size: 1.08rem; line-height: 1.3; margin: 22px 0 6px; }
 a { color: var(--accent); }
 p, li { overflow-wrap: anywhere; }
 .sub, .desig, .meta, .searched, .cov { color: var(--muted); }
 .meta, .searched { font-size: .85rem; margin: 2px 0 0; }
-.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; margin: 14px 0; }
+.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: var(--r); padding: 12px 14px; margin: 14px 0; }
 .banner p { margin: 0; }
 .banner details { margin-top: 8px; }
 .banner ul { margin: 6px 0 0; padding-left: 20px; }
 .note { border-left: 3px solid var(--accent); padding: 4px 12px; margin: 12px 0; }
 .cards { list-style: none; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
 .card a { display: block; padding: 2px 0; }
 .card p { margin: 2px 0; font-size: .9rem; }
-.cov-fail { color: var(--ev-unsourced); }
+.cov-fail { color: var(--bad); }
 .cov-pending { font-style: italic; }
 .inc { font-weight: 600; color: var(--fg); }
-.dossier { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 16px; margin: 24px 0; scroll-margin-top: 12px; }
+.dossier { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 16px; margin: 24px 0; }
 .facts { list-style: none; padding: 0; margin: 0; }
-.fact { border-top: 1px solid var(--line); padding: 10px 0; }
+.fact { padding: 10px 0; }
+.fact + .fact { border-top: 1px solid var(--line); }
 .fact p { margin: 4px 0 0; }
-.ev { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
-.ev-primary_record { color: var(--ev-primary); } .ev-reported { color: var(--ev-reported); }
-.ev-opinion { color: var(--ev-opinion); } .ev-unsourced { color: var(--ev-unsourced); }
+/* Evidence chips: told apart by fill and border as well as color. */
+.ev { display: inline-block; font-size: .78rem; font-weight: 600; line-height: 1.45; padding: 0 7px; border-radius: 4px; border: 1px solid currentColor; }
+.ev-primary_record { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.ev-reported { color: var(--accent); } .ev-opinion { color: var(--ev-opinion); }
+.ev-unsourced { color: var(--muted); border-style: dashed; }
 .nsrc { font-size: .78rem; color: var(--muted); }
 .srcs { list-style: none; padding: 0; margin: 2px 0 0; }
 .srcs li { margin: 2px 0; }
@@ -57,21 +72,22 @@ p, li { overflow-wrap: anywhere; }
 .gap { font-style: italic; color: var(--muted); margin: 4px 0; }
 .gaps { margin: 0; padding-left: 20px; }
 details.unverified { margin-top: 18px; border-top: 1px dashed var(--line); padding-top: 10px; }
+details.unverified > summary { font-size: .92rem; }
 summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 .back { margin: 16px 0 0; font-size: .95rem; }
 footer { color: var(--muted); font-size: .85rem; margin-top: 40px; }
 nav.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
 nav.top a { text-decoration: none; font-weight: 700; padding: 8px 0; }
-form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
+form.stack { display: grid; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; margin: 16px 0; }
 label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
 label .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
 input, textarea, select { font: inherit; font-size: 16px; width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
 textarea { min-height: 96px; }
 .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
-button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
+button, .button { font: inherit; font-weight: 700; min-height: 48px; padding: 12px 18px; border-radius: var(--r); border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
 button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-.mine { background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
+.mine { background: var(--card); border: 2px solid var(--accent); border-radius: var(--r-lg); padding: 16px; margin: 24px 0; display: grid; gap: 12px; scroll-margin-top: 12px; }
 .mine h2 { margin: 0; }
 .mine p { margin: 0; }
 .picks .pick { grid-column: 1 / -1; font-size: 1.05rem; font-weight: 700; margin-top: 2px; }
@@ -81,13 +97,13 @@ button.secondary, .button.secondary { background: transparent; color: var(--acce
 button:disabled { opacity: .5; cursor: not-allowed; }
 form.inline { display: inline; margin: 0; }
 .runs { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.runs a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--fg); }
+.runs a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; text-decoration: none; color: var(--fg); }
 .runs .when { color: var(--muted); font-size: .85rem; }
 .pill { display: inline-block; font-size: .75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
-.pill-running { color: var(--ev-reported); } .pill-done { color: var(--ev-primary); }
-.pill-failed, .pill-interrupted { color: var(--ev-unsourced); }
+.pill-running { color: var(--accent); } .pill-done { color: var(--ok); }
+.pill-failed, .pill-interrupted { color: var(--bad); }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
-.error { background: var(--warn-bg); color: var(--warn-fg); border-radius: 10px; padding: 12px 14px; }
+.error { background: var(--warn-bg); color: var(--warn-fg); border-radius: var(--r); padding: 12px 14px; }
 input[type=file] { padding: 10px; }
 .names { margin: 0; padding-left: 22px; }
 .names .desig { font-size: .85rem; }
@@ -95,12 +111,12 @@ fieldset.plain { border: 0; padding: 0; margin: 0; display: grid; gap: 2px; }
 fieldset.plain legend { font-weight: 600; font-size: .95rem; padding: 0; margin-bottom: 4px; }
 label.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
-.tabs { display: flex; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.tabs { display: flex; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
 .tabs a { flex: 1; text-align: center; padding: 10px 4px; border-radius: 9px; text-decoration: none; font-weight: 600; font-size: .92rem; min-height: 44px; }
 .tabs a[aria-current=page] { background: var(--accent); color: var(--accent-fg); }
 .tabs .count { font-weight: 400; opacity: .85; }
 .items, .picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.item, .picks > li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; scroll-margin-top: 12px; }
+.item, .picks > li { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; scroll-margin-top: 12px; }
 .item > details > summary, .picks summary { color: var(--fg); padding: 12px 0; display: grid; grid-template-columns: 1fr auto; column-gap: 8px; list-style: none; }
 .item > details > summary::-webkit-details-marker, .picks summary::-webkit-details-marker { display: none; }
 .item > details > summary::after, .picks summary::after { content: "Show"; grid-column: 2; grid-row: 1; color: var(--accent); font-size: .85rem; font-weight: 600; }
@@ -122,7 +138,7 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .who .stance, .who .cov { font-size: .85rem; margin: 2px 0; }
 form.ballot { background: transparent; border: 0; padding: 0; }
 form.ballot h2 { margin-top: 8px; }
-details.settings { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; }
+details.settings { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; }
 details.settings[open] { padding-bottom: 14px; }
 details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
 details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
@@ -149,18 +165,22 @@ details.note > summary { padding: 0; }
 .bar-buttons button { flex: 1 1 120px; min-height: 44px; padding: 8px 10px; white-space: nowrap; font-size: .95rem; }
 fieldset.plain > .hint { color: var(--muted); font-size: .85rem; margin: -4px 0 4px; }
 .bar .sub { margin: 0; font-size: .82rem; }
-.walk { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.walk { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); }
 .walk a { display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 6px 10px; text-decoration: none; font-weight: 600; font-size: .9rem; min-width: 0; }
 .walk span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .walk .next { justify-content: flex-end; }
 .walk .mid { color: var(--muted); font-weight: 400; }
-.priorities { border: 1px solid var(--line); border-radius: 10px; padding: 0 12px 10px; margin-top: 16px; }
+.priorities { background: var(--tint); border-radius: var(--r); padding: 2px 14px 12px; margin-top: 16px; }
+.priorities > h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 12px 0 0; }
+.priorities .sec { border-top-color: var(--line-strong); }
 h5 { font-size: 1rem; margin: 16px 0 4px; }
 .st { margin: 4px 0 0; }
 details.ctx { display: inline-block; }
 details.ctx[open] { display: inline; }
-details.ctx > summary, .ctx-eg { display: inline-block; list-style: none; font-size: .72rem; font-weight: 700; line-height: 1.5; color: var(--accent); border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; margin: 0 2px 0 4px; vertical-align: 1px; }
-details.ctx > summary { min-width: 32px; text-align: center; }
+details.ctx > summary, .ctx-eg { display: inline-block; list-style: none; font-size: .78rem; font-weight: 700; line-height: 1.5; color: var(--accent); border: 1px solid currentColor; border-radius: 999px; padding: 1px 9px; margin: 0 2px 0 4px; vertical-align: 1px; }
+/* The pill stays small in the sentence; its tap area reaches past it. */
+details.ctx > summary { min-width: 36px; text-align: center; position: relative; }
+details.ctx > summary::after { content: ""; position: absolute; inset: -10px -6px; }
 details.ctx > summary::-webkit-details-marker { display: none; }
 details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg); }
 .ctx-body { display: block; font-size: .9rem; border-left: 3px solid var(--accent); padding: 4px 10px; margin: 6px 0; }
@@ -168,13 +188,13 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .stance { margin: 4px 0; padding: 4px 10px; border-left: 4px solid currentColor; font-size: .95rem; }
 .card .stance { font-size: .85rem; }
 .stance .basis { color: var(--fg); }
-.stance-conflicts { color: var(--ev-unsourced); } .stance-aligns { color: var(--ev-primary); }
-.stance-mixed { color: var(--ev-opinion); } .stance-unclear { color: var(--muted); }
+.stance-conflicts { color: var(--stance-conflicts); } .stance-aligns { color: var(--stance-aligns); }
+.stance-mixed { color: var(--stance-mixed); } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
 .money .sub { font-size: .85rem; margin: 0 0 4px; }
 .totals { list-style: none; padding: 0; margin: 4px 0 8px; }
 .totals li { margin: 2px 0; }
-details.shared { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; margin: 24px 0; }
+details.shared { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 0 16px; margin: 24px 0; }
 details.shared > summary { color: var(--fg); font-weight: 700; padding: 12px 0; }
 details.shared[open] { padding-bottom: 12px; }
 .pair { border-top: 1px solid var(--line); padding-top: 4px; }
@@ -186,8 +206,59 @@ details.shared[open] { padding-bottom: 12px; }
 .ballot-lines, .runs-from { margin: 0; padding-left: 20px; }
 .ballot-lines li, .runs-from li { margin: 6px 0; }
 .from { font-style: italic; }
+/* Links: an entity (a page about a name) is dotted, a citation is quiet, navigation is the accent. */
+a.ent { color: inherit; text-decoration: underline dotted; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.meta a, .searched a { color: var(--muted); text-underline-offset: 2px; padding: 6px 0; }
+.sec { scroll-margin-top: var(--sticky); }
+.dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; }
+.dossier .sec > h4, .dossier .sec > h5 { margin-top: 12px; }
+.dossier > section:first-child { border-top: 0; margin-top: 0; }
+.dossier-head { padding-bottom: 4px; }
+.dossier-head .desig { margin: 2px 0 0; }
+.dossier, #glance, #shared, #mine { scroll-margin-top: var(--sticky); }
+/* A section with nothing found keeps its place and says so, on one compact line. */
+.sec.empty { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.dossier .sec.empty { margin-top: 6px; padding-top: 0; }
+.sec.empty > h4 { font-size: .95rem; font-weight: 600; color: var(--muted); margin: 8px 0 2px; }
+.sec.empty > .gap { font-size: .88rem; margin: 0; }
+.sec.empty > .searched, .sec.empty > .sub, .sec.empty > ul { flex-basis: 100%; }
+.searched { font-size: .8rem; }
+.fact.ref .jumpto { color: var(--accent); font-weight: 600; }
+.banner.info { background: var(--info-bg); color: var(--fg); }
+.banner.info summary { color: var(--muted); }
+.legend { display: grid; grid-template-columns: max-content 1fr; gap: 6px 10px; align-items: baseline; margin: 8px 0; }
+.legend dt, .legend dd { margin: 0; }
+.note details summary { padding: 4px 0 0; font-size: .9rem; }
+.note > p { margin: 0; }
+/* At a glance: candidates across, the template down. Scrolls inside its box, never the page. */
+.glance { margin: 28px 0 8px; }
+.glance .sub { margin: 4px 0 10px; font-size: .9rem; }
+.grid-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); }
+table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-height: 1.3; }
+.grid th, .grid td { padding: 0 6px; border-top: 1px solid var(--line); text-align: center; vertical-align: middle; }
+.grid thead th, .grid thead td { border-top: 0; padding: 10px 4px 8px; vertical-align: bottom; font-size: .82rem; min-width: 64px; overflow-wrap: break-word; }
+.grid thead a { text-decoration: none; font-weight: 700; }
+.grid tbody th { text-align: left; font-weight: 500; font-size: .84rem; position: sticky; left: 0; background: var(--card); width: 30%; min-width: 104px; padding: 6px 6px 6px 10px; }
+.grid td a { display: block; min-height: 36px; line-height: 36px; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
+.grid td.none { color: var(--muted); font-size: .82rem; }
+.grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }
+.inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The jump bar stays at the top while reading the dossiers. */
+nav.jump { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 16px -16px 0; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav.jump a { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); text-decoration: none; font-weight: 600; font-size: .88rem; white-space: nowrap; }
+/* Contributions: one table per filing, amounts lined up. */
+.gift-group { margin: 12px 0; }
+.gift-group > .meta { margin: 0 0 2px; }
+table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-variant-numeric: tabular-nums; }
+.gifts th, .gifts td { text-align: left; vertical-align: top; padding: 8px 8px 8px 0; border-top: 1px solid var(--line); }
+.gifts thead th { border-top: 0; padding-bottom: 4px; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.gifts tbody th { font-weight: 600; }
+.gifts .desig { display: block; font-weight: 400; font-size: .85rem; }
+.gifts .num { text-align: right; white-space: nowrap; }
+.gifts .date { white-space: nowrap; color: var(--muted); padding-right: 0; }
 /* Last, so it wins over the screen rules above. */
-@media print { nav.top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+@media print { nav.top, nav.jump, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 </style>
 </head>
 <body>
@@ -198,9 +269,19 @@ details.shared[open] { padding-bottom: 12px; }
 
 
 
-<div class="banner"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions. Each fact links to where it came from and is tagged by the kind of evidence behind it.</p>
+<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions.</p>
 <details><summary>What this research can't see (5)</summary>
-<ul><li>Phase 0 researches with general web search, plus one capped lookup of campaign finance filings per run. It does not read council minutes or budget documents directly, and filing portals behind a login or JavaScript can&#39;t be read, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details></div>
+<ul><li>Phase 0 researches with general web search, plus one capped lookup of campaign finance filings per run. It does not read council minutes or budget documents directly, and filing portals behind a login or JavaScript can&#39;t be read, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details>
+<details><summary>How to read this page</summary>
+<dl class="legend">
+<dt><span class="ev ev-primary_record">Primary record</span></dt><dd>A government or official document.</dd>
+<dt><span class="ev ev-reported">Reported</span></dt><dd>Journalism describing events.</dd>
+<dt><span class="ev ev-opinion">Opinion / claim</span></dt><dd>Endorsements, editorials, and candidates&#39; own statements.</dd>
+<dt><span class="ev ev-unsourced">Unsourced</span></dt><dd>Asserted without support.</dd>
+</dl>
+<p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
+<p>In the app, a name with a dotted underline opens everything the research holds on it. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on it.</p>
+</details></div>
 
 
 <h2>Candidates</h2>
@@ -223,49 +304,35 @@ details.shared[open] { padding-bottom: 12px; }
   
   <p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>
 </li></ul>
+<section class="glance" id="glance"><h2>At a glance</h2>
+<p class="sub">Sourced facts found in each section, as links into each dossier. A number is how much this run found, not whether it is good or bad.</p>
+<div class="grid-wrap"><table class="grid"><thead><tr><td></td><th scope="col"><a href="#sample-candidate-a">Sample Candidate A</a></th><th scope="col"><a href="#sample-candidate-b">Sample Candidate B</a><span class="inc-mark">Incumbent</span></th><th scope="col"><a href="#sample-candidate-c">Sample Candidate C</a><span class="inc-mark cov-fail">Research failed</span></th></tr></thead><tbody><tr><th scope="row">Who they are</th><td><a href="#sample-candidate-a--background">1</a></td><td><a href="#sample-candidate-b--background">1</a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Record in this office</th><td class="none">n/a</td><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Accomplishments</th><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Criticisms and controversies</th><td><a href="#sample-candidate-a--criticisms">1</a></td><td><a href="#sample-candidate-b--criticisms">1</a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Money and interests</th><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Endorsements and affiliations</th><td><a href="#sample-candidate-a--endorsements">1</a></td><td><a href="#sample-candidate-b--endorsements">1</a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Stated platform</th><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Community impact and local coverage</th><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">nothing found</span></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Contributions on file</th><td><a href="#sample-candidate-a--filed">4</a></td><td><a href="#sample-candidate-b--filed">4</a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr></tbody></table></div></section>
+<nav class="jump" aria-label="On this page"><a href="#glance">Overview</a><a href="#sample-candidate-a">Sample Candidate A</a><a href="#sample-candidate-b">Sample Candidate B</a><a href="#sample-candidate-c">Sample Candidate C</a><a href="#shared">Shared</a></nav>
 
 <article class="dossier" id="sample-candidate-a">
-  <h2>Sample Candidate A</h2>
-  <p class="desig">Small Business Owner</p>
+  <header class="dossier-head"><h2>Sample Candidate A</h2>
+  <p class="desig">Small Business Owner</p></header>
   
   
-  <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
+  <section class="sec" id="sample-candidate-a--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-a--record"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec empty" id="sample-candidate-a--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--criticisms"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
   <span class="ev ev-reported">Reported</span> <span class="nsrc">Reported by 2 sources</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
+  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</li></ul>
   <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
-</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-a--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span>
   <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · 2026-09-02</p>
-</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  <section class="sec money"><h4>Contributions on file</h4>
+  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
+</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-a--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-a--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
+  <section class="sec money" id="sample-candidate-a--filed"><h4>Contributions on file</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
-<ul class="meta totals"><li>Placeholder A for Mayor 2026, Total contributions received, calendar year to date: <strong>$18,450.00</strong> (01/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li></ul><ul class="facts"><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Example Builders PAC</strong>: $1,000.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Lee Placeholder</strong> <span class="desig">(Retired)</span>: $100.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Pat Placeholder</strong> <span class="desig">(Engineer, Example Engineering Co)</span>: $250.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Smith Development</strong>: $500.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li></ul><p class="searched">Committees looked at: Placeholder A for Mayor 2026</p><p class="searched">Looked at: city clerk NetFile portal (placeholder)</p><details class="unverified"><summary>1 contribution not shown because the cited page was never retrieved</summary><p>Treat these as leads to check at the filing portal yourself. They aren't counted as shared connections.</p><ul class="facts"><li class="fact gift">
-  <span class="ev ev-unsourced">Unverified</span>
-  <p><strong>Example Blog Readers</strong>: $50.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/never-opened/filing" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li></ul></details></section>
+<ul class="meta totals"><li>Placeholder A for Mayor 2026, Total contributions received, calendar year to date: <strong>$18,450.00</strong> (01/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li></ul><div class="gift-group"><p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
+<table class="gifts"><thead><tr><th scope="col">Contributor</th><th scope="col" class="num">Amount</th><th scope="col">Date</th></tr></thead><tbody><tr><th scope="row">Example Builders PAC</th><td class="num">$1,000.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Lee Placeholder<span class="desig">Retired</span></th><td class="num">$100.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Pat Placeholder<span class="desig">Engineer, Example Engineering Co</span></th><td class="num">$250.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Smith Development</th><td class="num">$500.00</td><td class="date">09/14/2026</td></tr></tbody></table></div><p class="searched">Committees looked at: Placeholder A for Mayor 2026</p><p class="searched">Looked at: city clerk NetFile portal (placeholder)</p><details class="unverified"><summary>1 contribution not shown because the cited page was never retrieved</summary><p>Treat these as leads to check at the filing portal yourself. They aren't counted as shared connections.</p><div class="gift-group"><p class="meta">To Placeholder A for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/never-opened/filing" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
+<table class="gifts"><thead><tr><th scope="col">Contributor</th><th scope="col" class="num">Amount</th><th scope="col">Date</th></tr></thead><tbody><tr><th scope="row">Example Blog Readers</th><td class="num">$50.00</td><td class="date">09/14/2026</td></tr></tbody></table></div></details></section>
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -273,45 +340,30 @@ details.shared[open] { padding-bottom: 12px; }
   <p>Placeholder: a claim whose cited page was never opened.</p>
   <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
 </li></ul></details>
-  <p class="back"><a href="#top">Back to all candidates</a> · <a href="#sample-candidate-b">Next: Sample Candidate B</a></p>
+  <p class="back"><a href="#glance">Back to the overview</a> · <a href="#sample-candidate-b">Next: Sample Candidate B</a></p>
 </article><article class="dossier" id="sample-candidate-b">
-  <h2>Sample Candidate B</h2>
-  <p class="desig">Mayor · <span class="inc">Incumbent</span></p>
+  <header class="dossier-head"><h2>Sample Candidate B</h2>
+  <p class="desig">Mayor · <span class="inc">Incumbent</span></p></header>
   <p class="note"><strong>Identity check.</strong> Placeholder: another person with this name serves on a county board.</p>
   
-  <section class="sec"><h4>Who they are</h4><ul class="facts"><li class="fact">
+  <section class="sec" id="sample-candidate-b--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <span class="ev ev-primary_record">Primary record</span>
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-b--record"><h4>Record in this office</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--criticisms"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact merged">
   <span class="ev ev-reported">Reported</span> <span class="nsrc">Reported by 2 sources</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · 2021-07-15</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · 2021-07-16</li></ul>
+  <ul class="meta srcs"><li><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</li><li><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</li></ul>
   <details class="wording"><summary>How each source put it</summary><ul><li><span class="src">Example News:</span> Placeholder: the state attorney general sued the city over a warehouse approval.</li><li><span class="src">Example Daily:</span> Placeholder: the city was sued by the state attorney general over the warehouse.</li></ul></details>
-</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
+</li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-b--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span>
   <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · 2026-09-02</p>
-</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">This run found nothing it could source for this section.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">This run found nothing it could source for this section.</p></section>
-  <section class="sec money"><h4>Contributions on file</h4>
+  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
+</li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-b--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
+  <section class="sec money" id="sample-candidate-b--filed"><h4>Contributions on file</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
-<ul class="facts"><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Example Builders PAC</strong>: $2,500.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder B for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Lee Placeholder</strong> <span class="desig">(Retired)</span>: $100.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder B for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Pat Placeholder</strong> <span class="desig">(Engineer, Example Engineering Co)</span>: $100.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder B for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li><li class="fact gift">
-  <span class="ev ev-primary_record">Filing</span>
-  <p><strong>Smith Development LLC</strong>: $750.00 · 09/14/2026</p>
-  <p class="meta">To Placeholder B for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
-</li></ul><p class="gap">The filings list more: Placeholder: the 460 lists 38 more itemized contributions under $100.</p><p class="searched">Committees looked at: Placeholder B for Mayor 2026</p><p class="searched">Looked at: city clerk NetFile portal (placeholder)</p></section>
+<div class="gift-group"><p class="meta">To Placeholder B for Mayor 2026 · 07/01/2026 - 09/19/2026 · Form 460, Schedule A (placeholder) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></p>
+<table class="gifts"><thead><tr><th scope="col">Contributor</th><th scope="col" class="num">Amount</th><th scope="col">Date</th></tr></thead><tbody><tr><th scope="row">Example Builders PAC</th><td class="num">$2,500.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Lee Placeholder<span class="desig">Retired</span></th><td class="num">$100.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Pat Placeholder<span class="desig">Engineer, Example Engineering Co</span></th><td class="num">$100.00</td><td class="date">09/14/2026</td></tr><tr><th scope="row">Smith Development LLC</th><td class="num">$750.00</td><td class="date">09/14/2026</td></tr></tbody></table></div><p class="gap">The filings list more: Placeholder: the 460 lists 38 more itemized contributions under $100.</p><p class="searched">Committees looked at: Placeholder B for Mayor 2026</p><p class="searched">Looked at: city clerk NetFile portal (placeholder)</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
@@ -319,29 +371,27 @@ details.shared[open] { padding-bottom: 12px; }
   <p>Placeholder: a claim whose cited page was never opened.</p>
   <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
 </li></ul></details>
-  <p class="back"><a href="#top">Back to all candidates</a> · <a href="#sample-candidate-c">Next: Sample Candidate C</a></p>
+  <p class="back"><a href="#glance">Back to the overview</a> · <a href="#sample-candidate-c">Next: Sample Candidate C</a></p>
 </article><article class="dossier" id="sample-candidate-c">
-  <h2>Sample Candidate C</h2>
-  <p class="desig">Ballot designation not found</p>
+  <header class="dossier-head"><h2>Sample Candidate C</h2>
+  <p class="desig">Ballot designation not found</p></header>
   
   
-  <section class="sec"><h4>Who they are</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Record in this office</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Accomplishments</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Criticisms and controversies</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Money and interests</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Endorsements and affiliations</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Stated platform</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec"><h4>Community impact and local coverage</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section>
-  <section class="sec money"><h4>Contributions on file</h4>
+  <section class="sec empty" id="sample-candidate-c--background"><h4>Who they are</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--record"><h4>Record in this office</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--accomplishments"><h4>Accomplishments</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--criticisms"><h4>Criticisms and controversies</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--money"><h4>Money and interests</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--endorsements"><h4>Endorsements and affiliations</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--platform"><h4>Stated platform</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section><section class="sec empty" id="sample-candidate-c--community"><h4>Community impact and local coverage</h4><p class="gap">Research for this candidate failed in this run; nothing was checked.</p></section>
+  <section class="sec money" id="sample-candidate-c--filed"><h4>Contributions on file</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
 <p class="gap">Placeholder: no committee for this candidate was found on the portal.</p><p class="searched">Looked at: city clerk NetFile portal (placeholder)</p></section>
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Research failed: placeholder failure</li></ul></section>
-  <p class="back"><a href="#top">Back to all candidates</a></p>
+  <p class="back"><a href="#glance">Back to the overview</a></p>
 </article>
 <section class="sec"><h4>Campaign finance this run couldn't read</h4><ul class="gaps"><li><a href="https://example.org/county/efile" rel="noopener noreferrer nofollow" target="_blank">Example County Registrar e-filing (placeholder)</a>: only works with JavaScript. Placeholder: the search page loads its results with JavaScript.</li></ul></section>
-<details class="shared sec"><summary>Shared connections (1 of 3 pairs shares someone)</summary>
+<details class="shared sec" id="shared"><summary>Shared connections (1 of 3 pairs shares someone)</summary>
 <p>For each pair, the contributors and endorsers both have, each with its source. A contributor counts only from a filing this run retrieved; an endorser only where a fact names someone with a sourced note. They are matched within Example City, CA by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
 <section class="pair"><h5>Sample Candidate A and Sample Candidate B</h5><ul class="shared-list"><li><strong>Example Builders PAC</strong> <span class="desig">organization</span><ul class="ties"><li><span class="who-tag">Sample Candidate A:</span> contribution of $1,000.00, 09/14/2026, to Placeholder A for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate A:</span> named in Endorsements and affiliations: “Placeholder: endorsed by Example Builders PAC and the Example Labor Council Local 99.” · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a></li><li><span class="who-tag">Sample Candidate B:</span> contribution of $2,500.00, 09/14/2026, to Placeholder B for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate B:</span> named in Endorsements and affiliations: “Placeholder: endorsed by Example Builders PAC and the Example Labor Council Local 99.” · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a></li></ul></li><li><strong>Pat Placeholder</strong> <span class="desig">individual</span><ul class="ties"><li><span class="who-tag">Sample Candidate A:</span> contribution of $250.00, 09/14/2026, to Placeholder A for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate B:</span> contribution of $100.00, 09/14/2026, to Placeholder B for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li></ul></li></ul><p class="gap">Possibly the same, kept separate because the names or details don't match exactly: Smith Development (Sample Candidate A) and Smith Development LLC (Sample Candidate B).</p><p class="gap">Possibly the same, kept separate because the names or details don't match exactly: Lee Placeholder (Sample Candidate A) and Lee Placeholder (Sample Candidate B).</p></section><section class="pair"><h5>Sample Candidate A and Sample Candidate C</h5><p class="gap">No shared contributors or endorsers found.</p></section><section class="pair"><h5>Sample Candidate B and Sample Candidate C</h5><p class="gap">No shared contributors or endorsers found.</p></section></details>
 <section class="sec names"><h4>Names in these facts</h4><p>Names were picked out of the facts automatically, so some may be missed. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. Every name was looked up the same way, whichever candidate or side it came up for.</p><details class="unverified"><summary>1 note not shown because the cited page was never retrieved</summary><ul class="facts"><li class="fact"><p><strong>Example Labor Council Local 99:</strong> Placeholder: a council of construction trade unions in Example County.</p><p class="meta"><a href="https://example.org/never-opened/labor" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</p></li></ul></details></section>
 
 
 <footer>
-<p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' own statements. <strong>Unsourced</strong> is asserted without support.</p>
-<p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
 <p>Generated by Ballot Fix using AI-assisted web research (layout-sample). It can be wrong. Check anything that matters to your vote at the linked source.</p>
 </footer>
 </main>
