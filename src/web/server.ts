@@ -20,7 +20,7 @@
  */
 
 import { measuresOf, parsePriorities } from "../dossier.ts";
-import { renderMeasure, renderRace, slug } from "../render.ts";
+import { CSP, renderMeasure, renderRace, slug } from "../render.ts";
 import { MAX_PRIORITIES } from "../template.ts";
 import type {
   BallotCandidate,
@@ -80,7 +80,7 @@ export interface AppOptions {
 }
 
 const SECURITY_HEADERS = {
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+  "content-security-policy": CSP,
   "x-content-type-options": "nosniff",
   // same-origin, not no-referrer: under no-referrer, browsers send "Origin: null" on the
   // app's own form posts. Outbound links already carry rel="noreferrer".

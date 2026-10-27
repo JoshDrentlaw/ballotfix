@@ -1,5 +1,13 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
-import { measureBody, renderMeasure, renderRace, safeHref, slug } from "../src/render.ts";
+import {
+  ICON_SVG,
+  measureBody,
+  page,
+  renderMeasure,
+  renderRace,
+  safeHref,
+  slug,
+} from "../src/render.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
 
@@ -49,7 +57,7 @@ Deno.test("research content is escaped and never becomes markup or script", asyn
   assertStringIncludes(html, "&lt;b&gt;and&lt;/b&gt;");
   assertStringIncludes(
     html,
-    `content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'"`,
+    `content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'"`,
   );
 });
 
@@ -224,4 +232,13 @@ Deno.test("an interrupted measure doesn't claim it is still running", async () =
   const pending = { ...d, status: "pending" as const };
   assertStringIncludes(measureBody(pending, { stopped: true }), "stopped before it finished");
   assertStringIncludes(measureBody(pending), "still running");
+});
+
+Deno.test("the page carries the icon, and static/icon.svg matches the embedded copy", async () => {
+  const file = await Deno.readTextFile(new URL("../static/icon.svg", import.meta.url));
+  assertEquals(file.trimEnd(), ICON_SVG);
+  assertStringIncludes(
+    page("t", ""),
+    `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,`,
+  );
 });
