@@ -99,9 +99,11 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   as the run's save, and answers queries. It is derived data: only `done` runs contribute,
   unverified facts stay `verified = 0`, and bumping `KNOWLEDGE_VERSION` rebuilds it from saved runs
   on start. People are keyed by state + jurisdiction + name, so same-named people elsewhere are
-  never merged on name alone. Indexing makes no model or network calls; later steps (merging
-  duplicate claims, context notes for unfamiliar names, campaign finance) add model calls and should
-  each have a cap.
+  never merged on name alone, and a person whose dossier has an `identity_note` is kept to that run.
+  Indexing runs in a savepoint: a failure is logged and never undoes the run's save, and a rebuild
+  skips a run it can't index rather than stopping startup. Indexing makes no model or network calls;
+  later steps (merging duplicate claims, context notes for unfamiliar names, campaign finance) add
+  model calls and should each have a cap.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
 ## Verifying UI changes

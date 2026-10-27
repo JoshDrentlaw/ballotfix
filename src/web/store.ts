@@ -19,6 +19,11 @@ import type {
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "interrupted";
 
+/**
+ * One research run: a race between candidates, or (when `measure` is set) one
+ * ballot measure. A measure run's `query` holds its jurisdiction as the city
+ * and its label as the office, so listings and ids work the same way.
+ */
 export interface RunRecord {
   id: string;
   query: RaceQuery;
@@ -60,21 +65,48 @@ export function isRunId(id: string): boolean {
 
 type Table = "runs" | "ballots" | "choices";
 
-/** One row per record, its body the record as JSON. Shared by runs, ballots, and choices. */
+/**
+ * One row per record, its body the record as JSON. Shared by runs, ballots,
+ * and choices. Runs and ballots also copy their status into an indexed
+ * column, so the startup checks don't parse every record.
+ */
 class RecordTable<T extends { id: string; created_at: string }> {
-  constructor(readonly db: Db, readonly table: Table) {}
+  constructor(readonly db: Db, readonly table: Table, readonly hasStatus: boolean) {}
 
-  /** Inserts or updates. ON CONFLICT DO UPDATE, never REPLACE, which would delete the row first. */
-  save(record: T): Promise<void> {
-    if (!isRunId(record.id)) return Promise.reject(new Error(`invalid id: ${record.id}`));
-    this.db.run(
-      `INSERT INTO ${this.table} (id, created_at, body) VALUES (?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET body = excluded.body`,
+  /**
+   * The one write path. "update" upserts with ON CONFLICT DO UPDATE, never
+   * REPLACE, which would delete the row (and cascade to its graph rows)
+   * first. "keep" leaves an existing row alone. Returns rows changed.
+   */
+  protected write(record: T, onConflict: "update" | "keep"): number {
+    if (!isRunId(record.id)) throw new Error(`invalid id: ${record.id}`);
+    const st = this.hasStatus;
+    return this.db.run(
+      `INSERT INTO ${this.table} (id, created_at, ${st ? "status, " : ""}body)
+       VALUES (?, ?, ${st ? "?, " : ""}?) ON CONFLICT (id) DO ${
+        onConflict === "keep"
+          ? "NOTHING"
+          : `UPDATE SET ${st ? "status = excluded.status, " : ""}body = excluded.body`
+      }`,
       record.id,
       record.created_at,
+      ...(st ? [String((record as { status?: unknown }).status)] : []),
       JSON.stringify(record),
     );
-    return Promise.resolve();
+  }
+
+  save(record: T): Promise<void> {
+    try {
+      this.write(record, "update");
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
+  /** Adds a record unless one with its id exists. True when it was added. */
+  insertIfAbsent(record: T): boolean {
+    return this.write(record, "keep") > 0;
   }
 
   get(id: string): Promise<T | null> {
@@ -88,6 +120,15 @@ class RecordTable<T extends { id: string; created_at: string }> {
     const rows = this.db.all(`SELECT body FROM ${this.table} ORDER BY created_at DESC, id`);
     return Promise.resolve(rows.map((r) => parse<T>(r.body)).filter((r): r is T => r !== null));
   }
+
+  /** Records whose status column is `status`. Needs hasStatus. */
+  protected withStatus(...statuses: string[]): T[] {
+    const rows = this.db.all(
+      `SELECT body FROM ${this.table} WHERE status IN (${statuses.map(() => "?").join(", ")})`,
+      ...statuses,
+    );
+    return rows.map((r) => parse<T>(r.body)).filter((r): r is T => r !== null);
+  }
 }
 
 function parse<T>(body: unknown): T | null {
@@ -100,31 +141,37 @@ function parse<T>(body: unknown): T | null {
 
 export class RunStore extends RecordTable<RunRecord> {
   readonly knowledge: KnowledgeBase;
+  readonly #log: (msg: string) => void;
 
-  constructor(db: Db) {
-    super(db, "runs");
+  constructor(db: Db, log: (msg: string) => void = () => {}) {
+    super(db, "runs", true);
     this.knowledge = new KnowledgeBase(db);
+    this.#log = log;
   }
 
   /**
    * Saving a run also refreshes what it contributes to the knowledge graph,
-   * in the same transaction. Only a finished run contributes, so the partial
-   * saves made while research is running cost one indexed delete.
+   * in the same transaction (one disk sync). Indexing runs in a savepoint: if
+   * it fails, only the graph's share is undone and logged, never the run,
+   * which is the record of research already paid for. Only a finished run
+   * contributes, so the partial saves made while research runs stay cheap.
    */
   override save(run: RunRecord): Promise<void> {
-    if (!isRunId(run.id)) return Promise.reject(new Error(`invalid id: ${run.id}`));
-    this.db.tx(() => {
-      this.db.run(
-        `INSERT INTO runs (id, created_at, status, body) VALUES (?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET status = excluded.status, body = excluded.body`,
-        run.id,
-        run.created_at,
-        run.status,
-        JSON.stringify(run),
-      );
-      this.knowledge.indexRun(run);
-    });
-    return Promise.resolve();
+    try {
+      this.db.tx(() => {
+        this.write(run, "update");
+        try {
+          this.knowledge.indexRun(run);
+        } catch (err) {
+          this.#log(`Could not add run ${run.id} to the knowledge graph: ${err}`);
+          // Don't leave an earlier version of this run in the graph. A rebuild repairs the rest.
+          this.knowledge.forgetRun(run.id);
+        }
+      });
+      return Promise.resolve();
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }
 
   /**
@@ -133,9 +180,7 @@ export class RunStore extends RecordTable<RunRecord> {
    */
   async markInterrupted(now: string): Promise<number> {
     let n = 0;
-    for (const r of this.db.all("SELECT body FROM runs WHERE status IN ('queued', 'running')")) {
-      const run = parse<RunRecord>(r.body);
-      if (!run) continue;
+    for (const run of this.withStatus("queued", "running")) {
       await this.save({
         ...run,
         status: "interrupted",
@@ -169,13 +214,12 @@ export interface BallotRecord {
 
 export class BallotStore extends RecordTable<BallotRecord> {
   constructor(db: Db) {
-    super(db, "ballots");
+    super(db, "ballots", true);
   }
 
   async markInterrupted(now: string): Promise<number> {
     let n = 0;
-    for (const b of await this.list()) {
-      if (b.status !== "reading") continue;
+    for (const b of this.withStatus("reading")) {
       await this.save({
         ...b,
         status: "interrupted",
@@ -204,7 +248,7 @@ export interface ChoiceRecord {
 
 export class ChoiceStore extends RecordTable<ChoiceRecord> {
   constructor(db: Db) {
-    super(db, "choices");
+    super(db, "choices", false);
   }
 }
 
@@ -231,32 +275,20 @@ export async function openStores(dir: string, opts: OpenOptions = {}): Promise<S
   const db = new Db(`${dir}/ballotfix.db`);
   const stores: Stores = {
     db,
-    runs: new RunStore(db),
+    runs: new RunStore(db, log),
     ballots: new BallotStore(db),
     choices: new ChoiceStore(db),
   };
   let imported = 0;
   if (db.meta("json_imported_at") === null) {
-    const files = {
-      runs: await readJsonDir(dir),
-      ballots: await readJsonDir(`${dir}/ballots`),
-      choices: await readJsonDir(`${dir}/choices`),
-    };
+    const runs = await readJsonDir<RunRecord>(dir, true);
+    const ballots = await readJsonDir<BallotRecord>(`${dir}/ballots`, true);
+    const choices = await readJsonDir<ChoiceRecord>(`${dir}/choices`, false);
     db.tx(() => {
-      for (const [table, records] of Object.entries(files)) {
-        for (const r of records) {
-          // Any existing row is newer than the file it came from.
-          db.run(
-            `INSERT INTO ${table} (id, created_at, ${table === "runs" ? "status, " : ""}body)
-             VALUES (?, ?, ${table === "runs" ? "?, " : ""}?) ON CONFLICT (id) DO NOTHING`,
-            r.id,
-            r.created_at,
-            ...(table === "runs" ? [String(r.status)] : []),
-            JSON.stringify(r),
-          );
-          imported++;
-        }
-      }
+      // Any existing row is newer than the file it came from, so it is kept.
+      for (const r of runs) if (stores.runs.insertIfAbsent(r)) imported++;
+      for (const r of ballots) if (stores.ballots.insertIfAbsent(r)) imported++;
+      for (const r of choices) if (stores.choices.insertIfAbsent(r)) imported++;
       db.setMeta("json_imported_at", new Date().toISOString());
     });
     if (imported) {
@@ -264,25 +296,34 @@ export async function openStores(dir: string, opts: OpenOptions = {}): Promise<S
     }
   }
   if (imported || !stores.runs.knowledge.upToDate) {
-    const n = stores.runs.knowledge.rebuild();
-    if (n) log(`Indexed ${n} finished run(s) into the knowledge graph.`);
+    const { indexed, skipped } = stores.runs.knowledge.rebuild(log);
+    if (indexed || skipped) {
+      log(`Indexed ${indexed} finished run(s) into the knowledge graph; skipped ${skipped}.`);
+    }
   }
   return stores;
 }
 
-type Stored = { id: string; created_at: string; status?: unknown };
-
-/** The *.json records in one directory, skipping anything unreadable or misnamed. */
-async function readJsonDir(dir: string): Promise<Stored[]> {
-  const out: Stored[] = [];
+/**
+ * The *.json records in one directory, skipping anything unreadable,
+ * misnamed, or (for a table with a status column) without a status.
+ */
+async function readJsonDir<T extends { id: string; created_at: string }>(
+  dir: string,
+  needsStatus: boolean,
+): Promise<T[]> {
+  const out: T[] = [];
   try {
     for await (const e of Deno.readDir(dir)) {
       if (!e.isFile || !e.name.endsWith(".json")) continue;
       const id = e.name.slice(0, -5);
       if (!isRunId(id)) continue;
-      const r = parse<Stored>(await Deno.readTextFile(`${dir}/${e.name}`));
-      if (r && typeof r === "object" && r.id === id && typeof r.created_at === "string") {
-        out.push(r);
+      const r = parse<Record<string, unknown>>(await Deno.readTextFile(`${dir}/${e.name}`));
+      if (
+        r && typeof r === "object" && r.id === id && typeof r.created_at === "string" &&
+        (!needsStatus || typeof r.status === "string")
+      ) {
+        out.push(r as unknown as T);
       }
     }
   } catch (err) {

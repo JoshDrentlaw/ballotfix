@@ -33,6 +33,8 @@ export interface StoredClaim {
   id: number;
   run_id: string;
   section: string;
+  /** For a priority_n section, the voter's issue it answers. */
+  issue: string | null;
   statement: string;
   evidence_type: EvidenceType;
   verified: boolean;
@@ -59,7 +61,7 @@ export interface KnowledgeStats {
 export function projectRun(run: RunRecord): Projection | null {
   if (run.status !== "done") return null;
   if (run.measure) return run.measure_result ? projectMeasure(run.measure_result) : null;
-  return run.race ? projectRace(run.race) : null;
+  return run.race ? projectRace(run.race, run.id) : null;
 }
 
 const toEntity = (r: Row): Entity => ({
@@ -75,16 +77,68 @@ export class KnowledgeBase {
   constructor(readonly db: Db) {}
 
   /**
-   * Replaces what one run contributes. Called inside the transaction that
-   * saves the run, so the graph never disagrees with the saved runs.
+   * Replaces what one run contributes, all or nothing. If it throws, the
+   * graph still holds the run's previous contribution; see forgetRun.
    */
   indexRun(run: RunRecord): void {
     this.db.tx(() => {
-      this.db.run("DELETE FROM claims WHERE run_id = ?", run.id);
-      this.db.run("DELETE FROM relations WHERE run_id = ?", run.id);
+      const before = this.#referencedBy(run.id);
+      this.#clear(run.id);
       const p = projectRun(run);
       if (p) this.#write(run.id, p);
+      this.#prune(before);
     });
+  }
+
+  /** Removes what one run contributes, e.g. after indexRun failed on it. */
+  forgetRun(runId: string): void {
+    this.db.tx(() => {
+      const before = this.#referencedBy(runId);
+      this.#clear(runId);
+      this.#prune(before);
+    });
+  }
+
+  #clear(runId: string): void {
+    this.db.run("DELETE FROM claims WHERE run_id = ?", runId);
+    this.db.run("DELETE FROM relations WHERE run_id = ?", runId);
+  }
+
+  #referencedBy(runId: string): { entities: number[]; sources: number[] } {
+    const ids = (rows: Row[]) => rows.map((r) => Number(r.id));
+    return {
+      entities: ids(this.db.all(
+        `SELECT ce.entity_id AS id FROM claim_entities ce JOIN claims c ON c.id = ce.claim_id
+         WHERE c.run_id = ?1
+         UNION SELECT subject_id FROM relations WHERE run_id = ?1
+         UNION SELECT object_id FROM relations WHERE run_id = ?1`,
+        runId,
+      )),
+      sources: ids(this.db.all(
+        `SELECT DISTINCT ci.source_id AS id FROM citations ci JOIN claims c ON c.id = ci.claim_id
+         WHERE c.run_id = ?`,
+        runId,
+      )),
+    };
+  }
+
+  /** Drops the given entities and sources if nothing refers to them any more. */
+  #prune(candidates: { entities: number[]; sources: number[] }): void {
+    for (const id of candidates.entities) {
+      this.db.run(
+        `DELETE FROM entities WHERE id = ?1
+         AND NOT EXISTS (SELECT 1 FROM claim_entities WHERE entity_id = ?1)
+         AND NOT EXISTS (SELECT 1 FROM relations WHERE subject_id = ?1)
+         AND NOT EXISTS (SELECT 1 FROM relations WHERE object_id = ?1)`,
+        id,
+      );
+    }
+    for (const id of candidates.sources) {
+      this.db.run(
+        "DELETE FROM sources WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM citations WHERE source_id = ?1)",
+        id,
+      );
+    }
   }
 
   #write(runId: string, p: Projection): void {
@@ -95,10 +149,11 @@ export class KnowledgeBase {
       return id;
     };
     for (const e of p.entities) {
-      // DO UPDATE (a no-op) rather than DO NOTHING so RETURNING yields the existing id.
+      // The latest indexed run names the entity (rebuild goes oldest to newest),
+      // and DO UPDATE, unlike DO NOTHING, makes RETURNING yield the existing id.
       const r = this.db.get(
         `INSERT INTO entities (kind, key, name) VALUES (?, ?, ?)
-         ON CONFLICT (key) DO UPDATE SET key = excluded.key RETURNING id`,
+         ON CONFLICT (key) DO UPDATE SET name = excluded.name RETURNING id`,
         e.kind,
         e.key,
         e.name,
@@ -108,10 +163,11 @@ export class KnowledgeBase {
     for (const c of p.claims) {
       const claim = Number(
         this.db.get(
-          `INSERT INTO claims (run_id, section, position, statement, evidence_type, verified)
-           VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+          `INSERT INTO claims (run_id, section, issue, position, statement, evidence_type, verified)
+           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           runId,
           c.section,
+          c.issue,
           c.position,
           c.statement,
           c.evidence_type,
@@ -157,29 +213,33 @@ export class KnowledgeBase {
   }
 
   /**
-   * Rebuilds the whole graph from the saved runs, in one transaction. Runs on
-   * start when KNOWLEDGE_VERSION changed or old JSON files were imported.
+   * Rebuilds the whole graph from the saved runs, oldest first, in one
+   * transaction. Runs on start when KNOWLEDGE_VERSION changed or old JSON
+   * files were imported. A run that can't be indexed is skipped and logged,
+   * never fatal: the graph is derived data, and the app must still start.
    */
-  rebuild(): number {
+  rebuild(log: (msg: string) => void = () => {}): { indexed: number; skipped: number } {
     return this.db.tx(() => {
       for (
         const t of ["claim_entities", "citations", "claims", "relations", "sources", "entities"]
       ) {
         this.db.run(`DELETE FROM ${t}`);
       }
-      let n = 0;
-      for (const r of this.db.all("SELECT body FROM runs WHERE status = 'done'")) {
-        let run: RunRecord;
+      let indexed = 0, skipped = 0;
+      const rows = this.db.all(
+        "SELECT id, body FROM runs WHERE status = 'done' ORDER BY created_at, id",
+      );
+      for (const r of rows) {
         try {
-          run = JSON.parse(String(r.body));
-        } catch {
-          continue;
+          this.indexRun(JSON.parse(String(r.body)));
+          indexed++;
+        } catch (err) {
+          skipped++;
+          log(`Could not add run ${r.id} to the knowledge graph: ${err}`);
         }
-        this.indexRun(run);
-        n++;
       }
       this.db.setMeta("knowledge_version", String(KNOWLEDGE_VERSION));
-      return n;
+      return { indexed, skipped };
     });
   }
 
@@ -195,7 +255,7 @@ export class KnowledgeBase {
   /** Claims about an entity, across every run, newest run first, in dossier order. */
   claimsAbout(entityId: number): StoredClaim[] {
     const rows = this.db.all(
-      `SELECT c.id, c.run_id, c.section, c.statement, c.evidence_type, c.verified,
+      `SELECT c.id, c.run_id, c.section, c.issue, c.statement, c.evidence_type, c.verified,
               s.url, ci.source_name, ci.author, ci.published
        FROM claim_entities ce
        JOIN claims c ON c.id = ce.claim_id
@@ -215,6 +275,7 @@ export class KnowledgeBase {
           id,
           run_id: String(r.run_id),
           section: String(r.section),
+          issue: strOrNull(r.issue),
           statement: String(r.statement),
           evidence_type: r.evidence_type as EvidenceType,
           verified: Number(r.verified) === 1,

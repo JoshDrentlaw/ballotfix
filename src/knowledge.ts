@@ -29,7 +29,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 1;
+export const KNOWLEDGE_VERSION = 2;
 
 export const ENTITY_KINDS = ["person", "office", "measure"] as const;
 export type EntityKind = typeof ENTITY_KINDS[number];
@@ -67,6 +67,8 @@ export interface ClaimDraft {
   subject: string;
   /** Template section id, priority_n, or UNVERIFIED_SECTION. */
   section: string;
+  /** For priority_n: the voter's issue in their words, since n means a different issue per run. */
+  issue: string | null;
   /** Order within its section, as the dossier shows it. */
   position: number;
   statement: string;
@@ -103,9 +105,20 @@ function ref(kind: EntityKind, name: string, scope: string[]): EntityRef {
  * with the same name are common enough that merging across jurisdictions on
  * name alone would attribute one person's record to another; matching across
  * them needs evidence, and is left to a later step.
+ *
+ * Within a jurisdiction, the same name is taken as the same person unless the
+ * research flagged a name ambiguity (a non-empty identity_note); then the
+ * person is kept to this one run (`ambiguousIn`). Two same-named people who
+ * ran there without either run noticing are still merged: a known limit.
  */
-export function personRef(state: string, jurisdiction: string, name: string): EntityRef {
-  return ref("person", name, [state, jurisdiction]);
+export function personRef(
+  state: string,
+  jurisdiction: string,
+  name: string,
+  ambiguousIn?: string,
+): EntityRef {
+  const r = ref("person", name, [state, jurisdiction]);
+  return ambiguousIn ? { ...r, key: `${r.key}|run ${ambiguousIn}` } : r;
 }
 
 export function officeRef(state: string, jurisdiction: string, office: string): EntityRef {
@@ -135,6 +148,7 @@ function claimsFrom(
   section: string,
   facts: readonly Fact[],
   verified: boolean,
+  issue: string | null = null,
 ): ClaimDraft[] {
   const out: ClaimDraft[] = [];
   facts.forEach((f, position) => {
@@ -143,6 +157,7 @@ function claimsFrom(
     out.push({
       subject,
       section,
+      issue,
       position,
       statement: f.statement,
       evidence_type: f.evidence_type,
@@ -164,7 +179,7 @@ function subjectClaims(
     // Runs saved before a section existed simply lack it.
     ...sectionIds.flatMap((id) => claimsFrom(subject, id, sections[id]?.facts ?? [], true)),
     ...(priorities ?? []).flatMap((p, i) =>
-      claimsFrom(subject, priorityId(i), p.result.facts, true)
+      claimsFrom(subject, priorityId(i), p.result.facts, true, p.issue)
     ),
     ...claimsFrom(subject, UNVERIFIED_SECTION, unverified, false),
   ];
@@ -177,7 +192,8 @@ function uniqueEntities(refs: EntityRef[]): EntityRef[] {
   return [...seen.values()];
 }
 
-export function projectRace(race: RaceDossier): Projection {
+/** `runId` scopes a person whose dossier flagged a name ambiguity; see personRef. */
+export function projectRace(race: RaceDossier, runId: string): Projection {
   const q = race.query;
   const office = officeRef(q.state, q.city, q.office);
   const detail = race.listing.contest_kind === "retention"
@@ -188,7 +204,12 @@ export function projectRace(race: RaceDossier): Projection {
   const relations: RelationDraft[] = [];
   for (const c of race.candidates) {
     if (c.status === "pending") continue;
-    const person = personRef(q.state, q.city, c.candidate.name);
+    const person = personRef(
+      q.state,
+      q.city,
+      c.candidate.name,
+      c.identity_note ? runId : undefined,
+    );
     entities.push(person);
     relations.push({ subject: person.key, relation: "candidate_for", object: office.key, detail });
     if (c.candidate.incumbent) {

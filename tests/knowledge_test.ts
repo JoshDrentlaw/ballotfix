@@ -79,7 +79,7 @@ Deno.test("names that differ only in case, accents, or punctuation are one key",
 });
 
 Deno.test("a race projects people, the office, relations, and every fact with provenance", async () => {
-  const p = projectRace(await race());
+  const p = projectRace(await race(), "r-1");
   assertEquals(p.entities.map((e) => e.kind), ["office", "person", "person"]);
   const warren = personRef("CA", "Fontana", "Acquanetta Warren").key;
   assertEquals(
@@ -178,6 +178,11 @@ Deno.test("JSON files from earlier versions are imported once and indexed", asyn
   const run = doneRun("old-run", await race());
   await Deno.writeTextFile(`${dir}/old-run.json`, JSON.stringify(run));
   await Deno.writeTextFile(`${dir}/broken.json`, "{not json");
+  // No status: not something any startup check could ever match, so it isn't imported.
+  await Deno.writeTextFile(
+    `${dir}/no-status.json`,
+    JSON.stringify({ ...run, id: "no-status", status: undefined }),
+  );
   await Deno.writeTextFile(
     `${dir}/choices/old-run.json`,
     JSON.stringify({
@@ -223,5 +228,87 @@ Deno.test("the graph is rebuilt from saved runs when the projection version chan
   const again = await openStores(dir);
   assertEquals(again.db.meta("knowledge_version"), String(KNOWLEDGE_VERSION));
   assertEquals(again.runs.knowledge.stats().claims, 4);
+  again.db.close();
+});
+
+Deno.test("a priority claim keeps the voter's issue, since priority_1 differs per run", async () => {
+  const port = new FakeResearch(listing(CANDS), {
+    "Joz Sida": raw({
+      sections: {
+        priority_1: { facts: [fact("Backs new housing.", HERALD)], searched: [], gap_note: null },
+      },
+      retrieved_urls: [HERALD],
+    }),
+  });
+  const r = await runRace(QUERY, port, { candidates: CANDS, priorities: ["Housing"] });
+  const s = await openStores(await Deno.makeTempDir());
+  await s.runs.save(doneRun("r-1", r));
+  const sida = s.runs.knowledge.entity(personRef("CA", "Fontana", "Joz Sida").key)!;
+  assertEquals(
+    s.runs.knowledge.claimsAbout(sida.id).map((c) => [c.section, c.issue]),
+    [["priority_1", "Housing"]],
+  );
+  s.db.close();
+});
+
+Deno.test("a person whose research flagged a name ambiguity isn't merged across runs", async () => {
+  const r = await race();
+  r.candidates[1].identity_note = "Another Joz Sida serves on the school board.";
+  const s = await openStores(await Deno.makeTempDir());
+  await s.runs.save(doneRun("r-1", r));
+  await s.runs.save(doneRun("r-2", r, "2026-10-02T00:00:00Z"));
+  const keys = s.db.all("SELECT key FROM entities WHERE kind = 'person' ORDER BY key")
+    .map((e) => String(e.key));
+  assertEquals(keys, [
+    "person:ca|fontana|acquanetta warren",
+    "person:ca|fontana|joz sida|run r-1",
+    "person:ca|fontana|joz sida|run r-2",
+  ]);
+  s.db.close();
+});
+
+Deno.test("re-indexing a run drops entities and sources nothing refers to any more", async () => {
+  const s = await openStores(await Deno.makeTempDir());
+  const r = await race();
+  await s.runs.save(doneRun("r-1", r));
+  r.candidates[1].candidate = { ...r.candidates[1].candidate, name: "Joz A. Sida" };
+  r.candidates[0].unverified = [];
+  await s.runs.save(doneRun("r-1", r));
+  const names = s.db.all("SELECT name FROM entities ORDER BY name").map((e) => String(e.name));
+  assertEquals(names, ["Acquanetta Warren", "Joz A. Sida", "Mayor"]);
+  // The never-fetched page was cited only by the dropped unverified fact.
+  assertEquals(s.runs.knowledge.stats().sources, 1);
+  s.db.close();
+});
+
+Deno.test("a run that can't be indexed is still saved as done, and logged", async () => {
+  const logs: string[] = [];
+  const s = await openStores(await Deno.makeTempDir(), { log: (m) => logs.push(m) });
+  await s.runs.save(doneRun("r-1", await race()));
+  const bad = doneRun("r-1", await race());
+  // deno-lint-ignore no-explicit-any
+  (bad.race!.candidates[0] as any).sections = undefined;
+  await s.runs.save(bad);
+  assertEquals((await s.runs.get("r-1"))?.status, "done");
+  assertEquals((await s.runs.get("r-1"))?.race?.candidates[0].sections, undefined);
+  assertEquals(s.runs.knowledge.stats(), { entities: 0, claims: 0, sources: 0, relations: 0 });
+  assert(logs.some((l) => l.startsWith("Could not add run r-1 to the knowledge graph")));
+  s.db.close();
+});
+
+Deno.test("a rebuild skips a run it can't index instead of stopping the app from starting", async () => {
+  const dir = await Deno.makeTempDir();
+  const s = await openStores(dir);
+  await s.runs.save(doneRun("r-1", await race()));
+  s.db.run(
+    "INSERT INTO runs (id, created_at, status, body) VALUES ('r-0', '2026-01-01', 'done', 'null')",
+  );
+  s.db.setMeta("knowledge_version", "0");
+  s.db.close();
+
+  const logs: string[] = [];
+  const again = await openStores(dir, { log: (m) => logs.push(m) });
+  assertEquals(again.runs.knowledge.stats().claims, 4);
+  assert(logs.includes("Indexed 1 finished run(s) into the knowledge graph; skipped 1."));
   again.db.close();
 });

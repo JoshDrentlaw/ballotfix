@@ -83,6 +83,15 @@ const MIGRATIONS = [
   CREATE INDEX relations_by_subject ON relations (subject_id);
   CREATE INDEX relations_by_object ON relations (object_id);
   `,
+  `
+  -- The voter's issue a priority_n claim answers: priority_1 is a different issue in each run.
+  ALTER TABLE claims ADD COLUMN issue TEXT;
+
+  -- Lets the startup check find ballots still being read without parsing every reading.
+  ALTER TABLE ballots ADD COLUMN status TEXT NOT NULL DEFAULT '';
+  UPDATE ballots SET status = coalesce(json_extract(body, '$.status'), '');
+  CREATE INDEX ballots_by_status ON ballots (status);
+  `,
 ];
 
 export type Row = Record<string, unknown>;
@@ -123,8 +132,9 @@ export class Db {
     return s;
   }
 
-  run(sql: string, ...params: SQLInputValue[]): void {
-    this.#stmt(sql).run(...params);
+  /** Returns how many rows changed. */
+  run(sql: string, ...params: SQLInputValue[]): number {
+    return Number(this.#stmt(sql).run(...params).changes);
   }
 
   get(sql: string, ...params: SQLInputValue[]): Row | undefined {
@@ -135,20 +145,28 @@ export class Db {
     return this.#stmt(sql).all(...params) as Row[];
   }
 
+  #depth = 0;
+
   /**
    * Runs `fn` in one transaction: all of it lands or none of it does, and a
-   * batch of writes costs one disk sync. Nested calls join the outer one.
+   * batch of writes costs one disk sync. A nested call is a savepoint inside
+   * the outer transaction, so its failure undoes only its own writes and the
+   * caller can catch it and go on.
    */
   tx<T>(fn: () => T): T {
-    if (this.#sql.isTransaction) return fn();
-    this.#sql.exec("BEGIN IMMEDIATE");
+    const sp = `sp${this.#depth}`;
+    const nested = this.#sql.isTransaction;
+    this.#sql.exec(nested ? `SAVEPOINT ${sp}` : "BEGIN IMMEDIATE");
+    this.#depth++;
     try {
       const out = fn();
-      this.#sql.exec("COMMIT");
+      this.#sql.exec(nested ? `RELEASE ${sp}` : "COMMIT");
       return out;
     } catch (err) {
-      this.#sql.exec("ROLLBACK");
+      this.#sql.exec(nested ? `ROLLBACK TO ${sp}; RELEASE ${sp}` : "ROLLBACK");
       throw err;
+    } finally {
+      this.#depth--;
     }
   }
 
