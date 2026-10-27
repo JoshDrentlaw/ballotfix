@@ -8,7 +8,7 @@ import {
 import { BallotJobs, JobRunner, QueueFullError } from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
-import { BallotStore, ChoiceStore, type RunRecord, RunStore } from "../src/web/store.ts";
+import { openStores, type RunRecord, type RunStore } from "../src/web/store.ts";
 import type {
   BallotCandidate,
   BallotPage,
@@ -125,12 +125,7 @@ async function setup(
   opts: { password?: string; canResearch?: boolean; maxQueued?: number; basePath?: string } = {},
 ) {
   const dir = await Deno.makeTempDir();
-  const store = new RunStore(dir);
-  await store.init();
-  const ballotStore = new BallotStore(dir);
-  await ballotStore.init();
-  const choices = new ChoiceStore(dir);
-  await choices.init();
+  const { db, runs: store, ballots: ballotStore, choices } = await openStores(dir);
   const port = new GatedPort();
   const reader = new GatedReader();
   const jobs = new JobRunner(store, () => port, { maxQueued: opts.maxQueued });
@@ -144,7 +139,7 @@ async function setup(
     password: opts.password,
     basePath: opts.basePath,
   });
-  return { dir, store, ballotStore, choices, port, reader, jobs, ballots, app };
+  return { dir, db, store, ballotStore, choices, port, reader, jobs, ballots, app };
 }
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46]);
@@ -369,8 +364,8 @@ Deno.test("the queue refuses new races once full", async () => {
   await jobs.idle();
 });
 
-Deno.test("store marks unfinished runs interrupted on restart and skips corrupt files", async () => {
-  const { dir, store } = await setup();
+Deno.test("store marks unfinished runs interrupted on restart and skips corrupt rows", async () => {
+  const { db, store } = await setup();
   const base: RunRecord = {
     id: "a-1",
     query: QUERY,
@@ -383,7 +378,9 @@ Deno.test("store marks unfinished runs interrupted on restart and skips corrupt 
   };
   await store.save(base);
   await store.save({ ...base, id: "b-2", status: "done", created_at: "2026-09-24T00:00:00Z" });
-  await Deno.writeTextFile(`${dir}/c-3.json`, "{not json");
+  db.run(
+    "INSERT INTO runs (id, created_at, status, body) VALUES ('c-3', '2026-09-25', 'running', '{not json')",
+  );
   assertEquals(await store.markInterrupted("2026-09-25T00:00:00Z"), 1);
   const runs = await store.list();
   assertEquals(runs.map((r) => [r.id, r.status]), [["b-2", "done"], ["a-1", "interrupted"]]);
@@ -397,7 +394,7 @@ Deno.test("home page offers a ballot upload that accepts photos and PDFs", async
 });
 
 Deno.test("an uploaded ballot is read, reviewed, and the picked contest researched in ballot order", async () => {
-  const { app, reader, ballots, ballotStore, store, port, jobs } = await setup();
+  const { app, db, reader, ballots, store, port, jobs } = await setup();
   const res = await app(upload([new File([JPEG], "front.jpg", { type: "image/jpeg" })]));
   assertEquals(res.status, 303);
   const loc = res.headers.get("location")!;
@@ -424,7 +421,7 @@ Deno.test("an uploaded ballot is read, reviewed, and the picked contest research
 
   // Only the reading is saved: no image bytes on disk.
   const id = loc.split("/").pop()!;
-  const saved = await Deno.readTextFile(`${ballotStore.dir}/${id}.json`);
+  const saved = String(db.get("SELECT body FROM ballots WHERE id = ?", id)!.body);
   assert(!saved.includes("/9j/") && !saved.includes('"data"'));
 
   // Research the mayor's race, with a corrected spelling for one name.
@@ -625,9 +622,7 @@ Deno.test("multi-seat contests keep every incumbent", async () => {
 });
 
 Deno.test("an app without a ballot reader doesn't offer uploads", async () => {
-  const dir = await Deno.makeTempDir();
-  const store = new RunStore(dir);
-  await store.init();
+  const { runs: store } = await openStores(await Deno.makeTempDir());
   const app = createApp({
     store,
     jobs: new JobRunner(store, () => new GatedPort()),

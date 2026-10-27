@@ -64,10 +64,11 @@ buttons, or checkboxes for vote-for-two contests; Yes or No for measures and jud
 notes. **Your picks** on the ballot page lists every contest and measure in ballot order, and you
 can change any pick or note right there, researched or not, with one Save. It prints as a clean
 cheat sheet to keep beside you while you fill in your ballot. Notes and picks are saved in
-`data/choices/`, kept when you research again, and never included in downloaded pages.
+`data/ballotfix.db` (apart from research), kept when you research again, and never included in
+downloaded pages.
 
 - The images are sent to Anthropic to be read and never written to disk. Only the list of contests
-  is saved (in `data/ballots/`).
+  is saved (in `data/ballotfix.db`).
 - The reader is told never to transcribe your name, address, ballot id, or barcodes, and to ignore
   any marks on a filled-in ballot. Still, leave the return envelope out of the photo, since it has
   your signature.

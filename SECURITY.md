@@ -15,7 +15,7 @@ The web app (`deno task serve`) adds:
 | Grant                                     | Why                                                   |
 | ----------------------------------------- | ----------------------------------------------------- |
 | `--allow-net=127.0.0.1,localhost,0.0.0.0` | Listening. `0.0.0.0` is for containers and Tailscale. |
-| `--allow-write=data,out`                  | Saved runs.                                           |
+| `--allow-write=data,out`                  | `data/ballotfix.db` (runs, ballots, notes, graph).    |
 
 Starting research spends money on the operator's API key, so the app:
 
@@ -27,7 +27,8 @@ Starting research spends money on the operator's API key, so the app:
   refused);
 - validates every form field, caps candidates at 20, and queues at most three races behind the
   running one;
-- only opens run and ballot files whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`;
+- only saves or looks up records whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`, and passes every
+  value to SQLite as a bound parameter, never as SQL text;
 - for ballot uploads, stops reading the body past 23 MB, decides each file's type from its bytes
   (JPEG, PNG, WebP, PDF only), caps files at 8 and 7 MB each, reads at most two ballots at once, and
   never writes the images to disk. Only the contests read from them are saved.

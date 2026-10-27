@@ -10,15 +10,15 @@
  *                        (see tower-expert's main.ts for the same convention). Requests
  *                        work with or without it, so direct access is unaffected.
  *   BALLOTFIX_PASSWORD  require this password (HTTP Basic auth, any username)
- *   BALLOTFIX_DATA_DIR  where runs are saved (default data); ballot readings go in its
- *                        ballots/, and the voter's notes and picks in its choices/
+ *   BALLOTFIX_DATA_DIR  where ballotfix.db is kept (default data): runs, ballot readings,
+ *                        the voter's notes and picks, and the knowledge graph
  *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
 import { BallotJobs, JobRunner } from "./web/jobs.ts";
 import { createApp } from "./web/server.ts";
-import { BallotStore, ChoiceStore, RunStore } from "./web/store.ts";
+import { openStores } from "./web/store.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = typeof EFFORTS[number];
@@ -44,12 +44,9 @@ if (host !== "127.0.0.1" && host !== "localhost" && !password) {
 }
 
 const dataDir = env("BALLOTFIX_DATA_DIR") ?? "data";
-const store = new RunStore(dataDir);
-await store.init();
-const ballotStore = new BallotStore(dataDir);
-await ballotStore.init();
-const choices = new ChoiceStore(dataDir);
-await choices.init();
+const { runs: store, ballots: ballotStore, choices } = await openStores(dataDir, {
+  log: (m) => console.log(m),
+});
 const now = new Date().toISOString();
 const interrupted = await store.markInterrupted(now);
 if (interrupted) console.log(`Marked ${interrupted} unfinished run(s) as interrupted.`);
