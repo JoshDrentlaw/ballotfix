@@ -917,9 +917,12 @@ export function picksPage(
   o: { saved?: boolean; error?: string; form?: FormData } = {},
 ): string {
   const title = "Your picks";
-  const decided = items.filter((x) => x.choice?.picks.length).length;
+  // Only what's been decided is listed; the rest is named at the bottom, so the
+  // sheet never looks finished when it isn't.
+  const decided = items.filter((x) => x.choice?.picks.length);
+  const undecided = items.filter((x) => !x.choice?.picks.length);
   const posted = (name: string) => o.form?.getAll(name).map(String);
-  const list = items.map((x) => {
+  const list = decided.map((x) => {
     const current = posted(`pick_${x.key}`)?.filter(Boolean) ?? x.choice?.picks ?? [];
     const notesValue = posted(`notes_${x.key}`)?.[0] ?? x.choice?.notes ?? "";
     const notes = x.choice?.notes ? `<p class="notes printonly">${esc(x.choice.notes)}</p>` : "";
@@ -944,11 +947,9 @@ export function picksPage(
       open ? " open" : ""
     }><summary><span class="item-title">${esc(x.heading)}</span><span class="item-meta">${
       esc(x.detail)
-    }</span><span class="pick">${
-      x.choice?.picks.length ? `<span class="label">Your pick:</span> ` : ""
-    }${pickText(x.choice?.picks)}</span>${
-      x.choice?.notes ? `<span class="item-meta noprint">Has notes</span>` : ""
-    }</summary>
+    }</span><span class="pick"><span class="label">Your pick:</span> ${
+      pickText(x.choice?.picks)
+    }</span>${x.choice?.notes ? `<span class="item-meta noprint">Has notes</span>` : ""}</summary>
 <div class="noprint item-body">${inputs}
 <input type="hidden" name="seen_${esc(x.key)}" value="${esc(x.choice?.updated_at ?? "")}">
 <label>Notes <textarea name="notes_${esc(x.key)}" maxlength="${MAX_NOTES}">${
@@ -956,18 +957,41 @@ export function picksPage(
     }</textarea></label>
 <p class="sub">${research}</p></div></details>${notes}</li>`;
   }).join("");
+  /** Where an undecided item gets decided: its research page, or its card to research. */
+  const decideAt = (x: PickItem) =>
+    x.run
+      ? `${base}/races/${esc(x.run.id)}#mine`
+      : b.started[x.key]
+      ? `${base}/ballots/${esc(b.id)}/researched`
+      : `${base}/ballots/${esc(b.id)}#item-${esc(x.key)}`;
+  const rest = undecided.length
+    ? `<details class="settings undecided-list noprint"><summary>Still undecided (${undecided.length})</summary>
+<ul class="who">${
+      undecided.map((x) =>
+        `<li><a class="who-name" href="${decideAt(x)}">${esc(x.heading)}${
+          x.choice?.notes ? ` <span class="desig">has notes</span>` : ""
+        }</a></li>`
+      ).join("")
+    }</ul></details>
+<p class="printonly">Still undecided: ${undecided.map((x) => esc(x.heading)).join("; ")}</p>`
+    : "";
   const body = `<h1>${title}</h1>
 <p class="sub">From the ballot uploaded ${
     esc(when(b.created_at))
-  } · ${decided} of ${items.length} decided. Contests in the order your ballot prints them, then measures in theirs; your ballot may mix the two.</p>
+  } · ${decided.length} of ${items.length} decided. Contests in the order your ballot prints them, then measures in theirs; your ballot may mix the two.</p>
 <div class="noprint">${ballotTabs(b, items, "picks", base)}</div>
-<p class="note noprint">Your own preliminary picks and notes, researched or not, saved on this server. Tap one to change it. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
+<p class="note noprint">Only what you've picked is listed here; mark picks on any card under To research, or on a research page. Saved on this server. Check each against your actual ballot; the list was read by AI. Print this page or keep it open while you vote.</p>
 ${o.saved ? `<p class="note noprint" role="status">Saved.</p>` : ""}
 ${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
-<form method="post" action="${base}/ballots/${esc(b.id)}/picks">
+${
+    decided.length
+      ? `<form method="post" action="${base}/ballots/${esc(b.id)}/picks">
 <ol class="picks">${list}</ol>
 <div class="bar noprint"><button type="submit">Save picks and notes</button></div>
-</form>`;
+</form>`
+      : `<p class="sub">No picks yet.</p>`
+  }
+${rest}`;
   return page(title, body, { nav: true, base });
 }
 

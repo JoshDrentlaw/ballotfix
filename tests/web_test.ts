@@ -916,7 +916,10 @@ Deno.test("notes and a pick are saved apart from the run, kept on rerun, and lis
     sheet.indexOf("Joz Sida") < sheet.indexOf(">No<"),
     "ballot order: contests, then measures",
   );
-  assertStringIncludes(sheet, `name="pick_1"`);
+  // Only decided items are listed; the rest are named at the bottom, linked to where to decide.
+  assert(!sheet.includes(`name="pick_1"`));
+  assertStringIncludes(sheet, "Still undecided (3)");
+  assertStringIncludes(sheet, `href="${loc}#item-1">Member, City Council, District 2</a>`);
 
   // A rerun keeps the notes and pick, and the sheet follows the new run.
   await s.app(post(`/races/${mayor.id}/rerun`, {}));
@@ -968,12 +971,14 @@ Deno.test("the picks sheet changes every pick and note in place, researched or n
   const s = await setup();
   const loc = await readBallot(s);
   const sheet = await (await s.app(new Request(`http://app.test${loc}/picks`))).text();
-  assertStringIncludes(sheet, "Pat Judge (retention)");
-  assertStringIncludes(sheet, `name="pick_m1" value="Yes"`);
-  assertStringIncludes(sheet, `type="radio" name="pick_0"`);
+  assertStringIncludes(sheet, "No picks yet.");
+  assertStringIncludes(sheet, "Still undecided (5)");
+  assertStringIncludes(sheet, `href="${loc}#item-m1">Pat Judge (retention)</a>`);
+  assertStringIncludes(sheet, "Still undecided: Mayor;", "the printed sheet names them too");
+  assert(!sheet.includes(`name="pick_0"`), "undecided items aren't on the sheet's form");
 
-  // One bad item refuses the whole sheet and keeps what was typed.
-  const bad = await s.app(postForm(`${loc}/picks`, [
+  // One bad item refuses the whole save and keeps what was typed.
+  const bad = await s.app(postForm(`${loc}/picks?from=ballot`, [
     ["pick_0", "Acquanetta Warren"],
     ["notes_0", "Known quantity"],
     ["pick_m0", "Maybe"],
