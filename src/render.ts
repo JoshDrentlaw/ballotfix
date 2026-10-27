@@ -523,8 +523,9 @@ function possibleHtml(p: PairConnections): string {
 
 /**
  * Who each pair shares as a contributor or endorser, each tie with its
- * source. Collapsed. Every pair is accounted for: one with nothing shared
- * is named as such. Nothing is scored or ranked.
+ * source. Collapsed. Every pair gets its own block in ballot order, one with
+ * nothing shared saying so: pairs are never grouped or ordered by what they
+ * share. Nothing is scored or ranked.
  */
 function sharedHtml(
   pairs: readonly PairConnections[],
@@ -544,9 +545,7 @@ function sharedHtml(
       ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
       : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
-  const found = pairs.filter((p) => p.shared.length || p.possible.length);
-  const none = pairs.filter((p) => !p.shared.length);
-  const blocks = found.map((p) =>
+  const blocks = pairs.map((p) =>
     `<section class="pair"><h5>${esc(p.a)} and ${esc(p.b)}</h5>${
       p.shared.length
         ? `<ul class="shared-list">${
@@ -558,18 +557,10 @@ function sharedHtml(
             }</ul></li>`
           ).join("")
         }</ul>`
-        : ""
+        : `<p class="gap">No shared contributors or endorsers found.</p>`
     }${possibleHtml(p)}</section>`
   ).join("");
-  const body = pairs.length
-    ? `${blocks}${
-      none.length
-        ? `<p><strong>No shared contributors or endorsers found:</strong> ${
-          none.map((p) => `${esc(p.a)} and ${esc(p.b)}`).join("; ")
-        }.</p>`
-        : ""
-    }`
-    : `<p class="gap">${esc(single)}</p>`;
+  const body = pairs.length ? blocks : `<p class="gap">${esc(single)}</p>`;
   const sharing = pairs.filter((p) => p.shared.length).length;
   return `<details class="shared sec"><summary>Shared connections (${
     sharing
