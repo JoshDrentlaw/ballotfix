@@ -195,7 +195,7 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .measure-q { white-space: pre-line; }
 .votes { display: grid; gap: 10px; margin: 10px 0 6px; }
 @media (min-width: 640px) { .votes { grid-template-columns: 1fr 1fr; } }
-.vote { background: var(--tint); border-left: 4px solid var(--accent); border-radius: var(--r); padding: 10px 14px; }
+.vote { background: var(--tint); border-left: 4px solid var(--accent); border-radius: var(--r); padding: 10px 14px; min-width: 0; overflow-wrap: anywhere; }
 .vote p { margin: 0; }
 .vote .vote-label { font-weight: 700; letter-spacing: .04em; margin-bottom: 2px; }
 .vote .meta { margin-top: 6px; }

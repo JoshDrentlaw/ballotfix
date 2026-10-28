@@ -306,6 +306,25 @@ Deno.test("a measure's case for and case against get equal shares", async () => 
   assertEquals(w.requests[0].place, "City of Fontana, CA");
 });
 
+Deno.test("a name only in a measure's YES / NO meaning is looked up too", async () => {
+  const m: MeasureQuery = {
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  };
+  const port = new FakeResearch(listing([]), {}, {
+    "Measure X": rawMeasure({
+      vote_means: { yes: fact("A YES vote means the Inland Parks Authority gets the tax.") },
+      retrieved_urls: [HERALD],
+    }),
+  });
+  const w = writer({});
+  await contextForMeasure(await runMeasure(m, port), w);
+  assert(w.requests[0].names.some((n) => n.name === "Inland Parks Authority"));
+});
+
 Deno.test("a note stands only on a retrieved page, in plain words, for a name that was sent", () => {
   const sent = ["A PAC", "B Union", "C Group", "D Firm", "E Person", "F Co", "G Org"].map((
     name,

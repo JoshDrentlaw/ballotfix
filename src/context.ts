@@ -465,7 +465,10 @@ function measurePlan(m: MeasureDossier): Plan {
       ? [
         statements([case_for]),
         statements([case_against]),
-        statements([...Object.values(rest), ...priorityResults(m.priorities)]),
+        [
+          ...[m.vote_means?.yes, m.vote_means?.no].flatMap((f) => f ? [f.statement] : []),
+          ...statements([...Object.values(rest), ...priorityResults(m.priorities)]),
+        ],
       ]
       : [],
     exclude: exclusions(m.query.label ? [m.query.label] : [], [q.jurisdiction]),

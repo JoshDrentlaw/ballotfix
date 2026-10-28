@@ -173,7 +173,7 @@ export const measureFacts: RawMeasureResearch = {
     effect: {
       facts: [{
         statement:
-          "Placeholder: a yes vote adds a half-cent sales tax for parks; a no vote leaves the rate as it is.",
+          "Placeholder: the tax would end after 20 years unless voters renew it, and an oversight committee would review spending each year.",
         source_name: "Example City Attorney, impartial analysis",
         source_url: "https://example.org/measure-x/analysis.pdf",
         author: null,

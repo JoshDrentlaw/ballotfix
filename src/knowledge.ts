@@ -49,7 +49,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 6;
+export const KNOWLEDGE_VERSION = 7;
 
 /** "side": the supporters or the opponents of one measure, so the two can be compared. */
 export const ENTITY_KINDS = ["person", "office", "measure", "organization", "side"] as const;
@@ -603,10 +603,17 @@ export function projectMeasure(m: MeasureDossier, runId: string): Projection {
     case_for: sides.support.key,
     case_against: sides.oppose.key,
   };
+  // The plain YES / NO meanings are shown above the effect section's facts, and
+  // stored with them; an unverified one is already in m.unverified.
+  const votes = [m.vote_means?.yes, m.vote_means?.no].filter((f): f is Fact => !!f);
+  const effect = m.sections.effect;
+  const sections = votes.length && effect
+    ? { ...m.sections, effect: { ...effect, facts: [...votes, ...effect.facts] } }
+    : m.sections;
   const claims = subjectClaims(
     measure.key,
     MEASURE_SECTION_IDS,
-    m.sections,
+    sections,
     m.priorities,
     m.unverified,
     ctx.named,

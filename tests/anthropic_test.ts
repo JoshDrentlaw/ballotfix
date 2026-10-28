@@ -201,6 +201,7 @@ Deno.test("researchMeasure uses the measure template, web tools, and the ballot 
     ],
     identity_note: "",
     vote_means: [
+      { vote: "no", statement: "", source_url: "https://kvcrnews.org/a" },
       { vote: "no", statement: "A NO vote means no tax.", source_url: "https://kvcrnews.org/a" },
       { vote: "yes", statement: "A YES vote means a tax.", source_url: "https://kvcrnews.org/a" },
       { vote: "yes", statement: "A second yes is ignored.", source_url: "https://kvcrnews.org/a" },
@@ -237,6 +238,10 @@ Deno.test("researchMeasure uses the measure template, web tools, and the ballot 
   assertStringIncludes(req.system, "Do not recommend a yes or no vote");
   // The yes and the no meaning come from one instruction, and both are required.
   assertStringIncludes(req.system, 'Start the yes entry with "A YES vote means"');
+  assertStringIncludes(
+    req.system,
+    "Don't repeat these two statements as facts in the effect section",
+  );
   assert(req.output_config.format.schema.required.includes("vote_means"));
   // Both sides get mirrored instructions.
   assertStringIncludes(req.system, "case_for (The case for, as supporters make it)");

@@ -433,7 +433,7 @@ const MEASURE_NEUTRALITY_RULE =
 
 // The yes and the no entry get one instruction, so neither is plainer or fuller than the other.
 const VOTE_MEANS_GUIDE =
-  `Also return "vote_means": exactly two entries, one with vote "yes" and one with vote "no". Each says in one or two plain sentences what that vote does, concretely: what would change, or stay as it is, and for whom. Start the yes entry with "A YES vote means" and the no entry with "A NO vote means". Take it from the official sources: for state measures, the voter information guide's "A YES vote on this measure means" and "A NO vote on this measure means" lines; otherwise the ballot label, the impartial analysis, or the measure's text. Write both in the same plain language, at the same length, with the same care. Say only what the vote does, never either side's arguments or predicted consequences. Cite the page it comes from, under the same rules as any fact.`;
+  `Also return "vote_means": exactly two entries, one with vote "yes" and one with vote "no". Each says in one or two plain sentences what that vote does, concretely: what would change, or stay as it is, and for whom. Start the yes entry with "A YES vote means" and the no entry with "A NO vote means". Take it from the official sources: for state measures, the voter information guide's "A YES vote on this measure means" and "A NO vote on this measure means" lines; otherwise the ballot label, the impartial analysis, or the measure's text. Write both in the same plain language, at the same length, with the same care. Say only what the vote does, never either side's arguments or predicted consequences. Cite the page it comes from, under the same rules as any fact. Don't repeat these two statements as facts in the effect section: use it for the details (duration or sunset, amounts, who it applies to, what the analysis adds).`;
 
 const measureSystem = (priorities: readonly string[]) =>
   `You research one ballot measure in an election and fill a fixed template. Every measure gets this exact template and these exact instructions.
@@ -514,11 +514,18 @@ function sectionsById(raw: unknown): Record<string, RawSection | undefined> {
   return sections;
 }
 
-/** The model's vote_means array, back to one fact per vote. The first entry for each vote wins. */
+const filled = (v: unknown) => typeof v === "string" && v.trim() !== "";
+
+/**
+ * The model's vote_means array, back to one fact per vote. The first entry
+ * for each vote with a statement and a source wins, so an empty one ahead of
+ * it doesn't crowd it out.
+ */
 function voteMeansByVote(raw: unknown): { yes?: RawFact; no?: RawFact } {
   const out: { yes?: RawFact; no?: RawFact } = {};
   for (const entry of Array.isArray(raw) ? raw : []) {
     const { vote, ...fact } = (entry ?? {}) as Record<string, unknown>;
+    if (!filled(fact.statement) || !filled(fact.source_url)) continue;
     if ((vote === "yes" || vote === "no") && !out[vote]) out[vote] = fact as unknown as RawFact;
   }
   return out;
