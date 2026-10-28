@@ -126,6 +126,7 @@ async function main(): Promise<number> {
   const researcher = new AnthropicResearcher({
     model: args.model,
     effort: effort as typeof EFFORTS[number],
+    log: (m) => console.error(m),
   });
 
   let race = await runRace(query, researcher, {

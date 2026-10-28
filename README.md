@@ -168,17 +168,19 @@ Without the finance step, a page's Shared connections compares endorsements only
 1. **Ballot.** The official candidate list is found (or taken from your checked ballot), with the
    kind of order recorded.
 2. **Research.** One session per candidate or measure, a few at a time, with server-side web search
-   (up to 15) and page fetch (up to 10). Output is JSON constrained to the fixed template.
+   (up to 15) and page fetch (up to 10; at most 25,000 tokens of text per page, while PDFs come in
+   whole). Output is JSON constrained to the fixed template.
 3. **Provenance check.** Facts count as verified only if their URL was actually retrieved in that
    session.
 4. **After the run is done**, three capped follow-up calls, each saved as it finishes and each
    allowed to fail without undoing the run:
-   - **Merge**: groups duplicate verified facts (no web tools, low effort, up to 240 facts).
-   - **Context notes**: short sourced notes on up to 30 names, shared evenly across candidates (low
-     effort, about 10 searches and 5 fetches).
+   - **Merge**: groups duplicate verified facts (Claude Haiku 5.5, no web tools, low effort, up to
+     240 facts).
+   - **Context notes**: short sourced notes on up to 30 names, shared evenly across candidates
+     (Claude Sonnet 5.5, low effort, about 10 searches and 5 fetches).
    - **Campaign finance**: itemized contributions for every candidate or both sides of a measure
-     (low effort, about 12 searches and 10 fetches, up to 120 rows shared equally, at most 20 per
-     candidate). Rows over the share are counted on the page, not kept.
+     (Claude Sonnet 5.5, low effort, about 12 searches and 10 fetches, up to 120 rows shared
+     equally, at most 20 per candidate). Rows over the share are counted on the page, not kept.
 5. **Knowledge graph.** Each finished run is indexed into the graph behind the entity pages (local,
    no model calls).
 
@@ -188,10 +190,23 @@ readable on a phone.
 
 ## Cost
 
-Each candidate, and each measure, is one research session on `claude-opus-5` by default. Expect
-roughly a dollar or two per candidate or measure at `high` effort, plus the three smaller follow-up
-calls per race. Reading a ballot costs a few cents. Use `BALLOTFIX_EFFORT=medium` or a different
-`BALLOTFIX_MODEL` to trade depth for cost, or turn follow-up steps off (below).
+Research runs on Claude Opus 5.5 (`claude-opus-5-5`) by default, at $4 / $20 per million input /
+output tokens, plus $10 per 1,000 web searches. The steps after research run on cheaper models:
+Claude Sonnet 5.5 for notes on names and campaign finance, Claude Haiku 5.5 for merging duplicates.
+Every candidate in a run gets the same model at each step.
+
+Calls that search the web use prompt caching, so when a long call pauses and resumes, the pages it
+already read are re-sent at a tenth of the price. Reading a ballot costs a few cents.
+
+Every model call logs one line to the server's output, for example:
+
+```text
+[usage] candidate Jane Doe: claude-opus-5-5, 3 request(s), input 40k + cache read 120k + cache write 35k, output 14k, 12 search(es), 6 fetch(es), about $0.91
+```
+
+The dollar figure is an estimate at list prices; your Anthropic Console has the real bill. To spend
+less, lower `BALLOTFIX_EFFORT` to `medium` (faster too, with somewhat thinner dossiers), pick a
+cheaper `BALLOTFIX_MODEL`, or turn a follow-up step off (below).
 
 ## Running it
 
@@ -204,11 +219,11 @@ calls per race. Reading a ballot costs a few cents. Use `BALLOTFIX_EFFORT=medium
 | `BALLOTFIX_PASSWORD`      | (none)              | Require this password (HTTP Basic, any username)        |
 | `BASE_PATH`               | (none)              | Mount prefix, e.g. `/ballotfix` behind a reverse proxy  |
 | `BALLOTFIX_DATA_DIR`      | `data`              | Where `ballotfix.db` lives                              |
-| `BALLOTFIX_MODEL`         | `claude-opus-5`     | Research model                                          |
+| `BALLOTFIX_MODEL`         | `claude-opus-5-5`   | Research model                                          |
 | `BALLOTFIX_EFFORT`        | `high`              | `low`, `medium`, `high`, `xhigh`, or `max`              |
-| `BALLOTFIX_MERGE_MODEL`   | research model      | Model for merging duplicates; `off` skips the step      |
-| `BALLOTFIX_CONTEXT_MODEL` | research model      | Model for notes on names; `off` skips the step          |
-| `BALLOTFIX_FINANCE_MODEL` | research model      | Model for campaign finance; `off` skips the step        |
+| `BALLOTFIX_MERGE_MODEL`   | `claude-haiku-5-5`  | Model for merging duplicates; `off` skips the step      |
+| `BALLOTFIX_CONTEXT_MODEL` | `claude-sonnet-5-5` | Model for notes on names; `off` skips the step          |
+| `BALLOTFIX_FINANCE_MODEL` | `claude-sonnet-5-5` | Model for campaign finance; `off` skips the step        |
 
 Everything (races, ballot readings, your notes and picks, and the knowledge graph) is kept in one
 SQLite file, `<BALLOTFIX_DATA_DIR>/ballotfix.db`. JSON files written by older versions are imported
@@ -230,8 +245,9 @@ must come from the app's own pages.
 
 `docker-compose.yml` runs the app on `127.0.0.1:8421`, with `BASE_PATH=/ballotfix`, data in a named
 volume, and a health check on `/healthz`. It reads `ANTHROPIC_API_KEY`, `BALLOTFIX_PASSWORD`
-(required), and optionally `BALLOTFIX_MODEL`, `BALLOTFIX_EFFORT`, and `BASE_PATH` from a `.env`
-beside it. Behind Caddy, use `handle /ballotfix*`, which keeps the prefix, not `handle_path`.
+(required), and optionally `BALLOTFIX_MODEL`, `BALLOTFIX_EFFORT`, the three step models, and
+`BASE_PATH` from a `.env` beside it. Behind Caddy, use `handle /ballotfix*`, which keeps the prefix,
+not `handle_path`.
 
 CI (`.github/workflows/ci.yml`) runs fmt, lint, typecheck, and tests on every push and pull request,
 and deploys `main` to the self-hosted runner with `docker compose up --build -d --wait`.
