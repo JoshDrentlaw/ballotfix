@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
+  candidateAnchors,
   ICON_SVG,
   measureBody,
   page,
@@ -417,4 +418,37 @@ Deno.test("a fact pointed to from its section keeps every source of its own", as
   assertStringIncludes(item, `href="https://city.example/minutes"`);
   assertStringIncludes(item, `href="https://news.example/b"`);
   assertStringIncludes(item, "Shown in full under “renters”");
+});
+
+Deno.test("candidate anchors are unique on the page, readable when they can be", () => {
+  assertEquals(candidateAnchors(["Ann Lee", "Bo Diaz"]), ["ann-lee", "bo-diaz"]);
+  // Names that read alike, a name the page already uses as an id, and names in other scripts.
+  const ids = candidateAnchors([
+    "José García",
+    "Jose Garcia",
+    "Mine",
+    "王小明",
+    "李华",
+    "José García 2",
+  ]);
+  assertEquals(ids.slice(0, 5), ["jose-garcia-1", "jose-garcia-2", "mine-3", "王小明", "李华"]);
+  assertEquals(new Set(ids).size, ids.length);
+  assert(!ids.some((id) => ["top", "glance", "shared", "mine"].includes(id) || id.includes("--")));
+});
+
+Deno.test("a race with look-alike names links each candidate to their own dossier", async () => {
+  const cands = ["José García", "Jose Garcia", "王小明"].map((name) => ({
+    name,
+    ballot_designation: null,
+    incumbent: false,
+  }));
+  const html = renderRace(await runRace(QUERY, new FakeResearch(listing(cands), {})));
+  const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+  assertEquals(new Set(ids).size, ids.length, "ids repeat");
+  for (const [, id] of html.matchAll(/href="#([^"]+)"/g)) assert(ids.includes(id), `#${id} lands`);
+  // Ballot order, each under its own name.
+  const at = (id: string) => html.indexOf(`<article class="dossier" id="${id}">`);
+  assert(at("jose-garcia-1") > 0 && at("jose-garcia-1") < at("jose-garcia-2"));
+  assert(at("jose-garcia-2") < at("王小明"));
+  assertStringIncludes(html, `<a href="#jose-garcia-2">Jose Garcia</a>`);
 });

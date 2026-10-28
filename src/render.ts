@@ -61,6 +61,36 @@ export function slug(s: string): string {
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
 }
 
+/** Ids the page uses itself; a candidate's anchor never takes one. */
+const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new"]);
+
+/**
+ * Like slug, but keeps letters in any script: an anchor only has to work
+ * in a link, not in a file name, so a name in Chinese or Arabic isn't
+ * flattened to "x".
+ */
+function anchorSlug(s: string): string {
+  return s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").normalize("NFC")
+    .replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "x";
+}
+
+/**
+ * Each candidate's anchor on a race page, in ballot order: the readable
+ * name when it is unique, else the name plus its ballot position, so two
+ * names that read alike ("José García", "Jose Garcia") never share one.
+ */
+export function candidateAnchors(names: readonly string[]): string[] {
+  const bases = names.map(anchorSlug);
+  const used = new Set<string>(PAGE_IDS);
+  return bases.map((b, i) => {
+    const shared = bases.filter((x) => x === b).length > 1;
+    let id = shared || b === "x" || used.has(b) ? `${b}-${i + 1}` : b;
+    while (used.has(id)) id += `-${i + 1}`;
+    used.add(id);
+    return id;
+  });
+}
+
 export const EVIDENCE_LABEL: Record<EvidenceType, string> = {
   primary_record: "Primary record",
   reported: "Reported",
@@ -234,9 +264,13 @@ function refItem(f: Fact, at: { id: string; label: string }, notes: Notes): stri
 </li>`;
 }
 
-/** The id a section gets on the page, so the overview grid can link to it. */
-export function sectionAnchor(subject: string, sectionId: string): string {
-  return `${slug(subject)}--${sectionId.replace(/_/g, "-")}`;
+/**
+ * The id a section gets on the page, so the overview grid can link to it.
+ * `anchor` is the candidate's (candidateAnchors) or "m" for a measure; it
+ * never holds "--", so section ids can't collide across candidates.
+ */
+export function sectionAnchor(anchor: string, sectionId: string): string {
+  return `${anchor}--${sectionId.replace(/_/g, "-")}`;
 }
 
 /** How a section is drawn: its heading level, what goes under it, its id, and facts shown elsewhere. */
@@ -297,7 +331,7 @@ export function coverageLine(d: CandidateDossier): string {
   } of ${SECTIONS.length} sections.</p>`;
 }
 
-function overviewCard(d: CandidateDossier): string {
+function overviewCard(d: CandidateDossier, anchor: string): string {
   const c = d.candidate;
   const status = d.status === "failed"
     ? `<p class="cov cov-fail">Research failed in this run. Nothing about this candidate was checked.</p>`
@@ -305,7 +339,7 @@ function overviewCard(d: CandidateDossier): string {
     ? `<p class="cov cov-pending">Researching now…</p>`
     : coverageLine(d);
   return `<li class="card">
-  <h3><a href="#${slug(c.name)}">${esc(c.name)}</a></h3>
+  <h3><a href="#${anchor}">${esc(c.name)}</a></h3>
   <p class="desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
@@ -673,23 +707,24 @@ ${caveats}${body}</details>`;
 
 function dossierSection(
   d: CandidateDossier,
+  anchor: string,
   notes: Notes,
-  next?: CandidateDossier,
+  next?: { d: CandidateDossier; anchor: string },
   finance?: FinanceResult,
   money?: FinanceSubjectResult,
   person?: { ref: EntityRef; links: EntityLinks },
 ): string {
   const c = d.candidate;
   if (d.status === "pending") {
-    return `<article class="dossier pending" id="${slug(c.name)}">
+    return `<article class="dossier pending" id="${anchor}">
   <h2>${esc(c.name)}</h2>
   <p class="gap">Research on this candidate is still running. This page updates on its own.</p>
 </article>`;
   }
-  const shown = shownInPriorities(d.priorities, c.name);
+  const shown = shownInPriorities(d.priorities, anchor);
   const sections = SECTIONS.map((s) =>
     sectionHtml(s.title, d.sections[s.id], notes, {
-      id: sectionAnchor(c.name, s.id),
+      id: sectionAnchor(anchor, s.id),
       shown,
     })
   ).join("");
@@ -698,18 +733,18 @@ function dossierSection(
     ? `<p class="note"><strong>Identity check.</strong> ${esc(d.identity_note)}</p>`
     : "";
 
-  return `<article class="dossier" id="${slug(c.name)}">
+  return `<article class="dossier" id="${anchor}">
   <header class="dossier-head"><h2>${entityName(c.name, person?.ref ?? null, person?.links)}</h2>
   <p class="desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p></header>
   ${identity}
-  ${prioritiesHtml(d.priorities, "candidate", notes, c.name)}
+  ${prioritiesHtml(d.priorities, "candidate", notes, anchor)}
   ${sections}
-  ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(c.name, "filed"))}
+  ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(anchor, "filed"))}
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
   <p class="back"><a href="#glance">Back to the overview</a>${
-    next ? ` · <a href="#${slug(next.candidate.name)}">Next: ${esc(next.candidate.name)}</a>` : ""
+    next ? ` · <a href="#${next.anchor}">Next: ${esc(next.d.candidate.name)}</a>` : ""
   }</p>
 </article>`;
 }
@@ -735,11 +770,12 @@ function glanceCell(n: number, href: string, none: string): string {
  * each of the voter's issues. It shows where to look, nothing more. Rows are
  * the template, so every candidate gets the same rows; nothing is totaled.
  */
-function glanceHtml(r: RaceDossier): string {
+function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
   const ds = r.candidates;
+  const at = (d: CandidateDossier) => anchors[ds.indexOf(d)];
   if (ds.length < 2) return "";
   const head = ds.map((d) =>
-    `<th scope="col"><a href="#${slug(d.candidate.name)}">${esc(d.candidate.name)}</a>${
+    `<th scope="col"><a href="#${at(d)}">${esc(d.candidate.name)}</a>${
       d.status === "failed"
         ? `<span class="inc-mark cov-fail">Research failed</span>`
         : d.status === "pending"
@@ -765,7 +801,7 @@ function glanceHtml(r: RaceDossier): string {
   const issues = (r.priorities ?? []).map((issue, i) =>
     row(issue, (d) => {
       const x = d.priorities?.[i];
-      const id = sectionAnchor(d.candidate.name, `priority_${i + 1}`);
+      const id = sectionAnchor(at(d), `priority_${i + 1}`);
       if (!x) return `<td class="none">–</td>`;
       if (x.stance && x.stance !== "no_position") {
         return `<td><a class="stance-${x.stance}" href="#${esc(id)}">${
@@ -782,7 +818,7 @@ function glanceHtml(r: RaceDossier): string {
       const notHeld = "incumbentOnly" in s && s.incumbentOnly && !d.candidate.incumbent;
       return notHeld && !n
         ? `<td class="none">n/a</td>`
-        : glanceCell(n, sectionAnchor(d.candidate.name, s.id), "nothing found");
+        : glanceCell(n, sectionAnchor(at(d), s.id), "nothing found");
     })
   );
   const money = r.finance
@@ -791,7 +827,7 @@ function glanceHtml(r: RaceDossier): string {
       const m = r.finance!.subjects.find((x) => x.candidate === i);
       return glanceCell(
         m?.contributions.length ?? 0,
-        sectionAnchor(d.candidate.name, "filed"),
+        sectionAnchor(at(d), "filed"),
         m ? "none found" : "not looked up",
       );
     }, true)]
@@ -813,11 +849,16 @@ function glanceHtml(r: RaceDossier): string {
 }
 
 /** A bar that stays at the top while reading, to move between candidates in ballot order. */
-function jumpHtml(r: RaceDossier, shared: boolean, mine: boolean): string {
+function jumpHtml(
+  r: RaceDossier,
+  anchors: readonly string[],
+  shared: boolean,
+  mine: boolean,
+): string {
   if (r.candidates.length < 2) return "";
   const links = [
     `<a href="#glance">Overview</a>`,
-    ...r.candidates.map((d) => `<a href="#${slug(d.candidate.name)}">${esc(d.candidate.name)}</a>`),
+    ...r.candidates.map((d, i) => `<a href="#${anchors[i]}">${esc(d.candidate.name)}</a>`),
     shared ? `<a href="#shared">Shared</a>` : "",
     mine ? `<a href="#mine">Your notes</a>` : "",
   ].filter(Boolean);
@@ -1203,7 +1244,8 @@ export function raceBody(
   const model = r.candidates.find((c) => c.model)?.model;
   const links = extra.links;
   const notes = notesFor(r.context, q.state, q.city, links);
-  const glance = glanceHtml(r);
+  const anchors = candidateAnchors(r.candidates.map((d) => d.candidate.name));
+  const glance = glanceHtml(r, anchors);
   const showShared = r.candidates.length > 0 && !r.candidates.some((c) => c.status === "pending");
 
   return `<h1>${esc(raceTitle(r))}</h1>
@@ -1226,16 +1268,17 @@ ${askedAbout(r.priorities, "Every candidate was asked about the same issues, in 
   }</p>
 ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
-<ul class="cards">${r.candidates.map(overviewCard).join("")}</ul>
+<ul class="cards">${r.candidates.map((d, i) => overviewCard(d, anchors[i])).join("")}</ul>
 ${glance}
-${jumpHtml(r, showShared, Boolean(extra.mine))}
+${jumpHtml(r, anchors, showShared, Boolean(extra.mine))}
 
 ${
     r.candidates.map((d, i) =>
       dossierSection(
         d,
+        anchors[i],
         notes,
-        r.candidates[i + 1],
+        r.candidates[i + 1] && { d: r.candidates[i + 1], anchor: anchors[i + 1] },
         r.finance,
         r.finance?.subjects.find((s) => s.candidate === i),
         links && d.status !== "pending"
