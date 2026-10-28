@@ -189,7 +189,7 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   over the dossiers.
 - An empty section keeps its place in the template and says so, drawn compact (`.sec.empty`).
 - A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
-  words and first source, plus a link up. Never drop the source from a fact anywhere.
+  words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are
   said once. Fields stay as the record states them.
 - Explanations live in collapsed "How to read this page" (`readingGuide`) and similar details, so
