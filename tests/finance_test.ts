@@ -376,7 +376,7 @@ Deno.test("a contributor and an endorser are one connection when they are one en
   const page = renderRace(dossier);
   assertStringIncludes(
     page,
-    `<details class="shared sec"><summary>Shared connections (1 of 3 pairs shares someone)`,
+    `<details class="shared sec" id="shared"><summary>Shared connections (1 of 3 pairs shares someone)`,
   );
   assertStringIncludes(page, "named in Endorsements and affiliations");
   assertStringIncludes(page, FILING);

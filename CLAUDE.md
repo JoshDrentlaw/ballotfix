@@ -174,6 +174,27 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   `/apple-touch-icon.png` ahead of the password check.
 - `src/main.ts`: CLI. `examples/demo_server.ts` (`deno task demo`): the app on placeholder research.
 
+## Design system (`STYLES` in `src/render.ts`)
+
+- Tokens by meaning, never reused across meanings: evidence type (`.ev` chips: filled for primary
+  record, outlined for reported/opinion, dashed for unsourced; blues, purple, grey only), stance
+  (`--stance-*`: red and green belong to stance alone; mixed is body text with a half-red,
+  half-green rule), job status (`--ok` neutral, `--bad` amber), notices (`.banner.info` for the
+  page's standing explanations, plain `.banner` warn colors only for something to act on). Radii are
+  `--r`/`--r-lg`; `--sticky` is the jump bar's height, for `scroll-margin-top`.
+- Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
+- A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
+  candidates across in ballot order, each cell a fact count or stance linking to
+  `sectionAnchor(name, section)`; counts only, never totals), then a sticky jump bar (`jumpHtml`)
+  over the dossiers.
+- An empty section keeps its place in the template and says so, drawn compact (`.sec.empty`).
+- A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
+  words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
+- Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are
+  said once. Fields stay as the record states them.
+- Explanations live in collapsed "How to read this page" (`readingGuide`) and similar details, so
+  findings come before boilerplate. Standing gaps stay on the page, collapsed under a count.
+
 ## Verifying UI changes
 
 There is no browser test harness in CI. For UI changes, run `deno task demo` and drive it with

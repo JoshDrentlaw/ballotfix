@@ -3,6 +3,7 @@ import {
   ICON_SVG,
   measureBody,
   page,
+  readableDate,
   renderMeasure,
   renderRace,
   safeHref,
@@ -241,4 +242,179 @@ Deno.test("the page carries the icon, and static/icon.svg matches the embedded c
     page("t", ""),
     `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,`,
   );
+});
+
+const minutes = {
+  statement: "Voted against the tenant protection ordinance.",
+  source_name: "Council minutes",
+  source_url: "https://city.example/minutes",
+  author: null,
+  published: "2025-03-04",
+  evidence_type: "primary_record",
+};
+
+Deno.test("the overview grid has every section for every candidate, in ballot order, linking in", async () => {
+  const cands = [
+    { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true },
+    { name: "Joz Sida", ballot_designation: null, incumbent: false },
+  ];
+  const port = new FakeResearch(listing(cands), {
+    "Joz Sida": raw({
+      sections: {
+        criticisms: { facts: [minutes], searched: [], gap_note: null },
+        priority_1: { facts: [minutes], searched: [], gap_note: null },
+      },
+      stances: { priority_1: { stance: "conflicts", basis: "The vote." } },
+      retrieved_urls: [minutes.source_url],
+    }),
+  });
+  const race = await runRace(QUERY, port, { priorities: ["protect renters"] });
+  const html = renderRace(race);
+  const grid = html.slice(
+    html.indexOf('<section class="glance"'),
+    html.indexOf("</section>", html.indexOf('<section class="glance"')),
+  );
+  assert(grid.indexOf("Acquanetta Warren") < grid.indexOf("Joz Sida"));
+  for (
+    const title of [
+      "Who they are",
+      "Criticisms and controversies",
+      "Community impact and local coverage",
+    ]
+  ) {
+    assertStringIncludes(grid, `<th scope="row">${title}</th>`);
+  }
+  assertStringIncludes(grid, `href="#joz-sida--criticisms">1</a>`);
+  assertStringIncludes(grid, `class="stance-conflicts" href="#joz-sida--priority-1">Conflicts</a>`);
+  // Not the incumbent: record in this office doesn't apply, said as such.
+  assertEquals(grid.split(`<td class="none">n/a</td>`).length - 1, 1);
+  // Every link in it lands on an id on the page.
+  for (const [, id] of grid.matchAll(/href="#([^"]+)"/g)) assertStringIncludes(html, `id="${id}"`);
+  assert(!/total|score|rank/i.test(grid.replace(/not whether it is good or bad/, "")));
+  // One candidate: nothing to compare, no grid, and links up still land.
+  const one = renderRace(await runRace(QUERY, new FakeResearch(listing([cands[1]]), {})));
+  assert(!one.includes('class="glance"'));
+  assertStringIncludes(one, `id="glance"`);
+});
+
+Deno.test("an empty section keeps its place and says so; a fact the voter's issue shows is pointed to", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        criticisms: { facts: [minutes], searched: [], gap_note: null },
+        priority_1: { facts: [minutes], searched: [], gap_note: null },
+      },
+      retrieved_urls: [minutes.source_url],
+    }),
+  });
+  const html = renderRace(await runRace(QUERY, port, { priorities: ["renters"] }));
+  const dossier = html.slice(html.indexOf('<article class="dossier"'));
+  let at = 0;
+  for (
+    const s of [
+      "Who they are",
+      "Record in this office",
+      "Accomplishments",
+      "Criticisms and controversies",
+      "Community impact and local coverage",
+    ]
+  ) {
+    const i = dossier.indexOf(`<h4>${s}</h4>`, at);
+    assert(i > at, `${s} in template order`);
+    at = i;
+  }
+  assertStringIncludes(
+    dossier,
+    `<section class="sec empty" id="joz-sida--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p>`,
+  );
+  // Shown in full once, under the issue; the section keeps the words and the source, and links up.
+  assertEquals(dossier.split("Voted against the tenant protection ordinance.").length - 1, 2);
+  assertStringIncludes(dossier, `<li class="fact ref">`);
+  assertStringIncludes(dossier, `href="#joz-sida--priority-1">Shown in full under “renters”</a>`);
+  const ref = dossier.slice(dossier.indexOf(`<li class="fact ref">`));
+  assertStringIncludes(ref.slice(0, ref.indexOf("</li>")), `href="https://city.example/minutes"`);
+  // A full date reads like the rest of the page.
+  assertStringIncludes(dossier, "Mar 4, 2025");
+});
+
+Deno.test("contributions are tables, one per filing, alphabetical, in the record's own words", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const race = await runRace(QUERY, new FakeResearch(listing([c]), {}));
+  const gift = (contributor: string, amount: string, filing: string) => ({
+    filer: "Sida for Council",
+    contributor,
+    contributor_type: "individual" as const,
+    occupation: "Retired",
+    employer: null,
+    amount,
+    date: "09/14/2026",
+    filing_period: "07/01/2026 - 09/19/2026",
+    filing,
+    source_name: "NetFile",
+    source_url: "https://netfile.example/f",
+    verified: true,
+  });
+  race.finance = {
+    subjects: [{
+      subject: "Joz Sida",
+      candidate: 0,
+      committees: [],
+      totals: [],
+      contributions: [
+        gift("Zed <b>Z</b>", "$100.00", "Form 460"),
+        gift("Amy A", "$1,000.00", "Form 460"),
+        gift("Bo B", "$250.00", "Form 497"),
+      ],
+      unverified: [],
+      left_out: [],
+      not_listed: null,
+      dropped: 0,
+      searched: [],
+      gap_note: null,
+    }],
+    per_subject: 10,
+    portal_gaps: [],
+    model: null,
+  };
+  const html = renderRace(race);
+  assertEquals(html.split('<table class="gifts">').length - 1, 2);
+  assertEquals(html.split("To Sida for Council").length - 1, 2);
+  assert(html.indexOf("Amy A") < html.indexOf("Zed &lt;b&gt;Z&lt;/b&gt;"));
+  assertStringIncludes(html, `<td class="num">$1,000.00</td><td class="date">09/14/2026</td>`);
+  assertStringIncludes(html, `<span class="desig">Retired</span>`);
+  assert(!html.includes("<b>Z"));
+});
+
+Deno.test("a date that doesn't exist stays as the source gave it, not rolled over", () => {
+  assertEquals(readableDate("2024-02-30"), "2024-02-30");
+  assertEquals(readableDate("2024-02-29"), "Feb 29, 2024");
+  assertEquals(readableDate("2024"), "2024");
+});
+
+Deno.test("a fact pointed to from its section keeps every source of its own", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        criticisms: { facts: [minutes], searched: [], gap_note: null },
+        priority_1: { facts: [minutes], searched: [], gap_note: null },
+      },
+      retrieved_urls: [minutes.source_url, "https://news.example/b"],
+    }),
+  });
+  const race = await runRace(QUERY, port, { priorities: ["renters"] });
+  // As a merge in this section would leave it: another outlet only this copy has.
+  race.candidates[0].sections.criticisms!.facts[0].also = [{
+    ...minutes,
+    evidence_type: "primary_record",
+    source_name: "Example News",
+    source_url: "https://news.example/b",
+  }];
+  const html = renderRace(race);
+  const ref = html.slice(html.indexOf(`<li class="fact ref">`));
+  const item = ref.slice(0, ref.indexOf("</li>\n"));
+  assertStringIncludes(item, `href="https://city.example/minutes"`);
+  assertStringIncludes(item, `href="https://news.example/b"`);
+  assertStringIncludes(item, "Shown in full under “renters”");
 });

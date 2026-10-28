@@ -30,7 +30,9 @@ import {
   EVIDENCE_LABEL,
   link,
   page,
+  publishedDate,
   readableDate,
+  readingGuide,
   sourceMeta,
   SUPPORT_TITLE,
 } from "../render.ts";
@@ -172,6 +174,32 @@ function runRef(id: string, runs: Map<string, RunInfo>, base: string): string {
   }`;
 }
 
+/**
+ * Which run a fact came from. When everything on the page comes from one run,
+ * that is said once above the facts instead of under each one.
+ */
+function fromLine(id: string, v: EntityView, base: string): string {
+  return onlyRun(v) ? "" : `<p class="meta from">${runRef(id, v.runInfo, base)}</p>`;
+}
+
+/** The one run everything held on this entity comes from, or null. */
+function onlyRun(v: EntityView): string | null {
+  return v.runs.size === 1 ? [...v.runs.keys()][0] : null;
+}
+
+/** When everything on the page comes from one run, it is named once, here. */
+function oneRunHtml(v: EntityView, base: string): string {
+  const id = onlyRun(v);
+  if (!id) return "";
+  // Shared connections can come from a peer's run; each of those names its own.
+  const otherTies = (v.peers ?? []).some((p) =>
+    p.pair.shared.some((s) => [...s.a, ...s.b].some((t) => t.run_id !== id))
+  );
+  return `<p class="sub from">Everything on this page${
+    otherTies ? " except shared connections, which each name their run," : ""
+  } comes ${runRef(id, v.runInfo, base)}.</p>`;
+}
+
 function citationsHtml(cs: readonly StoredCitation[]): string {
   return cs.length === 1
     ? `<p class="meta">${sourceMeta(cs[0])}</p>`
@@ -199,7 +227,7 @@ function claimItem(
   }
   ${about}<p>${esc(c.statement)}</p>
   ${citationsHtml(c.citations)}
-  <p class="meta from">${runRef(c.run_id, v.runInfo, base)}</p>
+  ${fromLine(c.run_id, v, base)}
 </li>`;
 }
 
@@ -304,7 +332,7 @@ function giftHtml(c: StoredContribution, v: EntityView, base: string): string {
         c.citations.map((x) => `<li>${link(x.url, x.source_name)}</li>`).join("")
       }</ul>`
   }
-  <p class="meta from">${runRef(c.run_id, v.runInfo, base)}</p>
+  ${fromLine(c.run_id, v, base)}
 </li>`;
 }
 
@@ -333,8 +361,10 @@ function contributionsHtml(v: EntityView, base: string): string {
 function ballotHtml(v: EntityView, base: string): string {
   const lines = v.links.flatMap((l): string[] => {
     const other = entityLink(l.other, base);
-    const detail = l.detail ? ` (${esc(l.detail)})` : "";
-    const from = ` <span class="meta">${runRef(l.run_id, v.runInfo, base)}</span>`;
+    const detail = l.detail ? ` (${esc(publishedDate(l.detail))})` : "";
+    const from = onlyRun(v)
+      ? ""
+      : ` <span class="meta">${runRef(l.run_id, v.runInfo, base)}</span>`;
     switch (`${l.relation} ${l.direction}`) {
       case "candidate_for out":
         return [`On the ballot for ${other}${detail}${from}`];
@@ -520,12 +550,14 @@ export function entityPage(v: EntityView, base = ""): string {
   } · <a href="${base}/entities?place=${
     encodeURIComponent(e.scope)
   }">Look up another name here</a></p>
-<div class="banner"><p><strong>This page does not rank, score, or recommend anyone.</strong> It gathers what Ballot Fix's finished research holds on this ${
+<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> It gathers what Ballot Fix's finished research holds on this ${
     esc(kindLabel(e).toLowerCase())
   }, across every run in ${
     esc(e.place || "this place")
-  }. Each fact links to where it came from, is tagged by the kind of evidence behind it, and says which run found it and when.</p></div>
+  }. Each fact links to where it came from, is tagged by the kind of evidence behind it, and says which run found it and when.</p>
+${readingGuide("candidates' and campaigns' own statements")}</div>
 ${identityHtml(v, base)}
+${oneRunHtml(v, base)}
 ${ballotHtml(v, base)}
 ${aboutHtml(v, base)}
 ${namedInHtml(v, base)}
@@ -534,8 +566,6 @@ ${sharedHtml(v, base)}
 ${runsHtml(v, base)}
 ${unverifiedHtml(v, base)}
 <footer>
-<p>Evidence tags: <strong>Primary record</strong> is a government or official document. <strong>Reported</strong> is journalism describing events. <strong>Opinion / claim</strong> covers endorsements, editorials, and candidates' and campaigns' own statements. <strong>Unsourced</strong> is asserted without support.</p>
-<p>A fact marked "reported by N sources" was stated by that many different outlets. More sources means wider reporting, not that it is truer or more important.</p>
 <p>Built from AI-assisted web research. It can be wrong. Check anything that matters to your vote at the linked source.</p>
 </footer>`;
   return page(e.name, body, {
