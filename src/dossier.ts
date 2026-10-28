@@ -40,6 +40,7 @@ import {
   type SectionResult,
   type Stance,
   STANCES,
+  type VoteMeanings,
 } from "./types.ts";
 
 /** Phase 0's permanent blind spots. Shown on every page, every run. */
@@ -104,6 +105,23 @@ function emptySection(gap: string): SectionResult {
 export const NOTHING_FOUND = "This run found nothing it could source for this section.";
 
 /**
+ * The provenance check for one fact: it comes back only if the session
+ * retrieved its page; otherwise it goes to `unverified`. Invalid facts are
+ * dropped.
+ */
+function checkFact(
+  rf: RawFact,
+  retrieved: ReadonlySet<string>,
+  unverified: Fact[],
+): Fact | null {
+  const f = toFact(rf);
+  if (!f) return null;
+  if (retrieved.has(normalizeUrl(f.source_url)!)) return f;
+  unverified.push(f);
+  return null;
+}
+
+/**
  * Validates one section and runs the provenance check: facts citing a page
  * the session never retrieved are moved to `unverified`.
  */
@@ -115,10 +133,8 @@ function assembleSection(
 ): SectionResult {
   const facts: Fact[] = [];
   for (const rf of rs?.facts ?? []) {
-    const f = toFact(rf);
-    if (!f) continue;
-    if (retrieved.has(normalizeUrl(f.source_url)!)) facts.push(f);
-    else unverified.push(f);
+    const f = checkFact(rf, retrieved, unverified);
+    if (f) facts.push(f);
   }
   const searched = (rs?.searched ?? []).map(clean).filter(Boolean);
   const gap_note = cleanOrNull(rs?.gap_note) ?? (facts.length ? null : emptyNote);
@@ -253,6 +269,19 @@ export function coveredSections(d: CandidateDossier): number {
   return SECTION_IDS.filter((id) => (d.sections[id]?.facts.length ?? 0) > 0).length;
 }
 
+/**
+ * The yes and no meanings get the same provenance check as any fact: one
+ * citing a page the session never retrieved goes to `unverified`.
+ */
+function assembleVoteMeans(
+  raw: RawMeasureResearch["vote_means"],
+  retrieved: ReadonlySet<string>,
+  unverified: Fact[],
+): VoteMeanings {
+  const one = (rf: RawFact | undefined) => rf ? checkFact(rf, retrieved, unverified) : null;
+  return { yes: one(raw?.yes), no: one(raw?.no) };
+}
+
 export function assembleMeasure(
   query: MeasureQuery,
   raw: RawMeasureResearch,
@@ -274,6 +303,7 @@ export function assembleMeasure(
     query,
     status: "ok",
     official_title: cleanOrNull(raw.official_title),
+    vote_means: assembleVoteMeans(raw.vote_means, retrieved, unverified),
     sections,
     priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     priority_issues: [...priorities],

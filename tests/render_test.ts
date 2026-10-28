@@ -223,6 +223,31 @@ Deno.test("a stance resting only on advocacy says so; one on unsourced claims is
   assertEquals(p2.stance, "unclear");
 });
 
+Deno.test("a measure page says what a yes and a no vote mean, or that it couldn't", async () => {
+  const d = await runMeasure({
+    label: "Measure X",
+    jurisdiction: "City",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  }, new FakeResearch(listing([]), {}));
+  const yes = {
+    statement: "A YES vote means <b>the tax</b> is adopted.",
+    source_name: "City Attorney",
+    source_url: "https://city.example/analysis",
+    author: null,
+    published: null,
+    evidence_type: "primary_record" as const,
+  };
+  const html = measureBody({ ...d, vote_means: { yes, no: null } });
+  assertStringIncludes(html, "A YES vote means &lt;b&gt;the tax&lt;/b&gt; is adopted.");
+  assertStringIncludes(html, "https://city.example/analysis");
+  assertStringIncludes(html, 'NO</p><p class="gap">No page this run opened says this');
+  // A run saved before this existed says so, rather than showing nothing.
+  const { vote_means: _, ...old } = d;
+  assertStringIncludes(measureBody(old), "added after this run");
+});
+
 Deno.test("an interrupted measure doesn't claim it is still running", async () => {
   const d = await runMeasure({
     label: "Measure X",

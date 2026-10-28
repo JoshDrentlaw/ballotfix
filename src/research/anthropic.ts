@@ -32,6 +32,7 @@ import {
   type RawContextNote,
   type RawContextResult,
   type RawContribution,
+  type RawFact,
   type RawFinanceResult,
   type RawFinanceSubject,
   type RawMeasureResearch,
@@ -430,6 +431,10 @@ const MEASURE_GUIDE = MEASURE_SECTIONS.map((s) => `- ${s.id} (${s.title}): ${s.a
 const MEASURE_NEUTRALITY_RULE =
   `You never render a verdict. Do not recommend a yes or no vote, and do not characterize the measure, its supporters, or its opponents as good, bad, effective, misleading, or wasteful in your own voice. When a side makes such a claim, report it as that side's claim, with who made it. Use plain, neutral verbs ("would raise", "argues", "was placed on the ballot by"). State each fact once, with its source, and let the reader judge.`;
 
+// The yes and the no entry get one instruction, so neither is plainer or fuller than the other.
+const VOTE_MEANS_GUIDE =
+  `Also return "vote_means": exactly two entries, one with vote "yes" and one with vote "no". Each says in one or two plain sentences what that vote does, concretely: what would change, or stay as it is, and for whom. Start the yes entry with "A YES vote means" and the no entry with "A NO vote means". Take it from the official sources: for state measures, the voter information guide's "A YES vote on this measure means" and "A NO vote on this measure means" lines; otherwise the ballot label, the impartial analysis, or the measure's text. Write both in the same plain language, at the same length, with the same care. Say only what the vote does, never either side's arguments or predicted consequences. Cite the page it comes from, under the same rules as any fact. Don't repeat these two statements as facts in the effect section: use it for the details (duration or sunset, amounts, who it applies to, what the analysis adds).`;
+
 const measureSystem = (priorities: readonly string[]) =>
   `You research one ballot measure in an election and fill a fixed template. Every measure gets this exact template and these exact instructions.
 
@@ -450,19 +455,31 @@ How to report each fact:
 
 For every section, list in "searched" the kinds of sources you tried (short phrases). When a section has little or nothing, say what was missing and why in gap_note (else leave empty). List anything you could not reach or check in gaps.
 
-Return "sections" as an array with exactly one entry per id listed above (each id exactly once, in any order), each entry's "id" field set to that section's id.${
-    priorityGuide(priorities, "measure")
-  }
+Return "sections" as an array with exactly one entry per id listed above (each id exactly once, in any order), each entry's "id" field set to that section's id.
+
+${VOTE_MEANS_GUIDE}${priorityGuide(priorities, "measure")}
 
 ${MEASURE_NEUTRALITY_RULE}
 
 ${UNTRUSTED_CONTENT_RULE}`;
+
+// An array with a discriminant, like "sections", so the fact schema isn't inlined twice.
+const VOTE_MEANING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    vote: { type: "string", enum: ["yes", "no"] },
+    ...FACT_SCHEMA.properties,
+  },
+  required: ["vote", ...FACT_SCHEMA.required],
+} as const;
 
 const measureSchema = (priorities: readonly string[]) => ({
   type: "object",
   additionalProperties: false,
   properties: {
     official_title: { type: "string" },
+    vote_means: { type: "array", items: VOTE_MEANING_SCHEMA },
     sections: {
       type: "array",
       items: sectionSchema(withPriorities(MEASURE_SECTIONS.map((s) => s.id), priorities)),
@@ -473,6 +490,7 @@ const measureSchema = (priorities: readonly string[]) => ({
   },
   required: [
     "official_title",
+    "vote_means",
     "sections",
     "identity_note",
     "gaps",
@@ -494,6 +512,23 @@ function sectionsById(raw: unknown): Record<string, RawSection | undefined> {
     }
   }
   return sections;
+}
+
+const filled = (v: unknown) => typeof v === "string" && v.trim() !== "";
+
+/**
+ * The model's vote_means array, back to one fact per vote. The first entry
+ * for each vote with a statement and a source wins, so an empty one ahead of
+ * it doesn't crowd it out.
+ */
+function voteMeansByVote(raw: unknown): { yes?: RawFact; no?: RawFact } {
+  const out: { yes?: RawFact; no?: RawFact } = {};
+  for (const entry of Array.isArray(raw) ? raw : []) {
+    const { vote, ...fact } = (entry ?? {}) as Record<string, unknown>;
+    if (!filled(fact.statement) || !filled(fact.source_url)) continue;
+    if ((vote === "yes" || vote === "no") && !out[vote]) out[vote] = fact as unknown as RawFact;
+  }
+  return out;
 }
 
 function stringList(v: unknown): string[] {
@@ -993,6 +1028,7 @@ export class AnthropicResearcher
       sections: sectionsById(o.sections),
       stances: stancesById(o.stances),
       official_title: stringOrNull(o.official_title),
+      vote_means: voteMeansByVote(o.vote_means),
       identity_note: stringOrNull(o.identity_note),
       gaps: stringList(o.gaps),
       retrieved_urls: urls,

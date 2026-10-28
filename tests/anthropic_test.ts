@@ -200,6 +200,13 @@ Deno.test("researchMeasure uses the measure template, web tools, and the ballot 
       { id: "priority_1", facts: [], searched: ["x"], gap_note: "nothing" },
     ],
     identity_note: "",
+    vote_means: [
+      { vote: "no", statement: "", source_url: "https://kvcrnews.org/a" },
+      { vote: "no", statement: "A NO vote means no tax.", source_url: "https://kvcrnews.org/a" },
+      { vote: "yes", statement: "A YES vote means a tax.", source_url: "https://kvcrnews.org/a" },
+      { vote: "yes", statement: "A second yes is ignored.", source_url: "https://kvcrnews.org/a" },
+      { vote: "maybe", statement: "Not a vote." },
+    ],
     gaps: ["no filings", 3],
   });
   const { client, requests } = stubClient([{
@@ -214,6 +221,8 @@ Deno.test("researchMeasure uses the measure template, web tools, and the ballot 
     electionDate: "2026-11-03",
   }, ["parks"]);
   assertEquals(r.official_title, "Parks Tax");
+  assertEquals(r.vote_means?.yes?.statement, "A YES vote means a tax.");
+  assertEquals(r.vote_means?.no?.statement, "A NO vote means no tax.");
   assertEquals(r.identity_note, null);
   assertEquals(r.gaps, ["no filings"]);
   assertEquals(r.sections.priority_1?.searched, ["x"]);
@@ -227,6 +236,13 @@ Deno.test("researchMeasure uses the measure template, web tools, and the ballot 
   assertStringIncludes(req.messages[0].content, "Shall a half-cent sales tax be adopted?");
   assertStringIncludes(req.messages[0].content, "City of Fontana");
   assertStringIncludes(req.system, "Do not recommend a yes or no vote");
+  // The yes and the no meaning come from one instruction, and both are required.
+  assertStringIncludes(req.system, 'Start the yes entry with "A YES vote means"');
+  assertStringIncludes(
+    req.system,
+    "Don't repeat these two statements as facts in the effect section",
+  );
+  assert(req.output_config.format.schema.required.includes("vote_means"));
   // Both sides get mirrored instructions.
   assertStringIncludes(req.system, "case_for (The case for, as supporters make it)");
   assertStringIncludes(req.system, "case_against (The case against, as opponents make it)");

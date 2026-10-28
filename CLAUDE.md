@@ -75,8 +75,12 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
-  question becomes a one-candidate race with `contest_kind: "retention"`. Measure picks are keyed
-  `m<index>` in `BallotRecord.started`.
+  question becomes a one-candidate race with `contest_kind: "retention"`. A measure's `vote_means`
+  is one plain sourced statement each for a YES and a NO vote, from one shared instruction
+  (`VOTE_MEANS_GUIDE`), shown above the effect section's facts; each gets the provenance check on
+  its own (unverified goes to the unverified list), and runs saved before it say so. The graph
+  stores them as effect-section claims, and the context step looks for names in them. Measure picks
+  are keyed `m<index>` in `BallotRecord.started`.
 - `src/dossier.ts`: validation and invariant enforcement. `src/race.ts`: orchestration, with
   `onUpdate` partial results (unfinished candidates have status "pending").
 - `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both

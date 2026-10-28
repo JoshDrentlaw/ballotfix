@@ -4,6 +4,7 @@ import {
   measureRef,
   nameKey,
   personRef,
+  projectMeasure,
   projectRace,
 } from "../src/knowledge.ts";
 import { runMeasure, runRace } from "../src/race.ts";
@@ -177,6 +178,42 @@ Deno.test("a finished measure is indexed under its label, jurisdiction, and elec
   assertEquals(e.kind, "measure");
   assertEquals(s.runs.knowledge.claimsAbout(e.id).map((c) => c.evidence_type), ["primary_record"]);
   s.db.close();
+});
+
+Deno.test("a measure's verified YES / NO meanings are indexed with its effect section", async () => {
+  const m: MeasureQuery = {
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  };
+  const url = "https://www.fontanaca.gov/measure-x.pdf";
+  const result = await runMeasure(
+    m,
+    new FakeResearch(listing([]), {}, {
+      "Measure X": rawMeasure({
+        vote_means: {
+          yes: fact("A YES vote means the tax is adopted.", url),
+          no: fact("A NO vote means it is not.", "https://never.example/n"),
+        },
+        sections: {
+          effect: { facts: [fact("Raises the sales tax.", url)], searched: [], gap_note: null },
+        },
+        retrieved_urls: [url],
+      }),
+    }),
+  );
+  const p = projectMeasure(result, "m-1");
+  const claims = p.claims.filter((c) => c.subject === measureRef(m).key);
+  assertEquals(
+    claims.filter((c) => c.section === "effect").map((c) => c.statement),
+    ["A YES vote means the tax is adopted.", "Raises the sales tax."],
+  );
+  assertEquals(
+    claims.filter((c) => !c.verified).map((c) => c.statement),
+    ["A NO vote means it is not."],
+  );
 });
 
 Deno.test("JSON files from earlier versions are imported once and indexed", async () => {
