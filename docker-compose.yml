@@ -14,7 +14,9 @@ services:
       # port below, and nucklehead's Caddy (Tailscale/localhost-scoped) is the actual
       # boundary — same posture as parallax-fix and tower-expert.
       HOST: 0.0.0.0
-      PORT: ${PORT:-8787}
+      # Fixed: the published mapping below targets 8787, so a PORT override in .env
+      # would silently break it. Change the host side of the mapping instead.
+      PORT: 8787
       # Caddy uses `handle /ballotfix*` (preserves the prefix) to match, not
       # `handle_path` — see src/web/server.ts's basePath handling.
       BASE_PATH: ${BASE_PATH:-/ballotfix}
@@ -28,6 +30,14 @@ services:
       - "127.0.0.1:8421:8787"
     volumes:
       - ballotfix_data:/app/data
+    # /healthz is public (before the password check). CI deploys with `up --wait`,
+    # so a crash-looping container fails the deploy instead of passing silently.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
 
 volumes:
   ballotfix_data:

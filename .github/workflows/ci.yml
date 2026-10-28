@@ -52,8 +52,9 @@ jobs:
           cd /srv/data-collection/ballotfix
           git fetch origin
           # Stash any local work (recoverable via `git stash list`) so reset --hard
-          # can't silently destroy it; -u keeps the gitignored .env untouched.
-          git stash push -u -m "pre-deploy $(date -Iseconds)" || true
+          # can't silently destroy it; -u keeps the gitignored .env untouched. No
+          # `|| true`: if the stash fails, abort rather than reset over unsaved work.
+          git stash push -u -m "pre-deploy $(date -Iseconds)"
           git checkout -B main origin/main
-          git reset --hard origin/main
-          docker compose up --build -d
+          # --wait blocks until the healthcheck passes and fails the job if it doesn't.
+          docker compose up --build -d --wait --wait-timeout 120
