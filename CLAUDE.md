@@ -185,8 +185,8 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
 - A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
   candidates across in ballot order, each cell a fact count or stance linking to
-  `sectionAnchor(name, section)`; counts only, never totals), then a sticky jump bar (`jumpHtml`)
-  over the dossiers.
+  `sectionAnchor(candidateAnchor, section)`; counts only, never totals), then a sticky jump bar
+  (`jumpHtml`) over the dossiers.
 - In-page ids for candidates come from `candidateAnchors` (never `slug(name)` directly): unique per
   page, readable when the name is, any script kept. `slug` stays ASCII for run ids and file names.
 - An empty section keeps its place in the template and says so, drawn compact (`.sec.empty`).
