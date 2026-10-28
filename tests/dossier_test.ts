@@ -157,6 +157,35 @@ Deno.test("a measure gets the full template, the provenance check, and the voter
   assert(d.standing_gaps.length > 0);
 });
 
+Deno.test("what a yes and a no vote mean get the provenance check, each on its own", () => {
+  const d = assembleMeasure(
+    {
+      label: "Measure X",
+      jurisdiction: "City",
+      question: "",
+      state: "CA",
+      electionDate: "2026-11-03",
+    },
+    {
+      sections: {},
+      vote_means: {
+        yes: fact("https://a.example/x", { statement: " A YES vote means the tax is adopted. " }),
+        no: fact("https://never.example/y", { statement: "A NO vote means it is not." }),
+      },
+      official_title: null,
+      identity_note: null,
+      gaps: [],
+      retrieved_urls: ["https://a.example/x"],
+      model: "fake",
+    },
+    [],
+    new Date("2026-10-25T00:00:00Z"),
+  );
+  assertEquals(d.vote_means?.yes?.statement, "A YES vote means the tax is adopted.");
+  assertEquals(d.vote_means?.no, null);
+  assertEquals(d.unverified.map((f) => f.statement), ["A NO vote means it is not."]);
+});
+
 Deno.test("every candidate gets one result per issue, in the voter's order", () => {
   const d = assembleCandidate(SIDA, {
     sections: {},

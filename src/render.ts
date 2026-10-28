@@ -31,6 +31,7 @@ import type {
   RaceDossier,
   SectionResult,
   Stance,
+  VoteMeanings,
 } from "./types.ts";
 
 export function esc(s: string): string {
@@ -322,6 +323,24 @@ function sectionHtml(
   return `<section class="sec${empty}"${id}><${tag}>${esc(title)}</${tag}>${
     o.between ?? ""
   }${facts}${gap}${searched}</section>`;
+}
+
+/**
+ * What a yes vote and a no vote each mean, side by side above the effect
+ * section's facts. Both are drawn the same way, in the same neutral colors:
+ * red and green belong to stance alone, and neither vote gets one.
+ */
+function voteMeansHtml(v: VoteMeanings | undefined, notes: Notes): string {
+  if (!v) {
+    return `<p class="gap">A plain summary of what a yes and a no vote mean was added after this run; research again to get it.</p>`;
+  }
+  const one = (label: string, f: Fact | null) =>
+    f
+      ? `<div class="vote"><p class="vote-label">${label}</p>${
+        statementHtml(f.statement, notes)
+      }<p class="meta">${evTag(f.evidence_type)} ${factMeta(f)}</p></div>`
+      : `<div class="vote"><p class="vote-label">${label}</p><p class="gap">No page this run opened says this in plain terms. See the facts below.</p></div>`;
+  return `<div class="votes">${one("YES", v.yes)}${one("NO", v.no)}</div>`;
 }
 
 /** How much of the template a finished candidate's research found sources for. */
@@ -1049,6 +1068,12 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .stance-mixed { color: var(--fg); }
 .stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
 .measure-q { white-space: pre-line; }
+.votes { display: grid; gap: 10px; margin: 10px 0 6px; }
+@media (min-width: 640px) { .votes { grid-template-columns: 1fr 1fr; } }
+.vote { background: var(--tint); border-left: 4px solid var(--accent); border-radius: var(--r); padding: 10px 14px; }
+.vote p { margin: 0; }
+.vote .vote-label { font-weight: 700; letter-spacing: .04em; margin-bottom: 2px; }
+.vote .meta { margin-top: 6px; }
 .money .sub { font-size: .85rem; margin: 0 0 4px; }
 .totals { list-style: none; padding: 0; margin: 4px 0 8px; }
 .totals li { margin: 2px 0; }
@@ -1387,7 +1412,11 @@ export function measureBody(
     : `${prioritiesHtml(d.priorities, "measure", notes, "m")}
 ${
       MEASURE_SECTIONS.map((s) =>
-        sectionHtml(s.title, d.sections[s.id], notes, { id: sectionAnchor("m", s.id), shown })
+        sectionHtml(s.title, d.sections[s.id], notes, {
+          id: sectionAnchor("m", s.id),
+          shown,
+          between: s.id === "effect" && d.status === "ok" ? voteMeansHtml(d.vote_means, notes) : "",
+        })
       ).join("")
     }
 ${

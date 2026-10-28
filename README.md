@@ -91,9 +91,11 @@ way.
 
 - A **measure** gets one page with fixed sections: What a yes or no vote does; History; Who is for
   and against it; Money; Cost and fiscal effect; The case for, as supporters make it; The case
-  against, as opponents make it (mirrored instructions); Endorsements and local coverage. Its
-  contributions are read for the support and oppose committees, with shared connections between the
-  two sides.
+  against, as opponents make it (mirrored instructions); Endorsements and local coverage. The first
+  section starts with what a **YES** vote means and what a **NO** vote means, a plain sourced
+  sentence or two each, side by side, written with the same instruction (from the official "what
+  your vote means" text or the impartial analysis). Its contributions are read for the support and
+  oppose committees, with shared connections between the two sides.
 - A **judge on a retention question** gets a candidate dossier as a one-person race, and the page
   explains there is no opponent to compare with.
 
@@ -156,6 +158,7 @@ picks.
 | Merged duplicate facts                           | Needs Research again            |
 | Notes on names in the facts                      | Needs Research again            |
 | Contributions on file, Shared connections        | Needs Research again            |
+| The YES / NO summary on a measure                | Needs Research again            |
 | A template section added later                   | Shown as "added after this run" |
 
 Without the finance step, a page's Shared connections compares endorsements only and says why.

@@ -257,15 +257,29 @@ export interface RawMeasureResearch {
   official_title: string | null;
   /** Caveats about which measure this is (same letter used elsewhere, renumbered, etc.). */
   identity_note: string | null;
+  /** What a yes vote and a no vote each mean, in plain words, one sourced statement each. */
+  vote_means?: { yes?: RawFact; no?: RawFact };
   gaps: string[];
   retrieved_urls: string[];
   model: string;
+}
+
+/**
+ * What a yes vote and a no vote each mean, in plain words, one sourced
+ * statement each, written with the same instruction. null when no verified
+ * source said it (an unverified one goes to the dossier's unverified list).
+ */
+export interface VoteMeanings {
+  yes: Fact | null;
+  no: Fact | null;
 }
 
 export interface MeasureDossier {
   query: MeasureQuery;
   status: "ok" | "failed" | "pending";
   official_title: string | null;
+  /** Absent on runs saved before it existed. */
+  vote_means?: VoteMeanings;
   sections: Record<MeasureSectionId, SectionResult>;
   priorities: PriorityResult[];
   /** Issues the voter said matter most to them; [] when none were given. */

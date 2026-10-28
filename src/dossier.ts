@@ -40,6 +40,7 @@ import {
   type SectionResult,
   type Stance,
   STANCES,
+  type VoteMeanings,
 } from "./types.ts";
 
 /** Phase 0's permanent blind spots. Shown on every page, every run. */
@@ -253,6 +254,25 @@ export function coveredSections(d: CandidateDossier): number {
   return SECTION_IDS.filter((id) => (d.sections[id]?.facts.length ?? 0) > 0).length;
 }
 
+/**
+ * The yes and no meanings get the same provenance check as any fact: one
+ * citing a page the session never retrieved goes to `unverified`.
+ */
+function assembleVoteMeans(
+  raw: RawMeasureResearch["vote_means"],
+  retrieved: ReadonlySet<string>,
+  unverified: Fact[],
+): VoteMeanings {
+  const one = (rf: RawFact | undefined): Fact | null => {
+    const f = rf ? toFact(rf) : null;
+    if (!f) return null;
+    if (retrieved.has(normalizeUrl(f.source_url)!)) return f;
+    unverified.push(f);
+    return null;
+  };
+  return { yes: one(raw?.yes), no: one(raw?.no) };
+}
+
 export function assembleMeasure(
   query: MeasureQuery,
   raw: RawMeasureResearch,
@@ -274,6 +294,7 @@ export function assembleMeasure(
     query,
     status: "ok",
     official_title: cleanOrNull(raw.official_title),
+    vote_means: assembleVoteMeans(raw.vote_means, retrieved, unverified),
     sections,
     priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     priority_issues: [...priorities],

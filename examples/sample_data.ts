@@ -149,6 +149,26 @@ export const sampleReading: BallotReading = {
 };
 
 export const measureFacts: RawMeasureResearch = {
+  vote_means: {
+    yes: {
+      statement:
+        "Placeholder: A YES vote means the city adds a half-cent sales tax for 20 years, spent only on parks.",
+      source_name: "Example City Attorney, impartial analysis",
+      source_url: "https://example.org/measure-x/analysis.pdf",
+      author: null,
+      published: "2026-08",
+      evidence_type: "primary_record",
+    },
+    no: {
+      statement:
+        "Placeholder: A NO vote means the sales tax rate stays where it is and parks keep their current funding.",
+      source_name: "Example City Attorney, impartial analysis",
+      source_url: "https://example.org/measure-x/analysis.pdf",
+      author: null,
+      published: "2026-08",
+      evidence_type: "primary_record",
+    },
+  },
   sections: {
     effect: {
       facts: [{
