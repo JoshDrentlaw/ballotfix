@@ -57,9 +57,13 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - `src/types.ts`: core types and `ResearchPort`. No vendor imports.
 - `src/research/anthropic.ts`: the only adapter. Claude with server-side `web_search` and
   `web_fetch`, JSON-schema output, `pause_turn` resumption, `fallbacks: "default"`. Searches run on
-  Anthropic's side, so the process only needs `api.anthropic.com`. It also implements `BallotReader`
-  (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed order out, with no
-  web tools.
+  Anthropic's side, so the process only needs `api.anthropic.com`. Research defaults to
+  `claude-opus-5-5`; merge to `claude-haiku-5-5` (no server-side fallback, so none is sent), context
+  notes and finance to `claude-sonnet-5-5`. Calls with web tools use top-level prompt caching
+  (continuations resend the turn) and cap fetched text at `FETCH_MAX_CONTENT_TOKENS`; tool-less
+  calls don't cache. Every call logs one `[usage]` line (tokens, searches, an estimate at list
+  prices via `PRICES`). It also implements `BallotReader` (`readBallot`): the voter's uploaded
+  ballot photos/PDFs in, contests in printed order out, with no web tools.
 - Ballot upload: images are held in memory for the one read call and never written to disk; only the
   `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
@@ -109,17 +113,17 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   later steps (context notes for names, campaign finance) add model calls and each has a cap.
 - Merging duplicate claims (step 2, `src/merge.ts`): after a run is saved as done, `JobRunner` makes
   one capped call per run (`ClaimMerger.groupDuplicates`: no web tools, low effort, at most
-  `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or the research model, "off" skips it) and saves
-  again. The model only returns groups of ids; `merge.ts` keeps a group only if it is all verified
-  facts in one section of one candidate or measure, with one evidence type, one fact per outlet. The
-  earliest fact is kept in its own words and the rest go on it as `also`; the page says "Reported by
-  N sources" and the graph stores it as one claim with N citations. A failed merge only logs: the
-  run stays done, unmerged. The CLI does the same unless `--no-merge`.
+  `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or `DEFAULT_MERGE_MODEL`, "off" skips it) and
+  saves again. The model only returns groups of ids; `merge.ts` keeps a group only if it is all
+  verified facts in one section of one candidate or measure, with one evidence type, one fact per
+  outlet. The earliest fact is kept in its own words and the rest go on it as `also`; the page says
+  "Reported by N sources" and the graph stores it as one claim with N citations. A failed merge only
+  logs: the run stays done, unmerged. The CLI does the same unless `--no-merge`.
 - Context notes on names (step 3, `src/context.ts`): after the merge step, `JobRunner` makes one
-  capped call per run (`ContextWriter.describeNames`: low effort, `BALLOTFIX_CONTEXT_MODEL` or the
-  research model, "off" skips it; CLI `--no-context`). Searches and fetches are counted across
-  `pause_turn` continuations, and the call allows `CONTEXT_MAX_CONTINUATIONS`, so a run makes at
-  most `CONTEXT_MAX_SEARCHES` + that many searches (likewise fetches). Names are found locally in
+  capped call per run (`ContextWriter.describeNames`: low effort, `BALLOTFIX_CONTEXT_MODEL` or
+  `DEFAULT_CONTEXT_MODEL`, "off" skips it; CLI `--no-context`). Searches and fetches are counted
+  across `pause_turn` continuations, and the call allows `CONTEXT_MAX_CONTINUATIONS`, so a run makes
+  at most `CONTEXT_MAX_SEARCHES` + that many searches (likewise fetches). Names are found locally in
   verified facts (`findNames`, a heuristic: the page says some may be missed), and at most
   `MAX_CONTEXT_NAMES` are sent, in whole rounds only, one name per candidate per round (for a
   measure: case for, case against, the rest), so ballot order never buys an extra name. The request
@@ -136,8 +140,8 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   run beside the race queue, not in it, so the next race doesn't wait on them.
 - Campaign finance and shared connections (step 4, `src/finance.ts`): after the context step,
   `JobRunner` makes one capped call per run (`FinanceResearcher.findContributions`: low effort,
-  `BALLOTFIX_FINANCE_MODEL` or the research model, "off" skips it; CLI `--no-finance`), asking for
-  itemized contributions (Form 460/497 on the city's or county's portal, Cal-Access for state
+  `BALLOTFIX_FINANCE_MODEL` or `DEFAULT_FINANCE_MODEL`, "off" skips it; CLI `--no-finance`), asking
+  for itemized contributions (Form 460/497 on the city's or county's portal, Cal-Access for state
   committees) for every candidate in ballot order, a failed one too, or for a measure's support and
   oppose committees. Searches and fetches are counted across continuations
   (`FINANCE_MAX_SEARCHES`/`FETCHES` + `FINANCE_MAX_CONTINUATIONS`); max_tokens fails the call. Every

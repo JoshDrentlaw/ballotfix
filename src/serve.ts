@@ -12,15 +12,17 @@
  *   BALLOTFIX_PASSWORD  require this password (HTTP Basic auth, any username)
  *   BALLOTFIX_DATA_DIR  where ballotfix.db is kept (default data): runs, ballot readings,
  *                        the voter's notes and picks, and the knowledge graph
- *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model and effort
+ *   BALLOTFIX_MODEL, BALLOTFIX_EFFORT   research model (default claude-opus-5-5) and effort
  *   BALLOTFIX_MERGE_MODEL  model for the one low-effort call per finished run that merges
- *                        duplicate claims (default: the research model); "off" skips it
+ *                        duplicate claims (default: claude-haiku-5-5); "off" skips it
  *   BALLOTFIX_CONTEXT_MODEL  model for the one low-effort call per finished run that writes
  *                        short sourced notes on names in the facts, with a few capped web
- *                        searches (default: the research model); "off" skips it
+ *                        searches (default: claude-sonnet-5-5); "off" skips it
  *   BALLOTFIX_FINANCE_MODEL  model for the one low-effort call per finished run that reads
  *                        contributions off campaign finance filings, with capped web searches
- *                        and fetches (default: the research model); "off" skips it
+ *                        and fetches (default: claude-sonnet-5-5); "off" skips it
+ *
+ * Every model call logs one "[usage]" line: tokens, searches, and an estimated cost.
  */
 
 import { AnthropicResearcher } from "./research/anthropic.ts";
@@ -60,17 +62,24 @@ const interrupted = await store.markInterrupted(now);
 if (interrupted) console.log(`Marked ${interrupted} unfinished run(s) as interrupted.`);
 await ballotStore.markInterrupted(now);
 
+const log = (m: string) => console.log(m);
 const researcher = () =>
-  new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), effort: effort as Effort });
+  new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), effort: effort as Effort, log });
 const mergeModel = env("BALLOTFIX_MERGE_MODEL");
 const merger = () =>
-  new AnthropicResearcher({ model: env("BALLOTFIX_MODEL"), mergeModel, effort: effort as Effort });
+  new AnthropicResearcher({
+    model: env("BALLOTFIX_MODEL"),
+    mergeModel,
+    effort: effort as Effort,
+    log,
+  });
 const contextModel = env("BALLOTFIX_CONTEXT_MODEL");
 const contextWriter = () =>
   new AnthropicResearcher({
     model: env("BALLOTFIX_MODEL"),
     contextModel,
     effort: effort as Effort,
+    log,
   });
 const financeModel = env("BALLOTFIX_FINANCE_MODEL");
 const financeResearcher = () =>
@@ -78,6 +87,7 @@ const financeResearcher = () =>
     model: env("BALLOTFIX_MODEL"),
     financeModel,
     effort: effort as Effort,
+    log,
   });
 const jobs = new JobRunner(store, researcher, {
   log: (m) => console.log(m),

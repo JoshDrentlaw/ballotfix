@@ -42,7 +42,7 @@ import {
   STANCES,
 } from "../types.ts";
 
-export const DEFAULT_MODEL = "claude-opus-5";
+export const DEFAULT_MODEL = "claude-opus-5-5";
 
 /** Raised when the model (and its server-side fallback) declined the request. */
 export class ResearchRefusedError extends Error {}
@@ -855,13 +855,79 @@ export interface AnthropicResearcherOptions {
   /** Page fetches allowed per candidate. */
   maxFetches?: number;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
-  /** Model for merging duplicate claims. Defaults to `model`; it runs at low effort either way. */
+  /** Model for merging duplicate claims (DEFAULT_MERGE_MODEL); it runs at low effort. */
   mergeModel?: string;
-  /** Model for context notes on names. Defaults to `model`; it runs at low effort either way. */
+  /** Model for context notes on names (DEFAULT_CONTEXT_MODEL); it runs at low effort. */
   contextModel?: string;
-  /** Model for reading campaign finance filings. Defaults to `model`; low effort either way. */
+  /** Model for reading campaign finance filings (DEFAULT_FINANCE_MODEL); low effort. */
   financeModel?: string;
+  /** Receives one line per call: its tokens, searches, and estimated cost. */
+  log?: (message: string) => void;
 }
+
+/**
+ * The steps after research are narrow jobs, so they run on cheaper models by
+ * default. Merging only groups ids, with no web tools; context notes and
+ * campaign finance look things up with capped searches. Every candidate in a
+ * run still gets the same model at each step.
+ */
+export const DEFAULT_MERGE_MODEL = "claude-haiku-5-5";
+export const DEFAULT_CONTEXT_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_FINANCE_MODEL = "claude-sonnet-5-5";
+
+/**
+ * Most of a fetched page is boilerplate, and a long one can cost more than the
+ * rest of the session. The API applies this to text only; PDFs come in whole.
+ * The same cap holds for every candidate and measure.
+ */
+export const FETCH_MAX_CONTENT_TOKENS = 25000;
+
+/** List prices per million tokens, for the usage log's estimate only. */
+const PRICES: Record<string, { input: number; output: number }> = {
+  "claude-opus-5-5": { input: 4, output: 20 },
+  "claude-opus-5": { input: 5, output: 25 },
+  "claude-sonnet-5-5": { input: 2, output: 10 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5 },
+};
+/** Web search list price, per search. Fetches cost only their tokens. */
+const SEARCH_PRICE = 0.01;
+
+/** One call's usage, summed across its pause_turn continuations. */
+export interface CallUsage {
+  requests: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  searches: number;
+  fetches: number;
+}
+
+/**
+ * An estimate at list prices: cache reads at a tenth of the input rate, cache
+ * writes at 1.25 times it. Null for a model not in PRICES.
+ */
+export function estimateCost(model: string, u: CallUsage): number | null {
+  const p = PRICES[model];
+  if (!p) return null;
+  const tokens = u.input + u.cacheRead * 0.1 + u.cacheWrite * 1.25;
+  return (tokens * p.input + u.output * p.output) / 1e6 + u.searches * SEARCH_PRICE;
+}
+
+export function usageLine(label: string, model: string, u: CallUsage): string {
+  const k = (n: number) => `${Math.round(n / 1000)}k`;
+  const cost = estimateCost(model, u);
+  return `[usage] ${label}: ${model}, ${u.requests} request(s), input ${k(u.input)} + cache read ${
+    k(u.cacheRead)
+  } + cache write ${k(u.cacheWrite)}, output ${
+    k(u.output)
+  }, ${u.searches} search(es), ${u.fetches} fetch(es)${
+    cost === null ? "" : `, about $${cost.toFixed(2)}`
+  }`;
+}
+
+/** Haiku has no server-side refusal fallback; the other models this app uses do. */
+const hasFallback = (model: string) => !model.startsWith("claude-haiku");
 
 /**
  * Output cap for the merge call. The answer is a short list of ids, but
@@ -925,16 +991,18 @@ export class AnthropicResearcher
   readonly #maxSearches: number;
   readonly #maxFetches: number;
   readonly #effort: NonNullable<AnthropicResearcherOptions["effort"]>;
+  readonly #log: (message: string) => void;
 
   constructor(opts: AnthropicResearcherOptions = {}) {
     this.#client = opts.client ?? new Anthropic();
     this.#model = opts.model ?? DEFAULT_MODEL;
-    this.#mergeModel = opts.mergeModel ?? this.#model;
-    this.#contextModel = opts.contextModel ?? this.#model;
-    this.#financeModel = opts.financeModel ?? this.#model;
+    this.#mergeModel = opts.mergeModel ?? DEFAULT_MERGE_MODEL;
+    this.#contextModel = opts.contextModel ?? DEFAULT_CONTEXT_MODEL;
+    this.#financeModel = opts.financeModel ?? DEFAULT_FINANCE_MODEL;
     this.#maxSearches = opts.maxSearches ?? 15;
     this.#maxFetches = opts.maxFetches ?? 10;
     this.#effort = opts.effort ?? "high";
+    this.#log = opts.log ?? (() => {});
   }
 
   get model(): string {
@@ -947,7 +1015,7 @@ export class AnthropicResearcher
     const { json, urls } = await this.#run(BALLOT_SYSTEM, prompt, BALLOT_SCHEMA, {
       searches: 6,
       fetches: 4,
-    });
+    }, { label: `ballot lookup, ${q.office}, ${q.city}` });
     const o = json as Record<string, unknown>;
     const basis = String(o.order_basis);
     return {
@@ -991,6 +1059,7 @@ export class AnthropicResearcher
       prompt,
       candidateSchema(priorities),
       { searches: this.#maxSearches, fetches: this.#maxFetches },
+      { label: `candidate ${c.name}` },
     );
     const o = json as Record<string, unknown>;
     return {
@@ -1022,6 +1091,7 @@ export class AnthropicResearcher
       prompt,
       measureSchema(priorities),
       { searches: this.#maxSearches, fetches: this.#maxFetches },
+      { label: `measure ${m.label}` },
     );
     const o = json as Record<string, unknown>;
     return {
@@ -1049,7 +1119,9 @@ export class AnthropicResearcher
           `These ${pages.length} page(s) are one voter's ballot or sample ballot. List its contests.`,
       },
     ];
-    const { json } = await this.#run(READ_BALLOT_SYSTEM, content, READ_BALLOT_SCHEMA, null);
+    const { json } = await this.#run(READ_BALLOT_SYSTEM, content, READ_BALLOT_SCHEMA, null, {
+      label: "ballot reading",
+    });
     const o = json as Record<string, unknown>;
     const date = stringOrNull(o.election_date);
     const state = stringOrNull(o.state);
@@ -1083,6 +1155,7 @@ export class AnthropicResearcher
     }\n\nGroup the facts within each block that state the same fact.`;
     const { json } = await this.#run(MERGE_SYSTEM, prompt, MERGE_SCHEMA, null, {
       model: this.#mergeModel,
+      label: "merge",
       effort: "low",
       maxTokens: MERGE_MAX_TOKENS,
     });
@@ -1104,6 +1177,7 @@ export class AnthropicResearcher
       acrossTurns: true,
     }, {
       model: this.#contextModel,
+      label: "context notes",
       effort: "low",
       maxTokens: CONTEXT_MAX_TOKENS,
       maxContinuations: CONTEXT_MAX_CONTINUATIONS,
@@ -1132,6 +1206,7 @@ export class AnthropicResearcher
       acrossTurns: true,
     }, {
       model: this.#financeModel,
+      label: "campaign finance",
       effort: "low",
       maxTokens: FINANCE_MAX_TOKENS,
       maxContinuations: FINANCE_MAX_CONTINUATIONS,
@@ -1156,6 +1231,8 @@ export class AnthropicResearcher
     tools: { searches: number; fetches: number; acrossTurns?: boolean } | null,
     call: {
       model?: string;
+      /** Names the call in the usage log. */
+      label?: string;
       effort?: NonNullable<AnthropicResearcherOptions["effort"]>;
       maxTokens?: number;
       maxContinuations?: number;
@@ -1165,14 +1242,45 @@ export class AnthropicResearcher
       { role: "user", content: prompt },
     ];
     const seen: Block[] = [];
+    const model = call.model ?? this.#model;
+    const usage: CallUsage = {
+      requests: 0,
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      searches: 0,
+      fetches: 0,
+    };
+    // Logged however the call ends, so a failed call's spend shows too.
+    try {
+      return await this.#runTurns(system, messages, seen, schema, tools, call, model, usage);
+    } finally {
+      if (usage.requests) this.#log(usageLine(call.label ?? "call", model, usage));
+    }
+  }
 
+  async #runTurns(
+    system: string,
+    messages: Anthropic.Beta.Messages.BetaMessageParam[],
+    seen: Block[],
+    schema: Record<string, unknown>,
+    tools: { searches: number; fetches: number; acrossTurns?: boolean } | null,
+    call: {
+      effort?: NonNullable<AnthropicResearcherOptions["effort"]>;
+      maxTokens?: number;
+      maxContinuations?: number;
+    },
+    model: string,
+    usage: CallUsage,
+  ): Promise<{ json: unknown; urls: string[] }> {
     const maxContinuations = call.maxContinuations ?? MAX_CONTINUATIONS;
     for (let i = 0; i <= maxContinuations; i++) {
       const caps = tools && (tools.acrossTurns ? remaining(tools, seen) : tools);
       let response;
       try {
         response = await this.#client.beta.messages.stream({
-          model: call.model ?? this.#model,
+          model,
           max_tokens: call.maxTokens ?? 64000,
           system,
           messages,
@@ -1185,18 +1293,37 @@ export class AnthropicResearcher
             ? {
               tools: [
                 { type: "web_search_20260209", name: "web_search", max_uses: caps.searches },
-                { type: "web_fetch_20260209", name: "web_fetch", max_uses: caps.fetches },
+                {
+                  type: "web_fetch_20260209",
+                  name: "web_fetch",
+                  max_uses: caps.fetches,
+                  max_content_tokens: FETCH_MAX_CONTENT_TOKENS,
+                },
               ],
+              // Each continuation resends the whole turn, fetched pages and
+              // all; cached, that prefix costs a tenth. Calls without tools
+              // are single requests, where a cache write would only add cost.
+              cache_control: { type: "ephemeral" as const },
             }
             : {}),
-          betas: ["server-side-fallback-2026-07-01"],
-          fallbacks: "default",
+          ...(hasFallback(model)
+            ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
+            : {}),
         }).finalMessage();
       } catch (err) {
         throw describeApiError(err);
       }
 
       seen.push(...response.content);
+      // A stubbed client in tests may leave usage out.
+      const u = response.usage ?? { input_tokens: 0, output_tokens: 0 };
+      usage.requests++;
+      usage.input += u.input_tokens;
+      usage.output += u.output_tokens;
+      usage.cacheRead += u.cache_read_input_tokens ?? 0;
+      usage.cacheWrite += u.cache_creation_input_tokens ?? 0;
+      usage.searches += u.server_tool_use?.web_search_requests ?? 0;
+      usage.fetches += u.server_tool_use?.web_fetch_requests ?? 0;
 
       switch (response.stop_reason) {
         case "pause_turn":

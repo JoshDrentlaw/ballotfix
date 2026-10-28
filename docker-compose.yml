@@ -25,6 +25,11 @@ services:
       BALLOTFIX_DATA_DIR: /app/data
       BALLOTFIX_MODEL: ${BALLOTFIX_MODEL:-}
       BALLOTFIX_EFFORT: ${BALLOTFIX_EFFORT:-high}
+      # Models for the steps after research; empty means the app's defaults
+      # (src/research/anthropic.ts), and "off" skips a step.
+      BALLOTFIX_MERGE_MODEL: ${BALLOTFIX_MERGE_MODEL:-}
+      BALLOTFIX_CONTEXT_MODEL: ${BALLOTFIX_CONTEXT_MODEL:-}
+      BALLOTFIX_FINANCE_MODEL: ${BALLOTFIX_FINANCE_MODEL:-}
     ports:
       # 127.0.0.1 binding: only the host Caddy may reach this; Tailscale is the boundary.
       - "127.0.0.1:8421:8787"

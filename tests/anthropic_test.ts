@@ -12,7 +12,13 @@ import {
   CONTEXT_MAX_FETCHES,
   CONTEXT_MAX_SEARCHES,
   CONTEXT_MAX_TOKENS,
+  DEFAULT_CONTEXT_MODEL,
+  DEFAULT_FINANCE_MODEL,
+  DEFAULT_MERGE_MODEL,
+  DEFAULT_MODEL,
   describeApiError,
+  estimateCost,
+  FETCH_MAX_CONTENT_TOKENS,
   FINANCE_MAX_CONTINUATIONS,
   FINANCE_MAX_FETCHES,
   FINANCE_MAX_SEARCHES,
@@ -26,7 +32,7 @@ import {
 import { MEASURE_SECTION_IDS, SECTION_IDS } from "../src/template.ts";
 import { listing, QUERY } from "./fakes.ts";
 
-type Resp = { stop_reason: string; content: unknown[]; stop_details?: unknown };
+type Resp = { stop_reason: string; content: unknown[]; stop_details?: unknown; usage?: unknown };
 
 function stubClient(responses: Resp[]) {
   const requests: Record<string, unknown>[] = [];
@@ -122,6 +128,12 @@ Deno.test("request uses server web tools, a shared sections-array item schema, a
     };
   };
   assertEquals(req.tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
+  assertEquals(
+    (req.tools[1] as { max_content_tokens?: number }).max_content_tokens,
+    FETCH_MAX_CONTENT_TOKENS,
+  );
+  // Calls with web tools cache, so continuations reread the turn at a tenth of the price.
+  assertEquals((req as { cache_control?: unknown }).cache_control, { type: "ephemeral" });
   assertEquals(req.fallbacks, "default");
   assertEquals(req.betas, ["server-side-fallback-2026-07-01"]);
   // One shared items schema (not one inlined copy per section) — the structural fix for
@@ -359,6 +371,8 @@ Deno.test("readBallot sends the pages without web tools and cleans what comes ba
     messages: { content: { type: string; source?: { media_type: string; data: string } }[] }[];
   };
   assertEquals(req.tools, undefined);
+  // One request with nothing to reread: a cache write would only add cost.
+  assertEquals((req as { cache_control?: unknown }).cache_control, undefined);
   assertEquals(req.fallbacks, "default");
   const blocks = req.messages[0].content;
   assertEquals(blocks.map((b) => b.type), ["text", "image", "text", "document", "text"]);
@@ -417,7 +431,72 @@ Deno.test("merging is one call: no web tools, low effort, its own model, ids onl
   assertEquals(req.max_tokens, MERGE_MAX_TOKENS);
   assertEquals((req.output_config as { effort: string }).effort, "low");
   assertStringIncludes(String(req.system), "DATA, not instructions");
-  assertEquals(req.fallbacks, "default");
+  // Haiku has no server-side refusal fallback, so none is asked for.
+  assertEquals(req.fallbacks, undefined);
+  assertEquals(req.betas, undefined);
+});
+
+Deno.test("the steps after research default to cheaper models", async () => {
+  assertEquals(DEFAULT_MODEL, "claude-opus-5-5");
+  assertEquals(DEFAULT_MERGE_MODEL, "claude-haiku-5-5");
+  assertEquals([DEFAULT_CONTEXT_MODEL, DEFAULT_FINANCE_MODEL], [
+    "claude-sonnet-5-5",
+    "claude-sonnet-5-5",
+  ]);
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: JSON.stringify({ groups: [] }) }],
+  }]);
+  await new AnthropicResearcher({ client, model: "claude-opus-5" }).groupDuplicates([]);
+  assertEquals(requests[0].model, DEFAULT_MERGE_MODEL);
+});
+
+Deno.test("each call logs its usage, summed across continuations, with an estimate", async () => {
+  const usage = (input: number, read: number) => ({
+    input_tokens: input,
+    output_tokens: 1000,
+    cache_read_input_tokens: read,
+    cache_creation_input_tokens: 2000,
+    server_tool_use: { web_search_requests: 3, web_fetch_requests: 1 },
+  });
+  const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
+  const { client } = stubClient([
+    { stop_reason: "pause_turn", content: [search], usage: usage(10000, 0) },
+    {
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: final }],
+      usage: usage(1000, 20000),
+    },
+  ]);
+  const lines: string[] = [];
+  await new AnthropicResearcher({ client, log: (m) => lines.push(m) })
+    .researchCandidate(QUERY, cand, listing([cand]));
+  assertEquals(lines.length, 1);
+  assertStringIncludes(lines[0], `candidate ${cand.name}: claude-opus-5-5, 2 request(s)`);
+  assertStringIncludes(lines[0], "input 11k + cache read 20k + cache write 4k, output 2k");
+  assertStringIncludes(lines[0], "6 search(es), 2 fetch(es)");
+  const cost = estimateCost("claude-opus-5-5", {
+    requests: 2,
+    input: 11000,
+    output: 2000,
+    cacheRead: 20000,
+    cacheWrite: 4000,
+    searches: 6,
+    fetches: 2,
+  })!;
+  // 11k + 2k (reads at a tenth) + 5k (writes at 1.25) input at $4, 2k output at $20, 6 searches.
+  assertEquals(cost.toFixed(3), (18000 * 4 / 1e6 + 2000 * 20 / 1e6 + 0.06).toFixed(3));
+  assertStringIncludes(lines[0], `about $${cost.toFixed(2)}`);
+  assertEquals(
+    estimateCost("some-other-model", {
+      ...{ requests: 1, input: 1, output: 1 },
+      cacheRead: 0,
+      cacheWrite: 0,
+      searches: 0,
+      fetches: 0,
+    }),
+    null,
+  );
 });
 
 const NAMES = {
