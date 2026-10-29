@@ -177,6 +177,11 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   (`keptApart`), which no normalized name can contain. App-served race and measure pages link to
   entity pages (`EntityLinks`, only entities their own run holds, `slugsOfRun`); downloads and CLI
   exports never do, and stay self-contained.
+- Connections diagnostic (`deno task diagnose`, `src/diagnose.ts`): read-only report over
+  `data/ballotfix.db`, no model or network calls. Per ballot: each item's scope and what its context
+  and finance steps kept, and every name that recurs across subjects, with whether the pages can
+  match it and, if not, why (different scope, entity rule, or no tie and the reason). Ties come from
+  the same `raceParties`/`measureParties` the pages use.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at
