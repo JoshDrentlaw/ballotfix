@@ -505,10 +505,15 @@ function pairs(parties: readonly Party[]): PairConnections[] {
  * graph's (see contributorRef), so an entry can link to its entity page.
  */
 export function raceConnections(race: RaceDossier, runId = "page"): PairConnections[] {
+  return pairs(raceParties(race, runId));
+}
+
+/** Each candidate as a party, in ballot order; pending ones are left out. */
+export function raceParties(race: RaceDossier, runId = "page"): Party[] {
   const q = race.query;
   const scope = { state: q.state, jurisdiction: q.city, notes: race.context };
   const subjects = race.finance?.subjects ?? [];
-  return pairs(race.candidates.flatMap((c, i) => {
+  return race.candidates.flatMap((c, i) => {
     if (c.status === "pending") return [];
     const subject = subjects.findIndex((s) => s.candidate === i);
     return [party(
@@ -518,13 +523,18 @@ export function raceConnections(race: RaceDossier, runId = "page"): PairConnecti
       scope,
       { run: runId, subject },
     )];
-  }));
+  });
 }
 
 export const SIDE_LABEL = { support: "Supporters", oppose: "Opponents" } as const;
 
 /** The supporters against the opponents: each side's committees and its own case. */
 export function measureConnections(m: MeasureDossier, runId = "page"): PairConnections[] {
+  return pairs(measureParties(m, runId));
+}
+
+/** The supporters, then the opponents, as parties; none for a measure whose research failed. */
+export function measureParties(m: MeasureDossier, runId = "page"): Party[] {
   if (m.status !== "ok") return [];
   const q = m.query;
   const scope = { state: q.state, jurisdiction: q.jurisdiction, notes: m.context };
@@ -539,5 +549,5 @@ export function measureConnections(m: MeasureDossier, runId = "page"): PairConne
       { run: runId, subject },
     );
   };
-  return pairs([side("support", "case_for"), side("oppose", "case_against")]);
+  return [side("support", "case_for"), side("oppose", "case_against")];
 }
