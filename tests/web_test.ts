@@ -5,7 +5,7 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { BallotJobs, JobRunner, QueueFullError } from "../src/web/jobs.ts";
+import { BallotJobs, DEFAULT_MAX_QUEUED, JobRunner, QueueFullError } from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
 import { openStores, type RunRecord, type RunStore } from "../src/web/store.ts";
@@ -560,7 +560,7 @@ Deno.test("a queue that fills partway keeps the user's edits and an honest count
   assertStringIncludes(body, "queue is full");
   assertStringIncludes(body, `value="Fontana (corrected)"`);
   assertStringIncludes(body, `name="pick" value="1" checked`);
-  assertStringIncludes(body, "up to 3 can start now");
+  assertStringIncludes(body, `up to ${DEFAULT_MAX_QUEUED} can start now`);
   s.port.release();
   await s.jobs.idle();
 });
@@ -1217,4 +1217,97 @@ Deno.test("researched items get their own tab and can be read one after another"
     .text();
   assert(!solo.includes(`class="walk"`));
   assertStringIncludes(solo, `<a href="/#new">New race</a></nav>`);
+});
+
+Deno.test("Research checked saves picks even when research can't start", async () => {
+  const s = await setup({ maxQueued: 0 });
+  const loc = await readBallot(s);
+  const id = loc.split("/").pop()!;
+  // Nothing checked to research: the pick is saved all the same, and the page says so.
+  const none = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["pick_1", "Pat Example"],
+    ["seen_1", ""],
+  ]));
+  assertEquals(none.status, 400);
+  const body = await none.text();
+  assertStringIncludes(body, "Choose at least one contest or measure to research.");
+  assertStringIncludes(body, "Your picks and notes were saved; nothing was researched.");
+  assertEquals((await s.choices.get(`${id}-1`))!.picks, ["Pat Example"]);
+  // The page carries the new saved version, so posting it again isn't a conflict.
+  const seen = body.match(/name="seen_1" value="([^"]+)"/)![1];
+  assertEquals(seen, (await s.choices.get(`${id}-1`))!.updated_at);
+
+  // More checked than the queue takes: still saved, and nothing started.
+  const many = await s.app(postForm(`${loc}/research`, [
+    ...MAYOR,
+    ["pick_measure", "0"],
+    ["mlabel_0", "Measure X"],
+    ["mjur_0", "City of Fontana"],
+    ["notes_m0", "ask about the sunset clause"],
+    ["seen_m0", ""],
+  ]));
+  assertEquals(many.status, 400);
+  assertStringIncludes(await many.text(), "Your picks and notes were saved");
+  assertEquals((await s.choices.get(`${id}-m0`))!.notes, "ask about the sunset clause");
+  assertEquals((await s.store.list()).length, 0);
+});
+
+Deno.test("items with a saved pick can be hidden on the ballot page, and stay hidden after saving", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  const before = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  assert(!before.includes(`class="check hide-decided"`), "no toggle until something is decided");
+
+  const save = await s.app(postForm(`${loc}/picks?from=ballot`, [
+    ["pick_1", "Pat Example"],
+    ["seen_1", ""],
+    ["hide", "decided"],
+  ]));
+  assertEquals(save.status, 303);
+  const next = save.headers.get("location")!;
+  assertEquals(next, `${loc}?saved=1&hide=decided`);
+  const page = await (await s.app(new Request(`http://app.test${next}`))).text();
+  assertStringIncludes(page, `name="hide" value="decided" checked> Hide the 1 with a saved pick`);
+  assertStringIncludes(page, `<li class="item decided" id="item-1">`);
+  assertStringIncludes(page, `<li class="item" id="item-0">`);
+  // The hiding itself is CSS, and never hides an item checked to research.
+  assertStringIncludes(
+    page,
+    ".item.decided:not(:has(> label.research input:checked)) { display: none; }",
+  );
+  const shown = await (await s.app(new Request(`http://app.test${loc}`))).text();
+  assertStringIncludes(shown, `name="hide" value="decided"> Hide the 1`);
+});
+
+Deno.test("races waiting when the server stops go back in line; one cut off mid-research doesn't", async () => {
+  const dir = await Deno.makeTempDir();
+  const first = await openStores(dir);
+  const port = new GatedPort();
+  const jobs = new JobRunner(first.runs, () => port);
+  const running = await jobs.submit(QUERY, CANDS);
+  const a = await jobs.submit({ ...QUERY, office: "City Council" }, CANDS);
+  const b = await jobs.submit({ ...QUERY, office: "Treasurer" }, CANDS);
+  // Let the first start, then "stop the server" with the others still waiting.
+  while ((await first.runs.get(running.id))!.status !== "running") {
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  first.db.close();
+
+  const again = await openStores(dir);
+  assertEquals(await again.runs.markInterrupted("2026-10-29T00:00:00Z"), 1);
+  assertEquals((await again.runs.get(running.id))!.status, "interrupted");
+  const waiting = again.runs.waiting();
+  assertEquals(waiting.map((r) => r.id), [a.id, b.id]);
+  const port2 = new GatedPort();
+  port2.release();
+  const resumed = new JobRunner(again.runs, () => port2);
+  for (const r of waiting) resumed.resume(r);
+  assertEquals(resumed.pending, 2);
+  await resumed.idle();
+  assertEquals((await again.runs.get(a.id))!.status, "done");
+  assertEquals((await again.runs.get(b.id))!.status, "done");
+  again.db.close();
+  port.release();
 });

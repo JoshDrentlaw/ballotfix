@@ -860,7 +860,11 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     });
 
     if (!suffix && req.method === "GET") {
-      return html(ballotPage(b, { ...await view(), saved: url.searchParams.has("saved") }));
+      return html(ballotPage(b, {
+        ...await view(),
+        saved: url.searchParams.has("saved"),
+        hideDecided: url.searchParams.get("hide") === "decided",
+      }));
     }
     if (suffix === "/researched" && req.method === "GET") {
       if (!b.reading) return html(ballotPage(b, await view()));
@@ -899,7 +903,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         );
       }
       for (const { it, p } of parsed.changes) await saveChoice(o.choices, it.choiceId, p);
-      return redirect(`${BASE}/ballots/${b.id}${fromBallot ? "" : "/picks"}?saved=1`);
+      // Back to the ballot page with its "hide decided" toggle as it was.
+      const hide = fromBallot && field(form, "hide") === "decided" ? "&hide=decided" : "";
+      return redirect(`${BASE}/ballots/${b.id}${fromBallot ? "" : "/picks"}?saved=1${hide}`);
     }
     if (suffix === "/research" && req.method === "POST") {
       if (!o.canResearch) return researchOff();
@@ -940,14 +946,24 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           return html(ballotPage(fresh, { ...await view(fresh, items), error: sheet.error }), 409);
         }
         if (!sheet.ok) error ??= sheet.error;
-        if (!parsed.ok || error) {
-          return html(
-            ballotPage(fresh, { ...await view(fresh, items), form, error: error ?? undefined }),
-            400,
-          );
-        }
+        // Picks are saved whether or not research can start (nothing checked, too many,
+        // a field to fix), so a page of decisions is never lost to a research error.
+        let saved = 0;
         if (o.choices && sheet.ok) {
           for (const { it, p } of sheet.changes) await saveChoice(o.choices, it.choiceId, p);
+          saved = sheet.changes.length;
+        }
+        if (!parsed.ok || error) {
+          return html(
+            ballotPage(fresh, {
+              ...await view(fresh, saved ? undefined : items),
+              form,
+              error: `${error}${
+                saved ? ` Your picks and notes were saved; nothing was researched.` : ""
+              }`,
+            }),
+            400,
+          );
         }
         const started = { ...fresh.started };
         let last = "";

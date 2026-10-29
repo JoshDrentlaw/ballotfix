@@ -220,12 +220,23 @@ export class RunStore extends RecordTable<RunRecord> {
   }
 
   /**
-   * A run that was queued or running when the server stopped will never
-   * finish. Say so rather than leaving it spinning forever.
+   * Runs submitted but never started, oldest first: on startup they go back
+   * in the queue (JobRunner.resume), since nothing has been spent on them yet.
+   */
+  waiting(): RunRecord[] {
+    return this.withStatus("queued").sort((a, b) =>
+      a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+    );
+  }
+
+  /**
+   * A run that was running when the server stopped will never finish. Say so
+   * rather than leaving it spinning forever. Not restarted: research already
+   * paid for part of it, so whether to pay again is the voter's call (rerun).
    */
   async markInterrupted(now: string): Promise<number> {
     let n = 0;
-    for (const run of this.withStatus("queued", "running")) {
+    for (const run of this.withStatus("running")) {
       await this.save({
         ...run,
         status: "interrupted",

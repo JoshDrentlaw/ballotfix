@@ -70,18 +70,20 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   reviews and corrects the reading before any research starts. Races started from it carry
   `candidate_source` with `order_basis: "official_ballot_order"`.
 - A read ballot has three tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
-  each also taking a pick and notes), Researched (`/researched`, each started item with its per-name
-  stance lines, then a collapsed "Shared across this ballot": `ballotConnections` in
-  `src/finance.ts`, every contributor or endorser tied to subjects of two or more items, by the same
-  entity keys the race pages use, alphabetical, holders in ballot order, never counted up; same
-  names in other places or close names are listed as possible matches, never matched; shown from two
-  items up, with each item it couldn't fully compare named as a gap: research not done, finance not
-  looked up or failed, no sourced notes), and Picks (`/picks`, only items with a pick; the rest are
-  named in a "Still undecided" list linking to where to decide them). A page saving picks only
-  touches the items it posted (`parseSheet`). Race pages started from a ballot get prev/next links
-  through its researched items in ballot order (`walkFor`). The checked-to-research highlight and
-  the count on the research button are CSS only (`:has()` and a CSS counter), so they need no
-  script.
+  each also taking a pick and notes; "Hide the N with a saved pick" is a CSS-only toggle that posts
+  with the form and comes back as `?hide=decided`, and never hides an item checked to research;
+  "Research checked" saves the page's picks and notes even when research can't start), Researched
+  (`/researched`, each started item with its per-name stance lines, then a collapsed "Shared across
+  this ballot": `ballotConnections` in `src/finance.ts`, every contributor or endorser tied to
+  subjects of two or more items, by the same entity keys the race pages use, alphabetical, holders
+  in ballot order, never counted up; same names in other places or close names are listed as
+  possible matches, never matched; shown from two items up, with each item it couldn't fully compare
+  named as a gap: research not done, finance not looked up or failed, no sourced notes), and Picks
+  (`/picks`, only items with a pick; the rest are named in a "Still undecided" list linking to where
+  to decide them). A page saving picks only touches the items it posted (`parseSheet`). Race pages
+  started from a ballot get prev/next links through its researched items in ballot order
+  (`walkFor`). The checked-to-research highlight and the count on the research button are CSS only
+  (`:has()` and a CSS counter), so they need no script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
@@ -96,11 +98,14 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - `src/render.ts`: the shared page shell (`page`, strict CSP, all CSS) and race body. Used by both
   the app and the static export, so they can't drift apart.
 - Web app (`deno task serve`, `src/serve.ts`): `src/web/server.ts` routes, `pages.ts` HTML,
-  `jobs.ts` one-race-at-a-time queue, `store.ts` runs/ballots/choices as JSON rows in one SQLite
-  file (`data/ballotfix.db`, `db.ts`, Deno's built-in `node:sqlite`). `openStores()` imports the
-  JSON files older versions wrote, once, and leaves them in place. No client JavaScript: forms post,
-  running races use a meta refresh. POSTs must be same-origin (`Sec-Fetch-Site`, then `Origin`),
-  because starting research spends money.
+  `jobs.ts` one-race-at-a-time queue (`DEFAULT_MAX_QUEUED` waiting, `BALLOTFIX_MAX_QUEUED`; no
+  Redis: waiting runs are saved as "queued", and on start `RunStore.waiting()` puts them back in
+  line, while a run cut off mid-research is marked interrupted, not restarted, since rerunning pays
+  again), `store.ts` runs/ballots/choices as JSON rows in one SQLite file (`data/ballotfix.db`,
+  `db.ts`, Deno's built-in `node:sqlite`). `openStores()` imports the JSON files older versions
+  wrote, once, and leaves them in place. No client JavaScript: forms post, running races use a meta
+  refresh. POSTs must be same-origin (`Sec-Fetch-Site`, then `Origin`), because starting research
+  spends money.
 - `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy `handle`
   block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link, form action,
   and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`). Requests work

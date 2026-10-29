@@ -39,7 +39,10 @@ import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from 
 export interface JobRunnerOptions {
   /** Candidates researched in parallel within one race. */
   concurrency?: number;
-  /** Races allowed to wait behind the running one. */
+  /**
+   * Races allowed to wait behind the running one. They run one at a time and
+   * are saved as "queued", so a restart puts them back in line (resume).
+   */
   maxQueued?: number;
   now?: () => Date;
   log?: (msg: string) => void;
@@ -109,6 +112,9 @@ interface AfterStep<T> {
 
 export class QueueFullError extends Error {}
 
+/** Enough for a whole ballot. Each waiting race costs nothing until it starts. */
+export const DEFAULT_MAX_QUEUED = 30;
+
 export interface SubmitExtras {
   /** Issues the voter said matter most; the same list for every candidate. */
   priorities?: string[];
@@ -138,7 +144,7 @@ export class JobRunner {
     this.#store = store;
     this.#makePort = makePort;
     this.#concurrency = opts.concurrency ?? 3;
-    this.#maxQueued = opts.maxQueued ?? 3;
+    this.#maxQueued = opts.maxQueued ?? DEFAULT_MAX_QUEUED;
     this.#now = opts.now ?? (() => new Date());
     this.#log = opts.log ?? (() => {});
     this.#makeMerger = opts.makeMerger;
@@ -314,11 +320,24 @@ export class JobRunner {
       race: null,
     };
     await this.#store.save(run);
+    this.#enqueue(run);
+    return run;
+  }
+
+  /**
+   * Puts a run saved as queued before a restart back in line, behind
+   * anything already waiting. Not capped: it was accepted when submitted.
+   */
+  resume(run: RunRecord): void {
+    if (run.status !== "queued") return;
+    this.#enqueue(run);
+  }
+
+  #enqueue(run: RunRecord): void {
     this.#waiting++;
     this.#tail = this.#tail.then(() => this.#execute(run)).finally(() => {
       this.#waiting--;
     });
-    return run;
   }
 
   /** Resolves once every submitted race, and the steps after it, have finished. For tests and shutdown. */

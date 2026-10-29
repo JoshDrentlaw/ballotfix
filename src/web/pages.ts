@@ -291,6 +291,8 @@ export interface BallotPageOptions {
   choices?: boolean;
   /** Just saved picks: say so. */
   saved?: boolean;
+  /** Start with items that have a saved pick hidden (the page's own toggle, from the URL). */
+  hideDecided?: boolean;
 }
 
 /**
@@ -468,6 +470,15 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
     );
   }).join("");
 
+  // Items still on this page with a saved pick: the toggle hides them (CSS only, see STYLES).
+  const decided = items.filter((x) => !b.started[x.key] && x.choice?.picks?.length).length;
+  const hide = o.form ? o.form.get("hide") === "decided" : Boolean(o.hideDecided);
+  const toggle = decided && o.choices
+    ? `<label class="check hide-decided"><input type="checkbox" name="hide" value="decided"${
+      hide ? " checked" : ""
+    }> Hide the ${decided} with a saved pick</label>`
+    : "";
+
   const canStart = r.contests.some((c, i) => c.candidates.length && !b.started[String(i)]) ||
     measures.some((_, i) => !b.started[`m${i}`]);
   const left = r.contests.some((_, i) => !b.started[String(i)]) ||
@@ -561,6 +572,7 @@ ${
     left
       ? `<form class="stack ballot" method="post" action="${base}/ballots/${esc(b.id)}/research">
 ${settings}
+${toggle}
 ${contests ? `<h2>Contests</h2><ol class="items">${contests}</ol>` : ""}
 ${
         measureItems
@@ -586,7 +598,10 @@ function itemCard(
   outside: string,
   open: boolean,
 ): string {
-  return `<li class="item" id="item-${esc(key)}"><details${open ? " open" : ""}><summary>
+  // "decided": a saved pick, which the page's "Hide ... with a saved pick" toggle can hide.
+  return `<li class="item${choice?.picks?.length ? " decided" : ""}" id="item-${
+    esc(key)
+  }"><details${open ? " open" : ""}><summary>
 <span class="item-title">${heading}</span><span class="item-meta">${where}</span>${
     leanLine(choice)
   }${outside ? `<span class="will" aria-hidden="true">Checked to research</span>` : ""}</summary>
