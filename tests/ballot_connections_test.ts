@@ -166,6 +166,14 @@ Deno.test("an entity tied to subjects of two items is listed once, every holder 
   assertStringIncludes(html, "Proposition 37 · Opponents:");
   assertStringIncludes(html, "named in The case against");
   assert(!html.includes("different places"));
+  // Neither measure's finance was looked up here, and the page says so for each.
+  assertStringIncludes(html, "Proposition 37: campaign finance filings weren&#39;t looked up");
+  assertStringIncludes(
+    ballotSharedHtml(same, undefined, ["Measure B"]),
+    "Not compared, because their research isn&#39;t done: Measure B.",
+  );
+  // One item alone shares nothing across the ballot: its own page shows its sharing.
+  assertEquals(ballotSharedHtml(ballotConnections(items.slice(0, 1))), "");
 });
 
 Deno.test("a contributor to one side and an endorser of another are one entity in one place", async () => {

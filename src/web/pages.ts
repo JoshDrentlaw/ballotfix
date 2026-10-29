@@ -655,6 +655,7 @@ ${who}
       })),
     ),
     o.entityHref,
+    done.filter((x) => x.run!.status !== "done").map((x) => x.heading),
   );
   const asked = done.some((x) => (x.run!.priorities?.length ?? 0) > 0)
     ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Within each contest every candidate was checked against the same issues, but the issues can differ from one contest or measure to the next. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`

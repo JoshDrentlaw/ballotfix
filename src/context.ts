@@ -117,20 +117,16 @@ const GENERIC = new Set(
   constitution constitutional amendment initiative statute law act bill`).split(/\s+/),
 );
 
+/** A run starting with one of these is a ballot item or a law, not a name. */
+const NOT_NAMES = new Set(["measure", "proposition", "prop", "resolution", "ordinance", "section"]);
+
 /**
- * A run starting with one of these is a ballot item or a law, not a name; "Yes on ..." and
- * "No on ..." are a measure's own sides, which the page already names.
+ * "Yes on ..." and "No on ..." are a measure's own sides, which the page already names
+ * ("Yes on 43" ends at "Yes", since "on" can't end a name). Only those: "No Labels" and
+ * "Yes In My Back Yard" are names.
  */
-const NOT_NAMES = new Set([
-  "measure",
-  "proposition",
-  "prop",
-  "resolution",
-  "ordinance",
-  "section",
-  "yes",
-  "no",
-]);
+const isSide = (words: readonly string[]) =>
+  (words[0] === "yes" || words[0] === "no") && (words.length === 1 || words[1] === "on");
 
 /** Abbreviations whose period doesn't end the sentence. */
 const ABBREVIATIONS = new Set([
@@ -258,7 +254,7 @@ export function findNames(statement: string, exclude: Exclusions = NOTHING_EXCLU
     while (r.length && !isCap(r.at(-1)!.word) && !/^\d+$/.test(r.at(-1)!.word)) r = r.slice(0, -1);
     if (!r.length) continue;
     const words = r.map((t) => t.word.toLowerCase());
-    if (NOT_NAMES.has(words[0])) continue;
+    if (NOT_NAMES.has(words[0]) || isSide(words)) continue;
     if (words.every((w) => GENERIC.has(w) || CONNECTORS.has(w) || exclude.words.has(nameKey(w)))) {
       continue;
     }

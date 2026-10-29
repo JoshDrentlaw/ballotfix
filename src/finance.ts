@@ -581,9 +581,31 @@ export interface BallotConnections {
   shared: BallotShared[];
   /** Names that may be one entity across items, kept separate: each with where it appears. */
   possible: { name: string; item: string; label: string }[][];
-  /** Subjects compared, and how many places (state + jurisdiction) they are in. */
+  /** Items and subjects compared, and how many places (state + jurisdiction) they are in. */
+  items: number;
   subjects: number;
   places: number;
+  /** What each item couldn't contribute, in ballot order: never omitted silently. */
+  gaps: { item: string; why: string }[];
+}
+
+/** Why an item's ties may be incomplete, in the words the race pages' caveats use. */
+function itemGaps(it: BallotItemDossier): string[] {
+  const d = it.measure ?? it.race;
+  if (!d) return [];
+  if (it.measure && it.measure.status !== "ok") {
+    return ["its research failed, so it has no sides to compare"];
+  }
+  return [
+    !d.finance
+      ? "campaign finance filings weren't looked up, so only endorsements are compared"
+      : d.finance.error
+      ? "campaign finance filings couldn't be looked up, so only endorsements are compared"
+      : "",
+    !d.context?.notes.some((n) => n.verified)
+      ? "no names in its facts have a sourced note, so endorsements can't be matched by name"
+      : "",
+  ].filter(Boolean);
 }
 
 /**
@@ -660,7 +682,9 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
   return {
     shared,
     possible,
+    items: items.length,
     subjects: subjects.length,
     places: new Set(subjects.map((s) => s.place)).size,
+    gaps: items.flatMap((it) => itemGaps(it).map((why) => ({ item: it.heading, why }))),
   };
 }

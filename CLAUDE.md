@@ -74,12 +74,14 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   stance lines, then a collapsed "Shared across this ballot": `ballotConnections` in
   `src/finance.ts`, every contributor or endorser tied to subjects of two or more items, by the same
   entity keys the race pages use, alphabetical, holders in ballot order, never counted up; same
-  names in other places or close names are listed as possible matches, never matched), and Picks
-  (`/picks`, only items with a pick; the rest are named in a "Still undecided" list linking to where
-  to decide them). A page saving picks only touches the items it posted (`parseSheet`). Race pages
-  started from a ballot get prev/next links through its researched items in ballot order
-  (`walkFor`). The checked-to-research highlight and the count on the research button are CSS only
-  (`:has()` and a CSS counter), so they need no script.
+  names in other places or close names are listed as possible matches, never matched; shown from two
+  items up, with each item it couldn't fully compare named as a gap: research not done, finance not
+  looked up or failed, no sourced notes), and Picks (`/picks`, only items with a pick; the rest are
+  named in a "Still undecided" list linking to where to decide them). A page saving picks only
+  touches the items it posted (`parseSheet`). Race pages started from a ballot get prev/next links
+  through its researched items in ballot order (`walkFor`). The checked-to-research highlight and
+  the count on the research button are CSS only (`:has()` and a CSS counter), so they need no
+  script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
@@ -137,8 +139,10 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   that call, or it is reused: a name that already has a verified note from a finished run in the
   same place (`RunStore.knownNotes`, state + jurisdiction as the graph compares them) takes that
   note (`reused_from`: the run whose lookup retrieved its page, and when) and is not sent, so the
-  cap goes to names nobody has described yet; the page says which notes came from an earlier lookup.
-  A failed call keeps reused notes. A note must be one short sentence with no evaluative word
+  cap goes to names nobody has described yet; the page says which notes came from an earlier lookup,
+  and that names researched before are more likely to have one. Never from the run's own race or
+  measure (same choice id), even via another run that reused it, so a rerun looks names up afresh. A
+  failed call keeps reused notes. A note must be one short sentence with no evaluative word
   (`CHARACTERIZATIONS`). Every name found is accounted for on the page under "Names in these facts":
   not looked up (over the cap), no note needed (the model's "skip"), no sourced note, or an
   unverified note (collapsed, never next to the name). A failed call only logs, and is recorded on

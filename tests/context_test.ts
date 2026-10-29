@@ -573,6 +573,11 @@ Deno.test("generic words and a measure's own sides are not names", () => {
   assertEquals(findNames("Endorsed by the League of Women Voters of California."), [
     "League of Women Voters of California",
   ]);
+  // Only "Yes on" and "No on" are sides: other names starting with Yes or No are names.
+  assertEquals(findNames("Endorsed by No Labels and by Yes In My Back Yard."), [
+    "No Labels",
+    "Yes In My Back Yard",
+  ]);
 });
 
 /** The verified notes a first lookup in Fontana wrote, as a later run would find them. */
@@ -656,5 +661,38 @@ Deno.test("unverified notes and notes from another place are never reused", asyn
   const note = (await s.runs.get(second.id))!.race!.context!.notes[0];
   assertEquals(note.reused_from?.run, first.id);
   assert(logs.some((l) => l.includes("reused 1 note(s) from earlier runs in this place")));
+  s.db.close();
+});
+
+Deno.test("a rerun looks its names up afresh, even where another race reused its notes", async () => {
+  const s = await openStores(await Deno.makeTempDir());
+  const port = new FakeResearch(listing(CANDS), {
+    "Acquanetta Warren": raw({
+      sections: { endorsements: section(fact("Endorsed by Inland Builders PAC.")) },
+      retrieved_urls: [HERALD],
+    }),
+  });
+  const sent: string[] = [];
+  const jobs = new JobRunner(s.runs, () => port, {
+    makeContextWriter: () => ({
+      describeNames: (req) => {
+        sent.push(req.names.map((n) => n.name).join());
+        return writer({ "Inland Builders PAC": PAC_NOTE }).describeNames(req);
+      },
+    }),
+  });
+  const one = CANDS.slice(0, 1);
+  const first = await jobs.submit(QUERY, one);
+  await jobs.idle();
+  // Another race in the same place reuses the note: no call.
+  const other = await jobs.submit({ ...QUERY, office: "City Council" }, one);
+  await jobs.idle();
+  assertEquals(sent.length, 1);
+  assertEquals((await s.runs.get(other.id))!.race!.context!.notes[0].reused_from?.run, first.id);
+  // A rerun of the first race looks the name up again, not via its own note on the other race.
+  const rerun = await jobs.submit(QUERY, one, null, { choiceId: first.choice_id ?? first.id });
+  await jobs.idle();
+  assertEquals(sent.length, 2);
+  assertEquals((await s.runs.get(rerun.id))!.race!.context!.notes[0].reused_from, undefined);
   s.db.close();
 });
