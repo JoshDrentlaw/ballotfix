@@ -857,9 +857,9 @@ export interface AnthropicResearcherOptions {
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
   /** Model for merging duplicate claims (DEFAULT_MERGE_MODEL); it runs at low effort. */
   mergeModel?: string;
-  /** Model for context notes on names (DEFAULT_CONTEXT_MODEL); it runs at low effort. */
+  /** Model for context notes on names (DEFAULT_CONTEXT_MODEL), at LOOKUP_EFFORT. */
   contextModel?: string;
-  /** Model for reading campaign finance filings (DEFAULT_FINANCE_MODEL); low effort. */
+  /** Model for reading campaign finance filings (DEFAULT_FINANCE_MODEL), at LOOKUP_EFFORT. */
   financeModel?: string;
   /** Receives one line per call: its tokens, searches, and estimated cost. */
   log?: (message: string) => void;
@@ -881,6 +881,13 @@ export const DEFAULT_FINANCE_MODEL = "claude-sonnet-5-5";
  * The same cap holds for every candidate and measure.
  */
 export const FETCH_MAX_CONTENT_TOKENS = 25000;
+
+/**
+ * Effort for the context and finance lookups. On Sonnet 5.5, low effort can
+ * answer without searching at all (a finance run came back with no searches
+ * and nothing found); medium is the level suggested for multistep tool use.
+ */
+export const LOOKUP_EFFORT = "medium";
 
 /** List prices per million tokens, for the usage log's estimate only. */
 const PRICES: Record<string, { input: number; output: number }> = {
@@ -1164,7 +1171,7 @@ export class AnthropicResearcher
 
   /**
    * One call for a whole run's names: web tools with small caps counted
-   * across continuations, low effort. Only names already found in verified
+   * across continuations, LOOKUP_EFFORT. Only names already found in verified
    * facts are sent, and nothing says which candidate or side each came from.
    */
   async describeNames(request: ContextRequest): Promise<RawContextResult> {
@@ -1178,7 +1185,7 @@ export class AnthropicResearcher
     }, {
       model: this.#contextModel,
       label: "context notes",
-      effort: "low",
+      effort: LOOKUP_EFFORT,
       maxTokens: CONTEXT_MAX_TOKENS,
       maxContinuations: CONTEXT_MAX_CONTINUATIONS,
     });
@@ -1187,7 +1194,7 @@ export class AnthropicResearcher
 
   /**
    * One call for a whole run's filings: web tools with caps counted across
-   * continuations, low effort. Every subject is listed the same way, with the
+   * continuations, LOOKUP_EFFORT. Every subject is listed the same way, with the
    * same per-subject limit; src/finance.ts checks what comes back.
    */
   async findContributions(request: FinanceRequest): Promise<RawFinanceResult> {
@@ -1207,7 +1214,7 @@ export class AnthropicResearcher
     }, {
       model: this.#financeModel,
       label: "campaign finance",
-      effort: "low",
+      effort: LOOKUP_EFFORT,
       maxTokens: FINANCE_MAX_TOKENS,
       maxContinuations: FINANCE_MAX_CONTINUATIONS,
     });

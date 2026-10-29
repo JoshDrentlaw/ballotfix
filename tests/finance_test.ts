@@ -16,6 +16,7 @@ import {
   MAX_NOTE_CHARS,
   measureConnections,
   NOTHING_FOUND,
+  NOTHING_OPENED,
   raceConnections,
   raceFinanceFailed,
   shareFor,
@@ -600,7 +601,7 @@ Deno.test("a long explanation is kept, cut and marked, never dropped like a reco
   const f = checkFinance(ONE, {
     subjects: [subject("s1", [], { gap_note: long, not_listed: long })],
     portal_gaps: [{ portal: "County e-filing", url: "", problem: "javascript_only", note: long }],
-    retrieved_urls: [],
+    retrieved_urls: [FILING],
     model: "fake",
   });
   const [s] = f.subjects;
@@ -609,6 +610,35 @@ Deno.test("a long explanation is kept, cut and marked, never dropped like a reco
   assert(s.not_listed!.endsWith("…"));
   assertEquals(f.portal_gaps.length, 1);
   assert(f.portal_gaps[0].note.endsWith("…"));
+});
+
+Deno.test("a lookup that opened no page says nothing was checked, for every subject", () => {
+  const two = {
+    labels: [{ subject: "A", candidate: 0 }, { subject: "B", candidate: 1 }],
+    request: {
+      subjects: [
+        { id: "s1", name: "A", role: "candidate" as const },
+        { id: "s2", name: "B", role: "candidate" as const },
+      ],
+      perSubject: 5,
+    },
+  };
+  const f = checkFinance(two, {
+    subjects: [
+      subject("s1", [gift("Inland Builders PAC", "$1,000")], {
+        gap_note: "No committee was found.",
+        searched: ["Cal-Access"],
+      }),
+    ],
+    portal_gaps: [],
+    retrieved_urls: [],
+    model: "fake",
+  });
+  for (const s of f.subjects) {
+    assertEquals(s.gap_note, NOTHING_OPENED);
+    assertEquals(s.searched, []);
+    assertEquals(s.contributions, []);
+  }
 });
 
 Deno.test("a row repeated exactly counts once; a retrieved copy of an unretrieved row still stands", () => {
