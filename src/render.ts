@@ -8,6 +8,7 @@
 import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import { coveredSections, incumbencyNote, NOTHING_FOUND } from "./dossier.ts";
 import {
+  type BallotConnections,
   measureConnections,
   type PairConnections,
   raceConnections,
@@ -169,6 +170,9 @@ function noteMeta(n: ContextNote): string {
     link(n.source_url, n.source_name),
     n.author ? `by ${esc(n.author)}` : "",
     n.published ? esc(publishedDate(n.published)) : "date not stated",
+    n.reused_from
+      ? `from an earlier lookup (${esc(publishedDate(n.reused_from.looked_up.slice(0, 10)))})`
+      : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -476,12 +480,24 @@ function namesHtml(c: ContextResult | undefined): string {
   const list = (names: readonly string[]) => names.map(esc).join("; ");
   const parts = [
     c.error
-      ? `<p class="gap">Notes on these names couldn't be written in this run (${esc(c.error)}).</p>`
+      ? `<p class="gap">Notes on these names couldn't be written in this run (${esc(c.error)}).${
+        shown.some((n) => n.reused_from)
+          ? " The notes shown come from an earlier run in this place that retrieved a page for the same name, as each note says."
+          : ""
+      }</p>`
       : `<p>Names were picked out of the facts automatically, so some may be missed.${
         shown.length
-          ? ` A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate.`
+          ? ` A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved${
+            shown.some((n) => n.reused_from)
+              ? ", or, where the note says so, one an earlier run in this place retrieved for the same name"
+              : ""
+          }. Notes describe; they don't evaluate.`
           : ""
-      } Every name was looked up the same way, whichever candidate or side it came up for.</p>`,
+      } Every name was looked up the same way, whichever candidate or side it came up for.${
+        shown.some((n) => n.reused_from)
+          ? " A name an earlier run in this place already described reuses that note instead of being looked up again, whoever it came up for, so names researched before are more likely to have one."
+          : ""
+      }</p>`,
     c.not_described.length
       ? `<p><strong>No sourced note found for:</strong> ${list(c.not_described)}.</p>`
       : "",
@@ -662,6 +678,13 @@ function kindLabel(key: string, kind: string): string {
   return kept === "row" || kept === "work" ? "individual" : kind;
 }
 
+/** One shared entity: its name (linked when the app has a page for it), kind, and every tie. */
+function sharedEntryHtml(ref: EntityRef, ties: readonly string[], links?: EntityLinks): string {
+  return `<li><strong>${entityName(ref.name, ref, links)}</strong> <span class="desig">${
+    kindLabel(ref.key, ref.kind)
+  }</span><ul class="ties">${ties.join("")}</ul></li>`;
+}
+
 function possibleHtml(p: PairConnections): string {
   return p.possible.map((m) =>
     `<p class="gap">Possibly the same, kept separate because the names or details don't match exactly: ${
@@ -699,11 +722,16 @@ function sharedHtml(
       p.shared.length
         ? `<ul class="shared-list">${
           p.shared.map((x) =>
-            `<li><strong>${entityName(x.ref.name, x.ref, links)}</strong> <span class="desig">${
-              kindLabel(x.ref.key, x.ref.kind)
-            }</span><ul class="ties">${x.a.map((t) => tieHtml(p.a, t)).join("")}${
-              x.b.map((t) => tieHtml(p.b, t)).join("")
-            }</ul></li>`
+            sharedEntryHtml(
+              x.ref,
+              [
+                ...x.a.map((t) => tieHtml(p.a, t)),
+                ...x.b.map((t) =>
+                  tieHtml(p.b, t)
+                ),
+              ],
+              links,
+            )
           ).join("")
         }</ul>`
         : `<p class="gap">No shared contributors or endorsers found.</p>`
@@ -722,6 +750,55 @@ function sharedHtml(
     esc(place)
   } by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${caveats}${body}</details>`;
+}
+
+/**
+ * Who candidates and sides of different items on one ballot share, for the
+ * ballot's Researched tab (ballotConnections). Collapsed. Entities are
+ * alphabetical and each lists its holders in ballot order, each tie with its
+ * source; nothing is counted up or ranked. `href` links an entity key to its
+ * page when the app has one.
+ */
+export function ballotSharedHtml(
+  c: BallotConnections,
+  href?: (key: string) => string | null,
+  /** Researched items left out because their research isn't done: headings, in ballot order. */
+  notCompared: readonly string[] = [],
+): string {
+  // Sharing across items needs two items; within one, it is that item's own page's.
+  if (c.items < 2) return "";
+  const links = href ? { runId: "", href } : undefined;
+  const list = c.shared.length
+    ? `<ul class="shared-list">${
+      c.shared.map((x) =>
+        sharedEntryHtml(
+          x.ref,
+          x.holders.flatMap((h) => h.ties.map((t) => tieHtml(`${h.item} · ${h.label}`, t))),
+          links,
+        )
+      ).join("")
+    }</ul>`
+    : `<p class="gap">No contributor or endorser is tied to more than one item.</p>`;
+  const gaps = [
+    ...(notCompared.length
+      ? [`Not compared, because their research isn't done: ${notCompared.join("; ")}.`]
+      : []),
+    ...c.gaps.map((g) => `${g.item}: ${g.why}.`),
+  ].map((g) => `<p class="gap">${esc(g)}</p>`).join("");
+  const possible = c.possible.map((group) =>
+    `<p class="gap">Possibly the same, kept separate because the names, details, or places don't match exactly: ${
+      group.map((x) => `${esc(x.name)} (${esc(x.item)} · ${esc(x.label)})`).join(" / ")
+    }.</p>`
+  ).join("");
+  return `<details class="shared sec" id="shared"><summary>Shared across this ballot (${
+    c.shared.length ? `${c.shared.length} found` : "none found"
+  })</summary>
+<p>Contributors and endorsers tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them: a contributor only from a filing that run retrieved, an endorser only where a fact names someone with a sourced note, by exact name and kind, and an individual also by the same stated occupation and employer.${
+    c.places > 1
+      ? ` These items are in ${c.places} different places (city, county, district, or state), and names are only matched within one place, so the same group in two places is listed under possible matches instead.`
+      : ""
+  } Sharing within one contest or measure is on its own page. A shared name is a connection to look into, not a judgment of anyone.</p>
+${gaps}${list}${possible}</details>`;
 }
 
 function dossierSection(

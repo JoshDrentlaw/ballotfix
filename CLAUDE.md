@@ -71,11 +71,17 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   `candidate_source` with `order_basis: "official_ballot_order"`.
 - A read ballot has three tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
   each also taking a pick and notes), Researched (`/researched`, each started item with its per-name
-  stance lines), and Picks (`/picks`, only items with a pick; the rest are named in a "Still
-  undecided" list linking to where to decide them). A page saving picks only touches the items it
-  posted (`parseSheet`). Race pages started from a ballot get prev/next links through its researched
-  items in ballot order (`walkFor`). The checked-to-research highlight and the count on the research
-  button are CSS only (`:has()` and a CSS counter), so they need no script.
+  stance lines, then a collapsed "Shared across this ballot": `ballotConnections` in
+  `src/finance.ts`, every contributor or endorser tied to subjects of two or more items, by the same
+  entity keys the race pages use, alphabetical, holders in ballot order, never counted up; same
+  names in other places or close names are listed as possible matches, never matched; shown from two
+  items up, with each item it couldn't fully compare named as a gap: research not done, finance not
+  looked up or failed, no sourced notes), and Picks (`/picks`, only items with a pick; the rest are
+  named in a "Still undecided" list linking to where to decide them). A page saving picks only
+  touches the items it posted (`parseSheet`). Race pages started from a ballot get prev/next links
+  through its researched items in ballot order (`walkFor`). The checked-to-research highlight and
+  the count on the research button are CSS only (`:has()` and a CSS counter), so they need no
+  script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
@@ -128,16 +134,24 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   says some may be missed), and at most `MAX_CONTEXT_NAMES` are sent, in whole rounds only, one name
   per candidate per round (for a measure: case for, case against, the rest), so ballot order never
   buys an extra name. The request never labels whose facts a name came from, and candidates' names
-  in quoted statements are replaced. A note shows only if its URL was retrieved by that call, and it
-  must be one short sentence with no evaluative word (`CHARACTERIZATIONS`). Every name found is
-  accounted for on the page under "Names in these facts": not looked up (over the cap), no note
-  needed (the model's "skip"), no sourced note, or an unverified note (collapsed, never next to the
-  name). A failed call only logs, and is recorded on the dossier (`context.error`) so the page lists
-  the names without notes. A shown note sits collapsed after the name's first mention in each fact
-  (`attachNotes`, any case, shared with the graph). In the graph, a verified note makes a person or
-  organization entity scoped by state + jurisdiction, with the note as a `context` claim, and every
-  claim whose statement names it links to it with role `named`. The steps after a run is done
-  (merge, context) run beside the race queue, not in it, so the next race doesn't wait on them.
+  in quoted statements are replaced. Generic words ("Legislature", "Californians") and a measure's
+  own sides ("Yes on ...", "No on ...") are not names. A note shows only if its URL was retrieved by
+  that call, or it is reused: a name that already has a verified note from a finished run in the
+  same place (`RunStore.knownNotes`, state + jurisdiction as the graph compares them) takes that
+  note (`reused_from`: the run whose lookup retrieved its page, and when) and is not sent, so the
+  cap goes to names nobody has described yet; the page says which notes came from an earlier lookup,
+  and that names researched before are more likely to have one. Never from the run's own race or
+  measure (same choice id), even via another run that reused it, so a rerun looks names up afresh. A
+  failed call keeps reused notes. A note must be one short sentence with no evaluative word
+  (`CHARACTERIZATIONS`). Every name found is accounted for on the page under "Names in these facts":
+  not looked up (over the cap), no note needed (the model's "skip"), no sourced note, or an
+  unverified note (collapsed, never next to the name). A failed call only logs, and is recorded on
+  the dossier (`context.error`) so the page lists the names without notes. A shown note sits
+  collapsed after the name's first mention in each fact (`attachNotes`, any case, shared with the
+  graph). In the graph, a verified note makes a person or organization entity scoped by state +
+  jurisdiction, with the note as a `context` claim, and every claim whose statement names it links
+  to it with role `named`. The steps after a run is done (merge, context) run beside the race queue,
+  not in it, so the next race doesn't wait on them.
 - Campaign finance and shared connections (step 4, `src/finance.ts`): after the context step,
   `JobRunner` makes one capped call per run (`FinanceResearcher.findContributions`: `LOOKUP_EFFORT`,
   `BALLOTFIX_FINANCE_MODEL` or `DEFAULT_FINANCE_MODEL`, "off" skips it; CLI `--no-finance`), asking

@@ -1,7 +1,9 @@
 /** HTML for the web app. Every page goes through render.ts's page(): no scripts, strict CSP. */
 
 import { measuresOf } from "../dossier.ts";
+import { ballotConnections } from "../finance.ts";
 import {
+  ballotSharedHtml,
   candidateAnchors,
   coverageLine,
   type EntityLinks,
@@ -593,6 +595,8 @@ function itemCard(
 
 export interface ResearchedOptions {
   base?: string;
+  /** Links an entity key to its entity page, when the app has one. */
+  entityHref?: (key: string) => string | null;
 }
 
 /**
@@ -641,6 +645,18 @@ export function researchedPage(b: BallotRecord, items: PickItem[], o: Researched
 ${who}
 <div class="actions"><a class="button secondary" href="${href}">Open the research</a></div></li>`;
   }).join("");
+  const shared = ballotSharedHtml(
+    ballotConnections(
+      done.filter((x) => x.run!.status === "done").map((x) => ({
+        heading: x.heading,
+        runId: x.run!.id,
+        race: x.run!.race,
+        measure: x.run!.measure_result,
+      })),
+    ),
+    o.entityHref,
+    done.filter((x) => x.run!.status !== "done").map((x) => x.heading),
+  );
   const asked = done.some((x) => (x.run!.priorities?.length ?? 0) > 0)
     ? `<p class="note">Under each name: which of your stated views its cited record conflicts with or matches, conflicts first. Within each contest every candidate was checked against the same issues, but the issues can differ from one contest or measure to the next. It is not a score or a recommendation; open the research and its sources before relying on it.</p>`
     : "";
@@ -654,7 +670,7 @@ ${
   }
 ${
     done.length
-      ? `${asked}<ol class="items">${list}</ol>`
+      ? `${asked}<ol class="items">${list}</ol>${shared}`
       : `<p class="sub">Nothing from this ballot has been researched yet. Check what you want under <a href="${base}/ballots/${
         esc(b.id)
       }">To research</a>.</p>`

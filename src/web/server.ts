@@ -864,7 +864,20 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     }
     if (suffix === "/researched" && req.method === "GET") {
       if (!b.reading) return html(ballotPage(b, await view()));
-      return html(researchedPage(b, await pickItems(b), { base: BASE }));
+      const items = await pickItems(b);
+      // Entity keys of contributors carry their run, so links come from every run shown.
+      const slugs = new Map(
+        items.flatMap((x) =>
+          x.run?.status === "done" ? [...o.store.knowledge.slugsOfRun(x.run.id)] : []
+        ),
+      );
+      return html(researchedPage(b, items, {
+        base: BASE,
+        entityHref: (key) => {
+          const s = slugs.get(key);
+          return s ? `${BASE}/entities/${s}` : null;
+        },
+      }));
     }
     if (suffix === "/picks" && req.method === "GET") {
       return html(picksPage(b, await pickItems(b), BASE, { saved: url.searchParams.has("saved") }));

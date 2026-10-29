@@ -5,12 +5,15 @@
  * was a JSON file in the data directory; openStores() imports those once.
  */
 
+import { notesToReuse } from "../context.ts";
+import { scopeKey } from "../knowledge.ts";
 import { Db } from "./db.ts";
 import { KnowledgeBase } from "./kb.ts";
 import type {
   BallotCandidate,
   BallotReading,
   CandidateSource,
+  ContextNote,
   MeasureDossier,
   MeasureQuery,
   RaceDossier,
@@ -188,6 +191,32 @@ export class RunStore extends RecordTable<RunRecord> {
       run.choice_id ?? run.id,
     );
     return r ? String(r.id) : null;
+  }
+
+  /**
+   * Verified context notes held by finished runs in one place (state +
+   * jurisdiction, compared as the graph compares them), newest run first:
+   * what the context step can reuse instead of looking up again
+   * (src/context.ts). A measure run keeps its jurisdiction as the city.
+   *
+   * Never from `except`'s own race or measure (same choice id: the run itself
+   * and every earlier run a rerun replaces), even by way of another run that
+   * reused one of them, so a rerun looks its names up afresh.
+   */
+  knownNotes(state: string, jurisdiction: string, except: string): ContextNote[] {
+    const scope = scopeKey(state, jurisdiction);
+    const done = this.withStatus("done");
+    const raceOf = (r: RunRecord) => r.choice_id ?? r.id;
+    const self = done.find((r) => r.id === except);
+    const own = new Set(
+      done.filter((r) => r.id === except || (self && raceOf(r) === raceOf(self))).map((r) => r.id),
+    );
+    own.add(except);
+    return done
+      .filter((r) => !own.has(r.id) && scopeKey(r.query.state, r.query.city) === scope)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .flatMap((r) => notesToReuse(r.measure_result?.context ?? r.race?.context, r))
+      .filter((n) => !own.has(n.reused_from!.run));
   }
 
   /**

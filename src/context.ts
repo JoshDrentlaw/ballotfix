@@ -19,6 +19,10 @@
  *   the candidates' names in the statements it quotes are replaced.
  * - A failed call is recorded on the dossier, so the page says why the
  *   names it lists have no notes.
+ * - A name that already has a verified note from an earlier run in the same
+ *   place (state + jurisdiction) reuses it instead of being sent again, so
+ *   the cap goes to names nobody has described yet. The page says which
+ *   notes came from an earlier lookup, and when.
  */
 
 import { normalizeUrl } from "./dossier.ts";
@@ -109,11 +113,20 @@ const GENERIC = new Set(
   kansas kentucky louisiana maine maryland massachusetts michigan minnesota mississippi
   missouri montana nebraska nevada new hampshire jersey mexico york carolina dakota ohio
   oklahoma oregon pennsylvania rhode island tennessee texas utah vermont virginia washington
-  wisconsin wyoming`).split(/\s+/),
+  wisconsin wyoming californians americans legislature legislative senate assembly congress
+  constitution constitutional amendment initiative statute law act bill`).split(/\s+/),
 );
 
 /** A run starting with one of these is a ballot item or a law, not a name. */
 const NOT_NAMES = new Set(["measure", "proposition", "prop", "resolution", "ordinance", "section"]);
+
+/**
+ * "Yes on ..." and "No on ..." are a measure's own sides, which the page already names
+ * ("Yes on 43" ends at "Yes", since "on" can't end a name). Only those: "No Labels" and
+ * "Yes In My Back Yard" are names.
+ */
+const isSide = (words: readonly string[]) =>
+  (words[0] === "yes" || words[0] === "no") && (words.length === 1 || words[1] === "on");
 
 /** Abbreviations whose period doesn't end the sentence. */
 const ABBREVIATIONS = new Set([
@@ -241,7 +254,7 @@ export function findNames(statement: string, exclude: Exclusions = NOTHING_EXCLU
     while (r.length && !isCap(r.at(-1)!.word) && !/^\d+$/.test(r.at(-1)!.word)) r = r.slice(0, -1);
     if (!r.length) continue;
     const words = r.map((t) => t.word.toLowerCase());
-    if (NOT_NAMES.has(words[0])) continue;
+    if (NOT_NAMES.has(words[0]) || isSide(words)) continue;
     if (words.every((w) => GENERIC.has(w) || CONNECTORS.has(w) || exclude.words.has(nameKey(w)))) {
       continue;
     }
@@ -308,13 +321,15 @@ function priorityResults(p: readonly PriorityResult[] | undefined): SectionResul
  * most-mentioned one. Only whole rounds are sent, so ballot order never
  * buys a subject an extra name; what doesn't fit is listed as not looked up.
  * A name already taken for another subject serves both, and this subject
- * takes its next one.
+ * takes its next one. Names in `known` (keys of notes reused from earlier
+ * runs) are set aside as `reused` first and never count against the cap.
  */
 export function chooseNames(
   subjects: readonly string[][],
   exclude: Exclusions,
   cap = MAX_CONTEXT_NAMES,
-): { chosen: Found[]; left: Found[] } {
+  known: ReadonlySet<string> = new Set(),
+): { chosen: Found[]; left: Found[]; reused: Found[] } {
   const byKey = new Map<string, Found>();
   subjects.forEach((stmts, subject) => {
     for (const s of stmts) {
@@ -327,7 +342,8 @@ export function chooseNames(
       }
     }
   });
-  const all = [...byKey.values()];
+  const reused = [...byKey.values()].filter((f) => known.has(f.key));
+  const all = [...byKey.values()].filter((f) => !known.has(f.key));
   const queues = subjects.map((_, subject) =>
     all.filter((f) => f.count.has(subject))
       .sort((a, b) => b.count.get(subject)! - a.count.get(subject)!)
@@ -343,7 +359,11 @@ export function chooseNames(
     if (!round.size || picked.size + round.size > cap) break;
     for (const f of round) picked.add(f);
   }
-  return { chosen: all.filter((f) => picked.has(f)), left: all.filter((f) => !picked.has(f)) };
+  return {
+    chosen: all.filter((f) => picked.has(f)),
+    left: all.filter((f) => !picked.has(f)),
+    reused,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -427,7 +447,45 @@ export interface ContextStepResult<T> {
   shown: number;
   /** Names found but not sent, over MAX_CONTEXT_NAMES. */
   skipped: number;
+  /** Names given a note from an earlier run instead of being sent. */
+  reused: number;
 }
+
+/**
+ * Verified notes from earlier runs in the same place, to reuse rather than
+ * look up again: newest first, so the newest note for a name wins.
+ */
+export type KnownNotes = readonly ContextNote[];
+
+/**
+ * The verified notes a finished run holds, as reusable notes: each keeps the
+ * run whose lookup retrieved its page (the first one, when it was reused).
+ */
+export function notesToReuse(
+  context: ContextResult | undefined,
+  run: { id: string; updated_at: string },
+): ContextNote[] {
+  return (context?.notes ?? []).filter((n) => n.verified).map((n) => ({
+    ...n,
+    reused_from: n.reused_from ?? { run: run.id, looked_up: run.updated_at },
+  }));
+}
+
+/** This run's own spelling of each reused name, with the earlier note. */
+function reuse(found: readonly Found[], known: KnownNotes): ContextNote[] {
+  const byKey = new Map<string, ContextNote>();
+  for (const n of known) {
+    const k = nameKey(n.name);
+    if (n.verified && n.reused_from && !byKey.has(k)) byKey.set(k, n);
+  }
+  return found.flatMap((f) => {
+    const n = byKey.get(f.key);
+    return n ? [{ ...n, name: f.name }] : [];
+  });
+}
+
+const knownKeys = (known: KnownNotes) =>
+  new Set(known.filter((n) => n.verified && n.reused_from).map((n) => nameKey(n.name)));
 
 /** Everything the step needs from a dossier, before any call. */
 interface Plan {
@@ -481,11 +539,18 @@ function measurePlan(m: MeasureDossier): Plan {
 async function describe(
   plan: Plan,
   writer: ContextWriter,
-): Promise<ContextResult & { sent: number }> {
-  const { chosen, left } = chooseNames(plan.subjects, plan.exclude);
-  const empty = { notes: [], not_described: [], not_needed: [], model: null };
+  known: KnownNotes,
+): Promise<ContextResult & { sent: number; reused: number }> {
+  const { chosen, left, reused } = chooseNames(
+    plan.subjects,
+    plan.exclude,
+    MAX_CONTEXT_NAMES,
+    knownKeys(known),
+  );
+  const earlier = reuse(reused, known);
+  const empty = { notes: earlier, not_described: [], not_needed: [], model: null };
   const not_looked_up = left.map((f) => f.name);
-  if (!chosen.length) return { ...empty, not_looked_up, sent: 0 };
+  if (!chosen.length) return { ...empty, not_looked_up, sent: 0, reused: earlier.length };
   const names = chosen.map((f, i) => ({
     id: `n${i + 1}`,
     name: f.name,
@@ -497,42 +562,51 @@ async function describe(
     electionDate: plan.electionDate,
     names,
   });
+  const checked = checkNotes(names, r.notes, r.retrieved_urls);
   return {
-    ...checkNotes(names, r.notes, r.retrieved_urls),
+    ...checked,
+    notes: [...earlier, ...checked.notes],
     not_looked_up,
     model: r.model,
     sent: names.length,
+    reused: earlier.length,
   };
 }
 
 function finish<T extends { context?: ContextResult }>(
   d: T,
-  r: ContextResult & { sent: number },
+  r: ContextResult & { sent: number; reused: number },
 ): ContextStepResult<T> {
-  const { sent, ...context } = r;
-  const found = sent + context.not_looked_up.length;
+  const { sent, reused, ...context } = r;
+  const found = sent + reused + context.not_looked_up.length;
   return {
     // Nothing to say when the facts name no one: the dossier stays as it was.
     dossier: found ? { ...d, context } : d,
     sent,
     shown: context.notes.filter((n) => n.verified).length,
     skipped: context.not_looked_up.length,
+    reused,
   };
 }
 
-/** One call for the whole race; every candidate's names get the same share and the same call. */
+/**
+ * One call for the whole race; every candidate's names get the same share and the same call.
+ * `known`: verified notes from earlier runs in the same place (notesToReuse), reused as is.
+ */
 export async function contextForRace(
   race: RaceDossier,
   writer: ContextWriter,
+  known: KnownNotes = [],
 ): Promise<ContextStepResult<RaceDossier>> {
-  return finish(race, await describe(racePlan(race), writer));
+  return finish(race, await describe(racePlan(race), writer, known));
 }
 
 export async function contextForMeasure(
   m: MeasureDossier,
   writer: ContextWriter,
+  known: KnownNotes = [],
 ): Promise<ContextStepResult<MeasureDossier>> {
-  return finish(m, await describe(measurePlan(m), writer));
+  return finish(m, await describe(measurePlan(m), writer, known));
 }
 
 /**
@@ -540,14 +614,26 @@ export async function contextForMeasure(
  * looked up, with why, so the page says what is missing. Unchanged when the
  * facts name no one.
  */
-function failed<T extends { context?: ContextResult }>(d: T, plan: Plan, error: string): T {
-  const { chosen, left } = chooseNames(plan.subjects, plan.exclude, Infinity);
+function failed<T extends { context?: ContextResult }>(
+  d: T,
+  plan: Plan,
+  error: string,
+  known: KnownNotes,
+): T {
+  const { chosen, left, reused } = chooseNames(
+    plan.subjects,
+    plan.exclude,
+    Infinity,
+    knownKeys(known),
+  );
   const names = [...chosen, ...left].map((f) => f.name);
-  if (!names.length) return d;
+  const earlier = reuse(reused, known);
+  if (!names.length && !earlier.length) return d;
   return {
     ...d,
     context: {
-      notes: [],
+      // Reused notes needed no call, so the failure doesn't take them away.
+      notes: earlier,
       not_looked_up: names,
       not_described: [],
       not_needed: [],
@@ -557,10 +643,10 @@ function failed<T extends { context?: ContextResult }>(d: T, plan: Plan, error: 
   };
 }
 
-export const raceContextFailed = (race: RaceDossier, error: string) =>
-  failed(race, racePlan(race), error);
-export const measureContextFailed = (m: MeasureDossier, error: string) =>
-  failed(m, measurePlan(m), error);
+export const raceContextFailed = (race: RaceDossier, error: string, known: KnownNotes = []) =>
+  failed(race, racePlan(race), error, known);
+export const measureContextFailed = (m: MeasureDossier, error: string, known: KnownNotes = []) =>
+  failed(m, measurePlan(m), error, known);
 
 // ---------------------------------------------------------------------------
 // Where a note attaches
