@@ -305,6 +305,10 @@ function checkPortalGaps(raw: unknown): PortalGap[] {
   }).slice(0, MAX_LIST);
 }
 
+/** The gap note for every subject when the lookup opened no page at all. */
+export const NOTHING_OPENED =
+  "The campaign finance lookup opened no pages in this run, so nothing was checked.";
+
 /** One result per subject asked about, in the request's order, whatever the answer held. */
 export function checkFinance(
   plan: Pick<Plan, "labels"> & { request: Pick<FinanceRequest, "subjects" | "perSubject"> },
@@ -317,10 +321,15 @@ export function checkFinance(
   for (const s of Array.isArray(raw.subjects) ? raw.subjects : []) {
     if (s && typeof s.id === "string" && !byId.has(s.id)) byId.set(s.id, s);
   }
+  const subjects = plan.request.subjects.map((s, i) =>
+    checkSubject(plan.labels[i], byId.get(s.id), retrieved, plan.request.perSubject)
+  );
   return {
-    subjects: plan.request.subjects.map((s, i) =>
-      checkSubject(plan.labels[i], byId.get(s.id), retrieved, plan.request.perSubject)
-    ),
+    // With no page opened, nothing was checked, whatever the answer says it
+    // looked at: every subject says so, the same way.
+    subjects: retrieved.size
+      ? subjects
+      : subjects.map((s) => ({ ...s, searched: [], gap_note: NOTHING_OPENED })),
     per_subject: plan.request.perSubject,
     portal_gaps: checkPortalGaps(raw.portal_gaps),
     model: raw.model,

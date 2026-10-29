@@ -516,7 +516,7 @@ const searchUse = (id: string) => ({
   input: { query: "Inland Builders PAC" },
 });
 
-Deno.test("context notes are one call: capped web tools, low effort, its own model", async () => {
+Deno.test("context notes are one call: capped web tools, medium effort, its own model", async () => {
   const note = {
     id: "n1",
     kind: "organization",
@@ -540,7 +540,7 @@ Deno.test("context notes are one call: capped web tools, low effort, its own mod
   const req = requests[0];
   assertEquals(req.model, "claude-sonnet-5-5");
   assertEquals(req.max_tokens, CONTEXT_MAX_TOKENS);
-  assertEquals((req.output_config as { effort: string }).effort, "low");
+  assertEquals((req.output_config as { effort: string }).effort, "medium");
   assertEquals(
     (req.tools as { max_uses: number }[]).map((t) => t.max_uses),
     [CONTEXT_MAX_SEARCHES, CONTEXT_MAX_FETCHES],
@@ -600,7 +600,7 @@ const FINANCE = {
   perSubject: 20,
 };
 
-Deno.test("campaign finance is one call: capped web tools, low effort, its own model", async () => {
+Deno.test("campaign finance is one call: capped web tools, medium effort, its own model", async () => {
   const row = {
     filer: "Warren for Mayor 2026",
     contributor: "Inland Builders PAC",
@@ -644,7 +644,7 @@ Deno.test("campaign finance is one call: capped web tools, low effort, its own m
   const req = requests[0];
   assertEquals(req.model, "claude-sonnet-5-5");
   assertEquals(req.max_tokens, FINANCE_MAX_TOKENS);
-  assertEquals((req.output_config as { effort: string }).effort, "low");
+  assertEquals((req.output_config as { effort: string }).effort, "medium");
   assertEquals(
     (req.tools as { max_uses: number }[]).map((t) => t.max_uses),
     [FINANCE_MAX_SEARCHES, FINANCE_MAX_FETCHES],

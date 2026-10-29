@@ -177,9 +177,9 @@ Without the finance step, a page's Shared connections compares endorsements only
    - **Merge**: groups duplicate verified facts (Claude Haiku 5.5, no web tools, low effort, up to
      240 facts).
    - **Context notes**: short sourced notes on up to 30 names, shared evenly across candidates
-     (Claude Sonnet 5.5, low effort, about 10 searches and 5 fetches).
+     (Claude Sonnet 5.5, medium effort, about 10 searches and 5 fetches).
    - **Campaign finance**: itemized contributions for every candidate or both sides of a measure
-     (Claude Sonnet 5.5, low effort, about 12 searches and 10 fetches, up to 120 rows shared
+     (Claude Sonnet 5.5, medium effort, about 12 searches and 10 fetches, up to 120 rows shared
      equally, at most 20 per candidate). Rows over the share are counted on the page, not kept.
 5. **Knowledge graph.** Each finished run is indexed into the graph behind the entity pages (local,
    no model calls).
