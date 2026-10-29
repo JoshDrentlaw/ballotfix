@@ -115,6 +115,12 @@ export class QueueFullError extends Error {}
 /** Enough for a whole ballot. Each waiting race costs nothing until it starts. */
 export const DEFAULT_MAX_QUEUED = 30;
 
+/**
+ * A waiting race older than this when the server starts is not resumed: after
+ * a long outage, research shouldn't start spending with no one there to ask.
+ */
+export const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface SubmitExtras {
   /** Issues the voter said matter most; the same list for every candidate. */
   priorities?: string[];
@@ -322,6 +328,35 @@ export class JobRunner {
     await this.#store.save(run);
     this.#enqueue(run);
     return run;
+  }
+
+  /**
+   * On startup: every run saved as queued (never started) goes back in line,
+   * in submission order. One that can't run is marked interrupted with why:
+   * research is off (no API key), or it has waited longer than
+   * MAX_RESUME_AGE_MS. Nothing was spent on these, so starting again is free.
+   */
+  async resumeWaiting(canResearch: boolean): Promise<{ resumed: number; interrupted: number }> {
+    const now = this.#now();
+    let resumed = 0, interrupted = 0;
+    for (const run of this.#store.waiting()) {
+      const stale = now.getTime() - Date.parse(run.created_at) > MAX_RESUME_AGE_MS;
+      if (canResearch && !stale) {
+        this.resume(run);
+        resumed++;
+        continue;
+      }
+      await this.#store.save({
+        ...run,
+        status: "interrupted",
+        updated_at: now.toISOString(),
+        error: canResearch
+          ? "This waited more than a day for the server to come back, so it wasn't started. Start it again if you still want it."
+          : "The server restarted without research enabled before this research started.",
+      });
+      interrupted++;
+    }
+    return { resumed, interrupted };
   }
 
   /**

@@ -472,7 +472,9 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
 
   // Items still on this page with a saved pick: the toggle hides them (CSS only, see STYLES).
   const decided = items.filter((x) => !b.started[x.key] && x.choice?.picks?.length).length;
-  const hide = o.form ? o.form.get("hide") === "decided" : Boolean(o.hideDecided);
+  // An error page shows everything, so the item the error is about is never hidden;
+  // the toggle comes back as it was only on a plain load (?hide=decided).
+  const hide = !o.error && Boolean(o.hideDecided);
   const toggle = decided && o.choices
     ? `<label class="check hide-decided"><input type="checkbox" name="hide" value="decided"${
       hide ? " checked" : ""

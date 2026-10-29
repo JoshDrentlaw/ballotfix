@@ -987,7 +987,14 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           updated = { ...fresh, started, updated_at: new Date().toISOString() };
           await ballots.store.save(updated);
         }
-        if (error) return html(ballotPage(updated, { ...await view(updated), form, error }), 429);
+        if (error) {
+          // Picks were saved above; say so here too, so a full queue doesn't read as lost picks.
+          const note = saved ? ` Your picks and notes were saved.` : "";
+          return html(
+            ballotPage(updated, { ...await view(updated), form, error: `${error}${note}` }),
+            429,
+          );
+        }
         return redirect(
           parsed.picks.length === 1
             ? `${BASE}/races/${last}`

@@ -5,7 +5,13 @@ import {
   assertRejects,
   assertStringIncludes,
 } from "@std/assert";
-import { BallotJobs, DEFAULT_MAX_QUEUED, JobRunner, QueueFullError } from "../src/web/jobs.ts";
+import {
+  BallotJobs,
+  DEFAULT_MAX_QUEUED,
+  JobRunner,
+  MAX_RESUME_AGE_MS,
+  QueueFullError,
+} from "../src/web/jobs.ts";
 import { createApp, parseRaceForm, sniffBallotType } from "../src/web/server.ts";
 import { DEFAULT_FORM, MAX_BALLOT_FILE_BYTES } from "../src/web/pages.ts";
 import { openStores, type RunRecord, type RunStore } from "../src/web/store.ts";
@@ -1287,8 +1293,9 @@ Deno.test("races waiting when the server stops go back in line; one cut off mid-
   const port = new GatedPort();
   const jobs = new JobRunner(first.runs, () => port);
   const running = await jobs.submit(QUERY, CANDS);
-  const a = await jobs.submit({ ...QUERY, office: "City Council" }, CANDS);
-  const b = await jobs.submit({ ...QUERY, office: "Treasurer" }, CANDS);
+  // Not in alphabetical order, so the resumed order can only come from submission order.
+  const a = await jobs.submit({ ...QUERY, office: "Treasurer" }, CANDS);
+  const b = await jobs.submit({ ...QUERY, office: "City Council" }, CANDS);
   // Let the first start, then "stop the server" with the others still waiting.
   while ((await first.runs.get(running.id))!.status !== "running") {
     await new Promise((r) => setTimeout(r, 1));
@@ -1303,11 +1310,56 @@ Deno.test("races waiting when the server stops go back in line; one cut off mid-
   const port2 = new GatedPort();
   port2.release();
   const resumed = new JobRunner(again.runs, () => port2);
-  for (const r of waiting) resumed.resume(r);
+  assertEquals(await resumed.resumeWaiting(true), { resumed: 2, interrupted: 0 });
   assertEquals(resumed.pending, 2);
   await resumed.idle();
   assertEquals((await again.runs.get(a.id))!.status, "done");
   assertEquals((await again.runs.get(b.id))!.status, "done");
   again.db.close();
   port.release();
+});
+
+Deno.test("waiting races aren't resumed when research is off or they've waited over a day", async () => {
+  const { runs } = await openStores(await Deno.makeTempDir());
+  const queued = (id: string, created_at: string): RunRecord => ({
+    id,
+    query: QUERY,
+    candidates: CANDS,
+    status: "queued",
+    created_at,
+    updated_at: created_at,
+    error: null,
+    race: null,
+  });
+  const now = new Date("2026-10-29T12:00:00Z");
+  const old = new Date(now.getTime() - MAX_RESUME_AGE_MS - 1000).toISOString();
+  await runs.save(queued("old-1", old));
+  await runs.save(queued("new-2", "2026-10-29T11:00:00.000Z"));
+  const port = new GatedPort();
+  port.release();
+  const jobs = new JobRunner(runs, () => port, { now: () => now });
+  assertEquals(await jobs.resumeWaiting(true), { resumed: 1, interrupted: 1 });
+  await jobs.idle();
+  const stale = (await runs.get("old-1"))!;
+  assertEquals(stale.status, "interrupted");
+  assertStringIncludes(stale.error!, "waited more than a day");
+  assertEquals((await runs.get("new-2"))!.status, "done");
+
+  await runs.save(queued("off-3", "2026-10-29T11:30:00.000Z"));
+  assertEquals(await jobs.resumeWaiting(false), { resumed: 0, interrupted: 1 });
+  assertStringIncludes((await runs.get("off-3"))!.error!, "without research enabled");
+});
+
+Deno.test("an error page never hides decided items, so what needs fixing stays in view", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  await s.app(postForm(`${loc}/picks?from=ballot`, [["pick_1", "Pat Example"], ["seen_1", ""]]));
+  const err = await s.app(postForm(`${loc}/research`, [
+    ["election", "2026-11-03"],
+    ["state", "CA"],
+    ["hide", "decided"],
+  ]));
+  assertEquals(err.status, 400);
+  const body = await err.text();
+  assertStringIncludes(body, `name="hide" value="decided"> Hide the 1`);
 });

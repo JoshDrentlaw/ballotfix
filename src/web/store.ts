@@ -224,9 +224,13 @@ export class RunStore extends RecordTable<RunRecord> {
    * in the queue (JobRunner.resume), since nothing has been spent on them yet.
    */
   waiting(): RunRecord[] {
-    return this.withStatus("queued").sort((a, b) =>
-      a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+    // Several races from one ballot are often submitted within the same millisecond;
+    // rowid (insertion order, kept by the upsert) breaks those ties in submission order.
+    const rows = this.db.all(
+      `SELECT body FROM runs WHERE status = ? ORDER BY created_at, rowid`,
+      "queued",
     );
+    return rows.map((r) => parse<RunRecord>(r.body)).filter((r): r is RunRecord => r !== null);
   }
 
   /**

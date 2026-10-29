@@ -103,10 +103,13 @@ const jobs = new JobRunner(store, researcher, {
   makeFinanceResearcher: financeModel === "off" ? undefined : financeResearcher,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
-// Runs that were waiting when the server stopped never started: back in line, in order.
-const waiting = store.waiting();
-for (const run of waiting) jobs.resume(run);
-if (waiting.length) console.log(`Put ${waiting.length} waiting run(s) back in the queue.`);
+// Runs that were waiting when the server stopped never started: back in line, in order,
+// unless research is off or they have waited more than a day (then marked interrupted).
+const resumed = await jobs.resumeWaiting(canResearch);
+if (resumed.resumed) console.log(`Put ${resumed.resumed} waiting run(s) back in the queue.`);
+if (resumed.interrupted) {
+  console.log(`Marked ${resumed.interrupted} waiting run(s) as interrupted instead.`);
+}
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
 Deno.serve(
