@@ -39,7 +39,10 @@ import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from 
 export interface JobRunnerOptions {
   /** Candidates researched in parallel within one race. */
   concurrency?: number;
-  /** Races allowed to wait behind the running one. */
+  /**
+   * Races allowed to wait behind the running one. They run one at a time and
+   * are saved as "queued", so a restart puts them back in line (resume).
+   */
   maxQueued?: number;
   now?: () => Date;
   log?: (msg: string) => void;
@@ -109,6 +112,15 @@ interface AfterStep<T> {
 
 export class QueueFullError extends Error {}
 
+/** Enough for a whole ballot. Each waiting race costs nothing until it starts. */
+export const DEFAULT_MAX_QUEUED = 30;
+
+/**
+ * A waiting race older than this when the server starts is not resumed: after
+ * a long outage, research shouldn't start spending with no one there to ask.
+ */
+export const MAX_RESUME_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface SubmitExtras {
   /** Issues the voter said matter most; the same list for every candidate. */
   priorities?: string[];
@@ -138,7 +150,7 @@ export class JobRunner {
     this.#store = store;
     this.#makePort = makePort;
     this.#concurrency = opts.concurrency ?? 3;
-    this.#maxQueued = opts.maxQueued ?? 3;
+    this.#maxQueued = opts.maxQueued ?? DEFAULT_MAX_QUEUED;
     this.#now = opts.now ?? (() => new Date());
     this.#log = opts.log ?? (() => {});
     this.#makeMerger = opts.makeMerger;
@@ -314,11 +326,53 @@ export class JobRunner {
       race: null,
     };
     await this.#store.save(run);
+    this.#enqueue(run);
+    return run;
+  }
+
+  /**
+   * On startup: every run saved as queued (never started) goes back in line,
+   * in submission order. One that can't run is marked interrupted with why:
+   * research is off (no API key), or it has waited longer than
+   * MAX_RESUME_AGE_MS. Nothing was spent on these, so starting again is free.
+   */
+  async resumeWaiting(canResearch: boolean): Promise<{ resumed: number; interrupted: number }> {
+    const now = this.#now();
+    let resumed = 0, interrupted = 0;
+    for (const run of this.#store.waiting()) {
+      const stale = now.getTime() - Date.parse(run.created_at) > MAX_RESUME_AGE_MS;
+      if (canResearch && !stale) {
+        this.resume(run);
+        resumed++;
+        continue;
+      }
+      await this.#store.save({
+        ...run,
+        status: "interrupted",
+        updated_at: now.toISOString(),
+        error: canResearch
+          ? "This waited more than a day for the server to come back, so it wasn't started. Start it again if you still want it."
+          : "The server restarted without research enabled before this research started.",
+      });
+      interrupted++;
+    }
+    return { resumed, interrupted };
+  }
+
+  /**
+   * Puts a run saved as queued before a restart back in line, behind
+   * anything already waiting. Not capped: it was accepted when submitted.
+   */
+  resume(run: RunRecord): void {
+    if (run.status !== "queued") return;
+    this.#enqueue(run);
+  }
+
+  #enqueue(run: RunRecord): void {
     this.#waiting++;
     this.#tail = this.#tail.then(() => this.#execute(run)).finally(() => {
       this.#waiting--;
     });
-    return run;
   }
 
   /** Resolves once every submitted race, and the steps after it, have finished. For tests and shutdown. */

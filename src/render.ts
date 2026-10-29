@@ -1104,6 +1104,8 @@ details.banner > p { margin-top: 8px; }
 .item:has(> label.research input:checked) .will::before { content: "✓ "; }
 /* A live count of what's checked, with no script: counters run in document order, and the bar comes last. */
 form.ballot { counter-reset: checked; }
+/* "Hide the N with a saved pick": no script. One checked to research stays, so nothing hidden is researched unseen. */
+form.ballot:has(.hide-decided input:checked) .item.decided:not(:has(> label.research input:checked)) { display: none; }
 label.research input:checked { counter-increment: checked; }
 form.ballot:has(label.research input:checked) .bar button.go::after { content: " (" counter(checked) ")"; }
 .who a.who-name { display: block; min-height: 44px; padding: 10px 0; text-decoration: none; font-weight: 600; }

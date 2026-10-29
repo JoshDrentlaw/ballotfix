@@ -220,12 +220,27 @@ export class RunStore extends RecordTable<RunRecord> {
   }
 
   /**
-   * A run that was queued or running when the server stopped will never
-   * finish. Say so rather than leaving it spinning forever.
+   * Runs submitted but never started, oldest first: on startup they go back
+   * in the queue (JobRunner.resume), since nothing has been spent on them yet.
+   */
+  waiting(): RunRecord[] {
+    // Several races from one ballot are often submitted within the same millisecond;
+    // rowid (insertion order, kept by the upsert) breaks those ties in submission order.
+    const rows = this.db.all(
+      `SELECT body FROM runs WHERE status = ? ORDER BY created_at, rowid`,
+      "queued",
+    );
+    return rows.map((r) => parse<RunRecord>(r.body)).filter((r): r is RunRecord => r !== null);
+  }
+
+  /**
+   * A run that was running when the server stopped will never finish. Say so
+   * rather than leaving it spinning forever. Not restarted: research already
+   * paid for part of it, so whether to pay again is the voter's call (rerun).
    */
   async markInterrupted(now: string): Promise<number> {
     let n = 0;
-    for (const run of this.withStatus("queued", "running")) {
+    for (const run of this.withStatus("running")) {
       await this.save({
         ...run,
         status: "interrupted",

@@ -21,6 +21,8 @@
  *   BALLOTFIX_FINANCE_MODEL  model for the one low-effort call per finished run that reads
  *                        contributions off campaign finance filings, with capped web searches
  *                        and fetches (default: claude-sonnet-5-5); "off" skips it
+ *   BALLOTFIX_MAX_QUEUED  races allowed to wait behind the running one (default 30); waiting
+ *                        races are saved and put back in line after a restart
  *
  * Every model call logs one "[usage]" line: tokens, searches, and an estimated cost.
  */
@@ -59,7 +61,7 @@ const { runs: store, ballots: ballotStore, choices } = await openStores(dataDir,
 });
 const now = new Date().toISOString();
 const interrupted = await store.markInterrupted(now);
-if (interrupted) console.log(`Marked ${interrupted} unfinished run(s) as interrupted.`);
+if (interrupted) console.log(`Marked ${interrupted} run(s) cut off mid-research as interrupted.`);
 await ballotStore.markInterrupted(now);
 
 const log = (m: string) => console.log(m);
@@ -89,13 +91,25 @@ const financeResearcher = () =>
     effort: effort as Effort,
     log,
   });
+const maxQueued = env("BALLOTFIX_MAX_QUEUED");
+if (maxQueued !== undefined && !/^\d+$/.test(maxQueued)) {
+  throw new Error("BALLOTFIX_MAX_QUEUED must be a whole number");
+}
 const jobs = new JobRunner(store, researcher, {
   log: (m) => console.log(m),
+  ...(maxQueued !== undefined ? { maxQueued: Number(maxQueued) } : {}),
   makeMerger: mergeModel === "off" ? undefined : merger,
   makeContextWriter: contextModel === "off" ? undefined : contextWriter,
   makeFinanceResearcher: financeModel === "off" ? undefined : financeResearcher,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
+// Runs that were waiting when the server stopped never started: back in line, in order,
+// unless research is off or they have waited more than a day (then marked interrupted).
+const resumed = await jobs.resumeWaiting(canResearch);
+if (resumed.resumed) console.log(`Put ${resumed.resumed} waiting run(s) back in the queue.`);
+if (resumed.interrupted) {
+  console.log(`Marked ${resumed.interrupted} waiting run(s) as interrupted instead.`);
+}
 
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
 Deno.serve(
