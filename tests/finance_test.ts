@@ -312,7 +312,9 @@ Deno.test("contributors match only by kind, place, and exact name; near misses a
   const page = renderRace(dossier);
   assertStringIncludes(page, "Possibly the same, kept separate");
   // Every pair has its own block in ballot order, whether or not it shares anyone.
-  const heads = [...page.matchAll(/<section class="pair"><h5>([^<]+)<\/h5>/g)].map((m) => m[1]);
+  const heads = [...page.matchAll(/<details class="pair"><summary><h5>([^<]+)<\/h5>/g)].map((m) =>
+    m[1]
+  );
   assertEquals(heads, [
     "Acquanetta Warren and Joz Sida",
     "Acquanetta Warren and Third Person",

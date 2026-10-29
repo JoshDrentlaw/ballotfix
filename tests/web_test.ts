@@ -203,6 +203,17 @@ Deno.test("home page renders the form and a mobile viewport", async () => {
   assert(!/<script/i.test(body));
 });
 
+Deno.test("with saved work, the one-race form folds; a New race link opens it", async () => {
+  const s = await setup();
+  const first = await (await s.app(new Request("http://app.test/"))).text();
+  assert(!first.includes(`class="fold-race"`), "nothing saved yet: the form is in full view");
+  await readBallot(s);
+  const later = await (await s.app(new Request("http://app.test/"))).text();
+  assertStringIncludes(later, `<details class="fold-race"><summary><h2>Or name one race</h2>`);
+  const asked = await (await s.app(new Request("http://app.test/?new"))).text();
+  assertStringIncludes(asked, `<details class="fold-race" open><summary>`);
+});
+
 Deno.test("submitting a race redirects to it, shows progress, then the finished dossier", async () => {
   const { app, port, jobs, store } = await setup();
   const res = await app(post("/races", FORM));
@@ -885,6 +896,7 @@ Deno.test("notes and a pick are saved apart from the run, kept on rerun, and lis
   const running = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
   assertStringIncludes(running, "once research finishes");
   assert(!running.includes(`/choice"`));
+  assert(!running.includes(`class="dock"`));
   s.port.release();
   await s.jobs.idle();
 
@@ -907,6 +919,16 @@ Deno.test("notes and a pick are saved apart from the run, kept on rerun, and lis
   ]));
   assertEquals(save.status, 303);
   assertEquals(save.headers.get("location"), `/races/${mayor.id}?saved=1#mine`);
+  // The pick stays at the bottom of the screen while reading, resting just above its card.
+  const saved = await (await s.app(new Request(`http://app.test/races/${mayor.id}`))).text();
+  const dock = saved.slice(saved.indexOf(`<nav class="dock"`), saved.indexOf(`id="mine"`));
+  assertStringIncludes(dock, `<a class="dock-pick" href="#mine">`);
+  assertStringIncludes(dock, "Joz Sida");
+  assertEquals(saved.split(`<nav class="dock"`).length - 1, 1);
+  // Not in downloads.
+  const plain = await (await s.app(new Request(`http://app.test/races/${mayor.id}/download`)))
+    .text();
+  assert(!plain.includes(`class="dock"`));
   await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "No"]]));
   assertEquals(
     (await s.app(postForm(`/races/${measure.id}/choice`, [["pick", "Maybe"]]))).status,
@@ -1222,7 +1244,7 @@ Deno.test("researched items get their own tab and can be read one after another"
   const solo = await (await s.app(new Request(`http://app.test${plain.headers.get("location")}`)))
     .text();
   assert(!solo.includes(`class="walk"`));
-  assertStringIncludes(solo, `<a href="/#new">New race</a></nav>`);
+  assertStringIncludes(solo, `<a href="/?new#new">New race</a></nav>`);
 });
 
 Deno.test("Research checked saves picks even when research can't start", async () => {

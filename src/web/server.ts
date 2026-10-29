@@ -1049,7 +1049,9 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       );
     }
 
-    if (path === "/" && req.method === "GET") return html(await home());
+    if (path === "/" && req.method === "GET") {
+      return html(await home({ openNew: url.searchParams.has("new") }));
+    }
 
     const ballotResponse = await ballotRoutes(req, path, url);
     if (ballotResponse) return ballotResponse;

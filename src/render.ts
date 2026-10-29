@@ -293,6 +293,29 @@ const NOT_IN_THIS_RUN: SectionResult = {
   gap_note: "This section was added after this run; research again to fill it.",
 };
 
+/** What each section of a failed subject says, after the reason is given once above them. */
+const NOT_CHECKED = "Not checked.";
+
+/**
+ * A failed subject's sections all carry the same failure note. It is said once,
+ * above them, and each section keeps its place saying only that it wasn't
+ * checked, so a failed subject doesn't take more room than one with findings.
+ */
+function failedNote(
+  failed: boolean,
+  sections: Readonly<Record<string, SectionResult | undefined>>,
+): { note: string; section: (r: SectionResult | undefined) => SectionResult | undefined } {
+  const said = failed
+    ? Object.values(sections).find((r) => r && !r.facts.length && r.gap_note)?.gap_note
+    : undefined;
+  if (!said) return { note: "", section: (r) => r };
+  return {
+    note: `<p class="note">${esc(said)} Every section below keeps its place.</p>`,
+    section: (r) =>
+      r && !r.facts.length && r.gap_note === said ? { ...r, gap_note: NOT_CHECKED } : r,
+  };
+}
+
 /**
  * A section's facts, gap note, and what was searched. A section with nothing
  * found keeps its place in the template and says so, drawn compact so it
@@ -553,10 +576,13 @@ const alphabetical = (cs: readonly Contribution[]) =>
  * filer, period, form, and source are said once above the rows that share
  * them. Every field is the record's own words; nothing is added up.
  */
+const filingKey = (c: Contribution) =>
+  [c.filer, c.filing_period, c.filing, c.source_name, c.source_url].join("\n");
+
 function giftTables(cs: readonly Contribution[]): string {
   const groups = new Map<string, Contribution[]>();
   for (const c of alphabetical(cs)) {
-    const k = [c.filer, c.filing_period, c.filing, c.source_name, c.source_url].join("\n");
+    const k = filingKey(c);
     groups.set(k, [...groups.get(k) ?? [], c]);
   }
   return [...groups.values()].map((rows) => {
@@ -600,7 +626,16 @@ function moneyHtml(
       ).join("")
     }</ul>`
     : "";
-  const gifts = s.contributions.length ? giftTables(s.contributions) : "";
+  // Folded the same way for every subject, so nobody's money is more or less in view.
+  const n = s.contributions.length;
+  const filings = new Set(s.contributions.map(filingKey)).size;
+  const gifts = n
+    ? `<details class="fold"><summary>${n} contribution${
+      n === 1 ? "" : "s"
+    } from ${filings} filing${filings === 1 ? "" : "s"}</summary>${
+      giftTables(s.contributions)
+    }</details>`
+    : "";
   const notes = [
     s.gap_note ? `<p class="gap">${esc(s.gap_note)}</p>` : "",
     s.not_listed ? `<p class="gap">The filings list more: ${esc(s.not_listed)}</p>` : "",
@@ -685,6 +720,15 @@ function sharedEntryHtml(ref: EntityRef, ties: readonly string[], links?: Entity
   }</span><ul class="ties">${ties.join("")}</ul></li>`;
 }
 
+/** A pair's fold says how many it shares and how many near misses it lists: counts, never a score. */
+export function pairCount(p: { shared: readonly unknown[]; possible: readonly unknown[] }): string {
+  const parts = [
+    p.shared.length ? `${p.shared.length} shared` : "none shared",
+    p.possible.length ? `${p.possible.length} possibly the same` : "",
+  ].filter(Boolean);
+  return ` <span class="desig">${parts.join(" · ")}</span>`;
+}
+
 function possibleHtml(p: PairConnections): string {
   return p.possible.map((m) =>
     `<p class="gap">Possibly the same, kept separate because the names or details don't match exactly: ${
@@ -718,7 +762,7 @@ function sharedHtml(
       : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
   const blocks = pairs.map((p) =>
-    `<section class="pair"><h5>${esc(p.a)} and ${esc(p.b)}</h5>${
+    `<details class="pair"><summary><h5>${esc(p.a)} and ${esc(p.b)}</h5>${pairCount(p)}</summary>${
       p.shared.length
         ? `<ul class="shared-list">${
           p.shared.map((x) =>
@@ -735,7 +779,7 @@ function sharedHtml(
           ).join("")
         }</ul>`
         : `<p class="gap">No shared contributors or endorsers found.</p>`
-    }${possibleHtml(p)}</section>`
+    }${possibleHtml(p)}</details>`
   ).join("");
   const body = pairs.length ? blocks : `<p class="gap">${esc(single)}</p>`;
   const sharing = pairs.filter((p) => p.shared.length).length;
@@ -813,13 +857,14 @@ function dossierSection(
   const c = d.candidate;
   if (d.status === "pending") {
     return `<article class="dossier pending" id="${anchor}">
-  <h2>${esc(c.name)}</h2>
+  <h2 class="dossier-name">${esc(c.name)}</h2>
   <p class="gap">Research on this candidate is still running. This page updates on its own.</p>
 </article>`;
   }
   const shown = shownInPriorities(d.priorities, anchor);
+  const failed = failedNote(d.status === "failed", d.sections);
   const sections = SECTIONS.map((s) =>
-    sectionHtml(s.title, d.sections[s.id], notes, {
+    sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {
       id: sectionAnchor(anchor, s.id),
       shown,
     })
@@ -830,11 +875,12 @@ function dossierSection(
     : "";
 
   return `<article class="dossier" id="${anchor}">
-  <header class="dossier-head"><h2>${entityName(c.name, person?.ref ?? null, person?.links)}</h2>
-  <p class="desig">${
+  <h2 class="dossier-name">${entityName(c.name, person?.ref ?? null, person?.links)}</h2>
+  <p class="desig dossier-desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
-  }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p></header>
+  }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
   ${identity}
+  ${failed.note}
   ${prioritiesHtml(d.priorities, "candidate", notes, anchor)}
   ${sections}
   ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(anchor, "filed"))}
@@ -961,6 +1007,19 @@ function jumpHtml(
   return `<nav class="jump" aria-label="On this page">${links.join("")}</nav>`;
 }
 
+/** The same bar for a measure: its template's main stops, in page order. */
+function measureJump(d: MeasureDossier, mine: boolean): string {
+  const links = [
+    `<a href="#${sectionAnchor("m", "effect")}">What it does</a>`,
+    `<a href="#${sectionAnchor("m", "case_for")}">The case for</a>`,
+    `<a href="#${sectionAnchor("m", "case_against")}">The case against</a>`,
+    d.finance ? `<a href="#${sectionAnchor("m", "filed_support")}">Contributions</a>` : "",
+    `<a href="#shared">Shared</a>`,
+    mine ? `<a href="#mine">Your notes</a>` : "",
+  ].filter(Boolean);
+  return `<nav class="jump" aria-label="On this page">${links.join("")}</nav>`;
+}
+
 export const STYLES = `
 :root {
   /* Surfaces and text. */
@@ -975,7 +1034,7 @@ export const STYLES = `
   /* Job status: done is the normal state, so it stays neutral; a failure is amber, something to act on. */
   --ok:#3f3e3a; --bad:#8a5200;
   /* Shape. */
-  --r:10px; --r-lg:12px; --sticky:60px; }
+  --r:10px; --r-lg:12px; --sticky:60px; --name:48px; --dock:64px; }
 @media (prefers-color-scheme: dark) { :root { --bg:#161614; --fg:#ecebe6; --muted:#a8a69e;
   --line:#34332f; --line-strong:#4a4843; --card:#1f1f1c; --tint:#262622; --accent:#8cc0dc; --accent-fg:#10202a;
   --info-bg:#1d272d; --warn-bg:#3a2c12; --warn-fg:#f3d39b; --ev-opinion:#c9a3e6;
@@ -1159,7 +1218,17 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 details.shared { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 0 16px; margin: 24px 0; }
 details.shared > summary { color: var(--fg); font-weight: 700; padding: 12px 0; }
 details.shared[open] { padding-bottom: 12px; }
-.pair { border-top: 1px solid var(--line); padding-top: 4px; }
+.pair { border-top: 1px solid var(--line); }
+.pair > summary { color: var(--fg); min-height: 44px; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.pair > summary h5 { display: inline; margin: 0; }
+.pair > summary .desig { font-size: .85rem; }
+.pair[open] { padding-bottom: 8px; }
+details.fold-race { margin-bottom: 20px; }
+details.fold-race > summary { color: var(--fg); padding: 14px 0 6px; }
+details.fold-race > summary h2 { display: inline; }
+/* A long list in a section, folded the same way for everyone; its heading and notes stay in view. */
+details.fold { margin: 8px 0; }
+details.fold > summary { color: var(--accent); font-weight: 600; font-size: .95rem; min-height: 44px; }
 .shared-list { list-style: none; padding: 0; margin: 0; }
 .shared-list > li { padding: 6px 0; }
 .ties { margin: 4px 0 0; padding-left: 18px; font-size: .9rem; }
@@ -1172,12 +1241,15 @@ details.shared[open] { padding-bottom: 12px; }
 a.ent { color: inherit; text-decoration: underline dotted; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .meta a, .searched a { color: var(--muted); text-underline-offset: 2px; padding: 6px 0; }
 .sec { scroll-margin-top: var(--sticky); }
-.dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; }
+.dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; scroll-margin-top: calc(var(--sticky) + var(--name)); }
 .dossier .sec > h4, .dossier .sec > h5 { margin-top: 12px; }
 /* A measure's dossier has no header, so its first section needs no rule above it. */
 .dossier > section:first-child { border-top: 0; margin-top: 0; }
-.dossier-head { padding-bottom: 4px; }
-.dossier-head .desig { margin: 2px 0 0; }
+/* Whose dossier this is stays in view while reading it, under the jump bar; the next one takes its place. */
+.dossier-name { position: sticky; top: 0; z-index: 1; background: var(--card); margin: -10px -16px 0; padding: 10px 16px 8px; font-size: 1.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--line); }
+/* Slid a little under the jump bar, so no line of text shows between the two. */
+nav.jump ~ .dossier .dossier-name { top: calc(var(--sticky) - 8px); }
+.dossier-desig { margin: 6px 0 0; }
 .dossier, #glance, #shared, #mine { scroll-margin-top: var(--sticky); }
 /* A section with nothing found keeps its place and says so, on one compact line. */
 .sec.empty { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
@@ -1211,6 +1283,23 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 /* The jump bar stays at the top while reading the dossiers. */
 nav.jump { position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 16px -16px 0; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--line); }
 nav.jump a { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); text-decoration: none; font-weight: 600; font-size: .88rem; white-space: nowrap; }
+/* Your pick, at the bottom of the screen while reading: it rests just above the pick card. */
+.dock { position: sticky; bottom: 0; z-index: 2; display: grid; grid-template-columns: auto 1fr auto; gap: 4px; align-items: center; margin: 24px -16px 0; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
+.dock a { display: flex; align-items: center; min-height: 44px; min-width: 44px; justify-content: center; text-decoration: none; font-weight: 600; }
+.dock .dock-pick { justify-content: flex-start; gap: 6px; min-width: 0; padding: 0 12px; border: 1px solid var(--accent); border-radius: var(--r); background: var(--card); }
+.dock .dock-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock .dock-pick .label { flex: none; color: var(--muted); font-weight: 400; font-size: .88rem; }
+.dock .dock-pick .undecided { color: var(--muted); font-style: italic; font-weight: 400; }
+.dock + .mine { margin-top: 12px; }
+/* Back to the top: a plain link, so it works in downloads too. Fades in after a screen of scrolling where the browser can tell. */
+.to-top { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 3; width: 48px; height: 48px; display: grid; place-items: center; border-radius: 999px; border: 1px solid var(--accent); background: var(--card); color: var(--accent); font-size: 1.3rem; font-weight: 700; text-decoration: none; box-shadow: 0 2px 8px rgb(0 0 0 / .18); }
+body:has(.dock) .to-top { bottom: calc(var(--dock) + 12px + env(safe-area-inset-bottom)); }
+body:has(form.ballot .bar) .to-top { bottom: calc(112px + env(safe-area-inset-bottom)); }
+@supports (animation-timeline: scroll()) {
+  .to-top { opacity: 0; visibility: hidden; animation: to-top-in linear both; animation-timeline: scroll(root block); animation-range: 0 900px; }
+  @keyframes to-top-in { 0%, 85% { opacity: 0; visibility: hidden; } 100% { opacity: 1; visibility: visible; } }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 /* Contributions: one table per filing, amounts lined up. */
 .gift-group { margin: 12px 0; }
 .gift-group > .meta { margin: 0 0 2px; }
@@ -1222,7 +1311,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 .gifts .num { text-align: right; white-space: nowrap; }
 .gifts .date { white-space: nowrap; color: var(--muted); padding-right: 0; }
 /* Last, so it wins over the screen rules above. */
-@media print { nav.top, nav.jump, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+@media print { nav.top, nav.jump, .dock, .to-top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
 `;
 
 export interface PageOptions {
@@ -1279,7 +1368,7 @@ export function page(title: string, body: string, opts: PageOptions = {}): strin
     ? `<meta http-equiv="refresh" content="${Math.max(2, Math.floor(opts.refreshSeconds))}">`
     : "";
   const base = opts.base ?? "";
-  const back = opts.back ?? { href: `${base}/#new`, label: "New race" };
+  const back = opts.back ?? { href: `${base}/?new#new`, label: "New race" };
   const nav = opts.nav
     ? `<nav class="top"><a href="${base}/">Ballot Fix</a><a href="${esc(back.href)}">${
       esc(back.label)
@@ -1303,6 +1392,7 @@ ${refresh}
 ${nav}
 ${body}
 </main>
+<a class="to-top" href="#top" aria-label="Back to top"><span aria-hidden="true">↑</span></a>
 </body>
 </html>
 `;
@@ -1482,16 +1572,17 @@ export function measureBody(
   const links = extra.links;
   const notes = notesFor(d.context, q.state, q.jurisdiction, links);
   const shown = shownInPriorities(d.priorities, "m");
+  const failed = failedNote(d.status === "failed", d.sections);
   const body = d.status === "pending"
     ? `<p class="gap">${
       extra.stopped
         ? "Research on this measure stopped before it finished. Research it again to fill this in."
         : "Research on this measure is still running. This page updates on its own."
     }</p>`
-    : `${prioritiesHtml(d.priorities, "measure", notes, "m")}
+    : `${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m")}
 ${
       MEASURE_SECTIONS.map((s) =>
-        sectionHtml(s.title, d.sections[s.id], notes, {
+        sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {
           id: sectionAnchor("m", s.id),
           shown,
           between: s.id === "effect" && d.status === "ok" ? voteMeansHtml(d.vote_means, notes) : "",
@@ -1507,6 +1598,7 @@ ${
           `Contributions on file: ${
             entityName(SIDE_LABEL[side].toLowerCase(), sideRef(q, side), links)
           }`,
+          sectionAnchor("m", `filed_${side}`),
         )
       ).join("")
     }
@@ -1544,6 +1636,7 @@ ${
 ${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
 ${question}
 ${identity}
+${d.status === "pending" ? "" : measureJump(d, Boolean(extra.mine))}
 <article class="dossier">
 ${body}
 </article>
