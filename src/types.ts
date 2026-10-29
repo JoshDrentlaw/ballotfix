@@ -372,6 +372,12 @@ export interface ContextNote {
   published: string | null;
   /** False when the cited page was never retrieved: never shown next to the name. */
   verified: boolean;
+  /**
+   * Set when this run reused the note from an earlier run in the same place
+   * instead of looking the name up again: the run whose lookup retrieved the
+   * cited page, and when. Absent on a note this run's own lookup wrote.
+   */
+  reused_from?: { run: string; looked_up: string };
 }
 
 /** The context step's result for one run. Absent on runs it didn't reach. */

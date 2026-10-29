@@ -8,6 +8,7 @@
 import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import { coveredSections, incumbencyNote, NOTHING_FOUND } from "./dossier.ts";
 import {
+  type BallotConnections,
   measureConnections,
   type PairConnections,
   raceConnections,
@@ -169,6 +170,9 @@ function noteMeta(n: ContextNote): string {
     link(n.source_url, n.source_name),
     n.author ? `by ${esc(n.author)}` : "",
     n.published ? esc(publishedDate(n.published)) : "date not stated",
+    n.reused_from
+      ? `from an earlier lookup (${esc(publishedDate(n.reused_from.looked_up.slice(0, 10)))})`
+      : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -479,7 +483,11 @@ function namesHtml(c: ContextResult | undefined): string {
       ? `<p class="gap">Notes on these names couldn't be written in this run (${esc(c.error)}).</p>`
       : `<p>Names were picked out of the facts automatically, so some may be missed.${
         shown.length
-          ? ` A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate.`
+          ? ` A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved${
+            shown.some((n) => n.reused_from)
+              ? ", or, where the note says so, one an earlier run in this place retrieved for the same name"
+              : ""
+          }. Notes describe; they don't evaluate.`
           : ""
       } Every name was looked up the same way, whichever candidate or side it came up for.</p>`,
     c.not_described.length
@@ -722,6 +730,48 @@ function sharedHtml(
     esc(place)
   } by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${caveats}${body}</details>`;
+}
+
+/**
+ * Who candidates and sides of different items on one ballot share, for the
+ * ballot's Researched tab (ballotConnections). Collapsed. Entities are
+ * alphabetical and each lists its holders in ballot order, each tie with its
+ * source; nothing is counted up or ranked. `href` links an entity key to its
+ * page when the app has one.
+ */
+export function ballotSharedHtml(
+  c: BallotConnections,
+  href?: (key: string) => string | null,
+): string {
+  if (c.subjects < 2) return "";
+  const links = href ? { runId: "", href } : undefined;
+  const list = c.shared.length
+    ? `<ul class="shared-list">${
+      c.shared.map((x) =>
+        `<li><strong>${entityName(x.ref.name, x.ref, links)}</strong> <span class="desig">${
+          kindLabel(x.ref.key, x.ref.kind)
+        }</span><ul class="ties">${
+          x.holders.flatMap((h) => h.ties.map((t) => tieHtml(`${h.item} · ${h.label}`, t))).join(
+            "",
+          )
+        }</ul></li>`
+      ).join("")
+    }</ul>`
+    : `<p class="gap">No contributor or endorser is tied to more than one item.</p>`;
+  const possible = c.possible.map((group) =>
+    `<p class="gap">Possibly the same, kept separate because the names, details, or places don't match exactly: ${
+      group.map((x) => `${esc(x.name)} (${esc(x.item)} · ${esc(x.label)})`).join(" / ")
+    }.</p>`
+  ).join("");
+  return `<details class="shared sec" id="shared"><summary>Shared across this ballot (${
+    c.shared.length ? `${c.shared.length} found` : "none found"
+  })</summary>
+<p>Contributors and endorsers tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them: a contributor only from a filing that run retrieved, an endorser only where a fact names someone with a sourced note, by exact name and kind, and an individual also by the same stated occupation and employer.${
+    c.places > 1
+      ? ` These items are in ${c.places} different places (city, county, district, or state), and names are only matched within one place, so the same group in two places is listed under possible matches instead.`
+      : ""
+  } Sharing within one contest or measure is on its own page. A shared name is a connection to look into, not a judgment of anyone.</p>
+${list}${possible}</details>`;
 }
 
 function dossierSection(

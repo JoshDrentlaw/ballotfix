@@ -13,6 +13,7 @@ import {
   exclusions,
   findNames,
   MAX_CONTEXT_NAMES,
+  notesToReuse,
   raceContextFailed,
 } from "../src/context.ts";
 import { organizationRef, personRef, projectRace } from "../src/knowledge.ts";
@@ -292,8 +293,8 @@ Deno.test("a measure's case for and case against get equal shares", async () => 
   const port = new FakeResearch(listing([]), {}, {
     "Measure X": rawMeasure({
       sections: {
-        case_for: section(...names("Yes", 25).map((o) => fact(`Supported by ${o}.`))),
-        case_against: section(...names("No", 25).map((o) => fact(`Opposed by ${o}.`))),
+        case_for: section(...names("Backers", 25).map((o) => fact(`Supported by ${o}.`))),
+        case_against: section(...names("Critics", 25).map((o) => fact(`Opposed by ${o}.`))),
       },
       retrieved_urls: [HERALD],
     }),
@@ -301,8 +302,8 @@ Deno.test("a measure's case for and case against get equal shares", async () => 
   const w = writer({});
   await contextForMeasure(await runMeasure(m, port), w);
   const sent = w.requests[0].names.map((n) => n.name);
-  assertEquals(sent.filter((s) => s.startsWith("Yes")).length, MAX_CONTEXT_NAMES / 2);
-  assertEquals(sent.filter((s) => s.startsWith("No")).length, MAX_CONTEXT_NAMES / 2);
+  assertEquals(sent.filter((s) => s.startsWith("Backers")).length, MAX_CONTEXT_NAMES / 2);
+  assertEquals(sent.filter((s) => s.startsWith("Critics")).length, MAX_CONTEXT_NAMES / 2);
   assertEquals(w.requests[0].place, "City of Fontana, CA");
 });
 
@@ -482,7 +483,8 @@ Deno.test("the job runner adds notes after merging, to the merged run, and a fai
   assert(logs.some((l) => l.includes("wrote 1 context note(s) for 1 names")));
 
   fail = true;
-  const second = await jobs.submit(QUERY, CANDS);
+  // Another place: the note from Fontana is not reused there, so the failing call is made.
+  const second = await jobs.submit({ ...QUERY, city: "Rialto" }, CANDS);
   await jobs.idle();
   const kept = (await s.runs.get(second.id))!;
   assertEquals(kept.status, "done");
@@ -557,5 +559,102 @@ Deno.test("the next race doesn't wait for the previous one's context notes", asy
   assertEquals(researched, ["Acquanetta Warren", "Joz Sida"]);
   release();
   await jobs.idle();
+  s.db.close();
+});
+
+Deno.test("generic words and a measure's own sides are not names", () => {
+  assertEquals(
+    findNames(
+      "Californians for the Legislature's plan. The Constitution and the State Senate. No on Prop 37 and Yes on 43 campaigns. The Howard Jarvis Taxpayers Association opposed it.",
+    ),
+    ["Howard Jarvis Taxpayers Association"],
+  );
+  // A name that only contains such a word is still a name.
+  assertEquals(findNames("Endorsed by the League of Women Voters of California."), [
+    "League of Women Voters of California",
+  ]);
+});
+
+/** The verified notes a first lookup in Fontana wrote, as a later run would find them. */
+async function earlier() {
+  const first = await contextForRace(await race(), writer({ "Inland Builders PAC": PAC_NOTE }));
+  return notesToReuse(first.dossier.context, { id: "run-1", updated_at: "2026-10-01T12:00:00Z" });
+}
+
+Deno.test("a name with a note from an earlier run is not sent again, and keeps where it came from", async () => {
+  const known = await earlier();
+  assertEquals(known.map((n) => [n.name, n.reused_from?.run]), [["Inland Builders PAC", "run-1"]]);
+  const w = writer({ "SEIU Local 2015": { note: "A union local of public-sector workers." } });
+  const out = await contextForRace(await race(), w, known);
+  assertEquals(w.requests[0].names.map((n) => n.name), ["SEIU Local 2015"]);
+  assertEquals(out.reused, 1);
+  assertEquals(out.sent, 1);
+  const notes = out.dossier.context!.notes;
+  assertEquals(notes.map((n) => [n.name, n.reused_from?.run ?? null]), [
+    ["Inland Builders PAC", "run-1"],
+    ["SEIU Local 2015", null],
+  ]);
+  // Reused notes attach and render like any other, saying when they were looked up.
+  const page = renderRace(out.dossier);
+  assertStringIncludes(page, "from an earlier lookup (");
+  assertStringIncludes(page, "one an earlier run in this place retrieved");
+  // Reused again later, it still names the run that retrieved the page.
+  assertEquals(notesToReuse(out.dossier.context, { id: "run-2", updated_at: "x" })[0].reused_from, {
+    run: "run-1",
+    looked_up: "2026-10-01T12:00:00Z",
+  });
+});
+
+Deno.test("with every name already described, no call is made; a failed call keeps reused notes", async () => {
+  const known = await earlier();
+  const only = { ...known[0], name: "SEIU Local 2015" };
+  const w = writer({});
+  const out = await contextForRace(await race(), w, [...known, only]);
+  assertEquals(w.requests.length, 0);
+  assertEquals(out.dossier.context!.notes.length, 2);
+  assertEquals(out.dossier.context!.not_looked_up, []);
+
+  const failed = raceContextFailed(await race(), "max_tokens", known);
+  assertEquals(failed.context!.notes.map((n) => n.name), ["Inland Builders PAC"]);
+  assertEquals(failed.context!.not_looked_up, ["SEIU Local 2015"]);
+});
+
+Deno.test("unverified notes and notes from another place are never reused", async () => {
+  const known = await earlier();
+  const unverified = known.map((n) => ({ ...n, verified: false }));
+  const w = writer({});
+  await contextForRace(await race(), w, unverified);
+  assert(w.requests[0].names.some((n) => n.name === "Inland Builders PAC"));
+
+  const s = await openStores(await Deno.makeTempDir());
+  const port = new FakeResearch(listing(CANDS), {
+    "Acquanetta Warren": raw({
+      sections: { endorsements: section(fact("Endorsed by Inland Builders PAC.")) },
+      retrieved_urls: [HERALD],
+    }),
+  });
+  const sent: string[][] = [];
+  const logs: string[] = [];
+  const jobs = new JobRunner(s.runs, () => port, {
+    log: (m) => logs.push(m),
+    makeContextWriter: () => ({
+      describeNames: (req) => {
+        sent.push(req.names.map((n) => n.name));
+        return writer({ "Inland Builders PAC": PAC_NOTE }).describeNames(req);
+      },
+    }),
+  });
+  const first = await jobs.submit(QUERY, CANDS.slice(0, 1));
+  await jobs.idle();
+  // Same place ("City of Fontana" is Fontana): reused, no call.
+  const second = await jobs.submit({ ...QUERY, city: "City of Fontana" }, CANDS.slice(0, 1));
+  await jobs.idle();
+  // Another place: looked up again.
+  await jobs.submit({ ...QUERY, city: "Rialto" }, CANDS.slice(0, 1));
+  await jobs.idle();
+  assertEquals(sent, [["Inland Builders PAC"], ["Inland Builders PAC"]]);
+  const note = (await s.runs.get(second.id))!.race!.context!.notes[0];
+  assertEquals(note.reused_from?.run, first.id);
+  assert(logs.some((l) => l.includes("reused 1 note(s) from earlier runs in this place")));
   s.db.close();
 });

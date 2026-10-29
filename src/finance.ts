@@ -31,10 +31,12 @@ import { normalizeUrl } from "./dossier.ts";
 import {
   contributorRef,
   type EntityRef,
+  looseKey,
   nameKey,
   nearMisses,
   noteRef,
   type PossibleMatch,
+  scopeKey,
   type SUPPORT_SECTIONS,
 } from "./knowledge.ts";
 import {
@@ -550,4 +552,115 @@ export function measureParties(m: MeasureDossier, runId = "page"): Party[] {
     );
   };
   return [side("support", "case_for"), side("oppose", "case_against")];
+}
+
+/** One item on a ballot whose research is done: its heading and its dossier, in ballot order. */
+export interface BallotItemDossier {
+  heading: string;
+  runId: string;
+  race?: RaceDossier | null;
+  measure?: MeasureDossier | null;
+}
+
+/** A subject on the ballot: a candidate in a contest, or one side of a measure. */
+export interface BallotHolder {
+  item: string;
+  label: string;
+  ties: Tie[];
+}
+
+/** A contributor or endorser tied to subjects of two or more ballot items. */
+export interface BallotShared {
+  ref: EntityRef;
+  /** In ballot order. */
+  holders: BallotHolder[];
+}
+
+export interface BallotConnections {
+  /** Alphabetical by name. */
+  shared: BallotShared[];
+  /** Names that may be one entity across items, kept separate: each with where it appears. */
+  possible: { name: string; item: string; label: string }[][];
+  /** Subjects compared, and how many places (state + jurisdiction) they are in. */
+  subjects: number;
+  places: number;
+}
+
+/**
+ * What the subjects of different items on one ballot share: every entity
+ * tied to subjects of two or more items, by the same entity keys the race
+ * and measure pages use (raceParties, measureParties), so a match here is a
+ * match there. Keys carry their place, so subjects in different
+ * jurisdictions never share an entity; a same-named one there is listed
+ * among the possible matches instead, as are close names in one place.
+ * Sharing within one item is that item's own page's to show, but once an
+ * entity spans two items every holder is listed. Nothing is counted up or ranked.
+ */
+export function ballotConnections(items: readonly BallotItemDossier[]): BallotConnections {
+  const subjects: { at: number; item: string; label: string; party: Party; place: string }[] = [];
+  items.forEach((it, at) => {
+    if (it.measure) {
+      const q = it.measure.query;
+      for (const party of measureParties(it.measure, it.runId)) {
+        subjects.push({
+          at,
+          item: it.heading,
+          label: party.label,
+          party,
+          place: scopeKey(q.state, q.jurisdiction),
+        });
+      }
+    } else if (it.race) {
+      const q = it.race.query;
+      for (const party of raceParties(it.race, it.runId)) {
+        const place = scopeKey(q.state, q.city);
+        subjects.push({ at, item: it.heading, label: party.label, party, place });
+      }
+    }
+  });
+
+  const byKey = new Map<string, { ref: EntityRef; holders: BallotHolder[]; items: Set<number> }>();
+  // Per loose name: entity key -> where it appears, with the item's position.
+  type Seen = { name: string; item: string; label: string; at: number };
+  const byLoose = new Map<string, Map<string, Seen[]>>();
+  subjects.forEach((s, n) => {
+    for (const [key, { ref, ties }] of s.party.ties) {
+      const got = byKey.get(key) ?? { ref, holders: [], items: new Set<number>() };
+      got.holders.push({ item: s.item, label: s.label, ties });
+      got.items.add(s.at);
+      byKey.set(key, got);
+    }
+    const entries = [
+      ...[...s.party.ties].map(([key, x]) => ({ key, name: x.ref.name })),
+      // An untyped contributor is never one entity with anything, even a same-named one.
+      ...s.party.untyped.map((name) => ({ key: `untyped:${n}|${name}`, name })),
+    ];
+    for (const { key, name } of entries) {
+      const k = looseKey(name);
+      if (!k) continue;
+      const m = byLoose.get(k) ?? new Map<string, Seen[]>();
+      m.set(key, [...(m.get(key) ?? []), { name, item: s.item, label: s.label, at: s.at }]);
+      byLoose.set(k, m);
+    }
+  });
+
+  const shared = [...byKey.values()].filter((x) => x.items.size > 1)
+    .map(({ ref, holders }) => ({ ref, holders }))
+    .sort((a, b) => nameKey(a.ref.name).localeCompare(nameKey(b.ref.name)));
+
+  // Possible matches: one loose name across two or more items, under more than one entity.
+  const possible: BallotConnections["possible"] = [];
+  for (const k of [...byLoose.keys()].sort()) {
+    const m = byLoose.get(k)!;
+    const seen = [...m.values()].flat().sort((a, b) => a.at - b.at);
+    if (m.size > 1 && new Set(seen.map((x) => x.at)).size > 1) {
+      possible.push(seen.map(({ name, item, label }) => ({ name, item, label })));
+    }
+  }
+  return {
+    shared,
+    possible,
+    subjects: subjects.length,
+    places: new Set(subjects.map((s) => s.place)).size,
+  };
 }

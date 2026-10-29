@@ -577,7 +577,8 @@ Deno.test("the job runner reads filings after context notes, and a failure leave
   assert(logs.some((l) => l.includes("kept 1 contribution(s) for 2 subject(s)")));
 
   fail = true;
-  const second = await jobs.submit(QUERY, CANDS.slice(0, 2));
+  // Another place, so the context step makes its (failing) call rather than reusing a note.
+  const second = await jobs.submit({ ...QUERY, city: "Rialto" }, CANDS.slice(0, 2));
   await jobs.idle();
   const kept = (await s.runs.get(second.id))!;
   assertEquals(kept.status, "done");

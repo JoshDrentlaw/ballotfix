@@ -5,12 +5,15 @@
  * was a JSON file in the data directory; openStores() imports those once.
  */
 
+import { notesToReuse } from "../context.ts";
+import { scopeKey } from "../knowledge.ts";
 import { Db } from "./db.ts";
 import { KnowledgeBase } from "./kb.ts";
 import type {
   BallotCandidate,
   BallotReading,
   CandidateSource,
+  ContextNote,
   MeasureDossier,
   MeasureQuery,
   RaceDossier,
@@ -188,6 +191,20 @@ export class RunStore extends RecordTable<RunRecord> {
       run.choice_id ?? run.id,
     );
     return r ? String(r.id) : null;
+  }
+
+  /**
+   * Verified context notes held by finished runs in one place (state +
+   * jurisdiction, compared as the graph compares them), other than `except`,
+   * newest run first: what the context step can reuse instead of looking up
+   * again (src/context.ts). A measure run keeps its jurisdiction as the city.
+   */
+  knownNotes(state: string, jurisdiction: string, except: string): ContextNote[] {
+    const scope = scopeKey(state, jurisdiction);
+    return this.withStatus("done")
+      .filter((r) => r.id !== except && scopeKey(r.query.state, r.query.city) === scope)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .flatMap((r) => notesToReuse(r.measure_result?.context ?? r.race?.context, r));
   }
 
   /**

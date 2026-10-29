@@ -7,6 +7,7 @@
 import {
   contextForMeasure,
   contextForRace,
+  type KnownNotes,
   measureContextFailed,
   raceContextFailed,
 } from "../context.ts";
@@ -68,8 +69,11 @@ interface AfterSteps<T> {
   context: (
     d: T,
     w: ContextWriter,
-  ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number }>;
-  contextFailed: (d: T, error: string) => T;
+    known: KnownNotes,
+  ) => Promise<{ dossier: T; sent: number; shown: number; skipped: number; reused: number }>;
+  contextFailed: (d: T, error: string, known: KnownNotes) => T;
+  /** Where the run is, as [state, jurisdiction]: notes are reused only within one place. */
+  place: (d: T) => [string, string];
   finance: (
     d: T,
     f: FinanceResearcher,
@@ -84,6 +88,7 @@ const RACE_STEPS = {
   contextFailed: raceContextFailed,
   finance: financeForRace,
   financeFailed: raceFinanceFailed,
+  place: (d) => [d.query.state, d.query.city],
 } satisfies Omit<AfterSteps<RaceDossier>, "save">;
 
 const MEASURE_STEPS = {
@@ -92,6 +97,7 @@ const MEASURE_STEPS = {
   contextFailed: measureContextFailed,
   finance: financeForMeasure,
   financeFailed: measureFinanceFailed,
+  place: (d) => [d.query.state, d.query.jurisdiction],
 } satisfies Omit<AfterSteps<MeasureDossier>, "save">;
 
 /** One step that runs after a run is saved as done: what it changed, and what to log. */
@@ -206,24 +212,28 @@ export class JobRunner {
       }),
       save,
     );
+    // Read when the step starts, so a run finishing just before this one counts.
+    let known: KnownNotes = [];
     const noted = await this.#after(
       id,
       "context notes",
       merged,
       makeWriter && (async () => {
-        const r = await steps.context(merged, makeWriter());
+        known = this.#store.knownNotes(...steps.place(merged), id);
+        const r = await steps.context(merged, makeWriter(), known);
         return {
           dossier: r.dossier,
           // Unchanged only when the facts name no one; otherwise the page lists what was found.
           changed: r.dossier !== merged,
           log: [
-            ...(r.sent ? [`wrote ${r.shown} context note(s) for ${r.sent} names`] : []),
+            ...(r.sent ? [`wrote ${r.shown - r.reused} context note(s) for ${r.sent} names`] : []),
+            ...(r.reused ? [`reused ${r.reused} note(s) from earlier runs in this place`] : []),
             ...(r.skipped ? [`left ${r.skipped} names without a note (over the cap)`] : []),
           ],
         };
       }),
       save,
-      steps.contextFailed,
+      (d, error) => steps.contextFailed(d, error, known),
     );
     await this.#after(
       id,
