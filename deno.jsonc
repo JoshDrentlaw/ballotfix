@@ -16,7 +16,12 @@
     "demo": "deno run --allow-net=127.0.0.1 --allow-env=PORT --allow-read --allow-write examples/demo_server.ts",
     // Why shared connections are empty: a read-only report over data/ballotfix.db, no network.
     "diagnose": "deno run --allow-read --allow-env=BALLOTFIX_DATA_DIR src/diagnose.ts",
-    "check": "deno fmt --check && deno lint && deno check src/main.ts src/serve.ts src/diagnose.ts examples/demo_server.ts examples/build_sample.ts",
+    // How much one race's research changes between runs. Spends money: it prints an
+    // estimate and stops unless given --yes. --compare reads saved runs and calls nothing.
+    "stability": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=out src/stability.ts",
+    // Scores runs against a person's judgments and answer key: no network, writes only with --out.
+    "answer-key": "deno run --allow-read --allow-write=out src/answer_key.ts",
+    "check": "deno fmt --check && deno lint && deno check src/main.ts src/serve.ts src/diagnose.ts src/stability.ts src/answer_key.ts examples/demo_server.ts examples/build_sample.ts",
     "test": "deno test --allow-read --allow-write"
   },
   "fmt": {

@@ -231,6 +231,20 @@ show it. A found quote shows the page has those words, not that the statement re
   and finance steps kept, and every name that recurs across subjects, with whether the pages can
   match it and, if not, why (different scope, entity rule, or no tie and the reason). Ties come from
   the same `raceParties`/`measureParties` the pages use.
+- Stability run (`deno task stability`, `src/stability.ts`): reruns one race's research N times
+  (default 3; no merge, context, or finance; the candidate list found once or given, so runs differ
+  only in research) and reports per candidate and section how much the verified pages (normalized as
+  the provenance check does, merged sources included) and facts overlap (Jaccard, mean and lowest
+  over pairs of runs; facts match one to one by wording, `SAME_FACT`, a heuristic) and which
+  sections read "Found" in some runs and not others. It spends money, so it prints an estimate
+  (`TYPICAL_CANDIDATE_USAGE` at `PRICES`, an assumption, or `--per-candidate`) and stops unless
+  given `--yes`; `--compare` reads saved runs and calls nothing. A failed candidate's run is left
+  out of its overlap, never counted as finding nothing. Answer-key scoring (`deno task answer-key`,
+  `src/answer_key.ts`, no calls): `sample` draws verified facts uniformly with a seed into a review
+  sheet a person judges (supported / not_supported / wrong_person / unsure), `precision` scores it
+  (unsure left out, a Wilson 95% interval, by quote-check level), and `recall` matches a key the
+  owner writes for a past race (by a page it names, then by wording, within a section if given),
+  listing each match to check. The code never judges a fact and no key ships with it.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at
