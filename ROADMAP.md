@@ -155,7 +155,25 @@ measures press attention.
   `MAX_CONTRIBUTIONS_PER_SUBJECT` rows, so finding no overlap means little.
 - Update the "At a glance" line in CLAUDE.md's design system section.
 
-## 5. Stance threshold
+## 5. Stance threshold — done
+
+Branch `feature/relaxed-edison-i2lg7e`. Decisions made in the PR:
+
+- "Thin" is a flag beside the stance, `stance_strength: "full" | "thin"` on every conflicts, aligns,
+  or mixed stance, not a new `Stance` value, so older runs' data stays valid. Absent means the run
+  predates the threshold: those stances read as before (full), and the "How your issues are marked"
+  note opens and says they may be thin.
+- Full: one primary record or facts from two outlets (distinct by `publisherKey`'s name rule and by
+  page, so one page under two names is one outlet), counting only `quoted` facts on a page that
+  names the subject (no `missing_name`), never unsourced ones. A merged fact's other sources count
+  as their own outlets, so the merge step can't change a stance's strength. Opinion facts count
+  toward two outlets; a stance resting only on opinion still says so in its basis.
+- Thin stances show the stance color with ", thin", a dashed rule, and what they rest on ("1 fact,
+  none with its quote found on its page"); on cards they come after every full stance, each issue
+  with its fact count; the grid says "Conflicts, thin". No new prompt text: the rule is enforced
+  after research, the same for everyone.
+
+Original plan:
 
 `assemblePriorities` (`src/dossier.ts` ~line 153) lets one opinion-only fact produce "conflicts".
 

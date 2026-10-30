@@ -153,6 +153,7 @@ Deno.test("stances show on the card and the issue, conflicts first, only when a 
       author: null,
       published: null,
       evidence_type: "primary_record",
+      quote: "Sida voted no on the tenant protection ordinance",
     }],
     searched: [],
     gap_note: null,
@@ -165,6 +166,10 @@ Deno.test("stances show on the card and the issue, conflicts first, only when a 
         priority_2: { stance: "aligns", basis: "Same vote." },
       },
       retrieved_urls: ["https://city.example/minutes"],
+      opened_pages: [{
+        url: "https://city.example/minutes",
+        text: "Item 4. Sida voted no on the tenant protection ordinance.",
+      }],
     }),
     // Claims a match with nothing verified behind it: shown as unclear instead.
     "Pat Example": raw({
@@ -277,7 +282,9 @@ const minutes = {
   author: null,
   published: "2025-03-04",
   evidence_type: "primary_record",
+  quote: "Sida voted no on the tenant protection ordinance",
 };
+const MINUTES_TEXT = "Item 4. Sida voted no on the tenant protection ordinance.";
 
 Deno.test("the overview grid has every section for every candidate, in ballot order, linking in", async () => {
   const cands = [
@@ -292,6 +299,7 @@ Deno.test("the overview grid has every section for every candidate, in ballot or
       },
       stances: { priority_1: { stance: "conflicts", basis: "The vote." } },
       retrieved_urls: [minutes.source_url],
+      opened_pages: [{ url: minutes.source_url, text: MINUTES_TEXT }],
     }),
   });
   const race = await runRace(QUERY, port, { priorities: ["protect renters"] });

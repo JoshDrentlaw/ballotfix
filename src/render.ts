@@ -6,7 +6,14 @@
  */
 
 import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
-import { coveredSections, incumbencyNote, NOTHING_FOUND } from "./dossier.ts";
+import {
+  coveredSections,
+  incumbencyNote,
+  marksView,
+  NOTHING_FOUND,
+  type StanceSupport,
+  stanceSupport,
+} from "./dossier.ts";
 import {
   type BallotConnections,
   capCaveat,
@@ -608,11 +615,28 @@ function stanceLabel(st: Stance | undefined, subject: Subject): string | null {
   }
 }
 
+const isThin = (x: PriorityResult) => x.stance_strength === "thin";
+
+/** What a thin stance rests on, so the voter sees why it isn't full. */
+function thinWords(s: StanceSupport): string {
+  const facts = plural(s.facts, "sourced fact");
+  if (!s.quoted) return `Thin: ${facts}, none with its quote found on its page.`;
+  return `Thin: ${facts}; ${
+    s.quoted === 1
+      ? "the one quoted on its page is from one outlet and isn't a primary record"
+      : `the ${s.quoted} quoted on their pages are from one outlet and aren't primary records`
+  }.`;
+}
+
 function stanceBadge(x: PriorityResult, subject: Subject): string {
   const label = stanceLabel(x.stance, subject);
   if (!label) return "";
+  const thin = isThin(x);
+  const why = thin ? ` <span class="basis">${esc(thinWords(stanceSupport(x.result)))}</span>` : "";
   const basis = x.stance_basis ? ` <span class="basis">${esc(x.stance_basis)}</span>` : "";
-  return `<p class="stance stance-${x.stance}"><strong>${esc(label)}.</strong>${basis}</p>`;
+  return `<p class="stance stance-${x.stance}${thin ? " thin" : ""}"><strong>${esc(label)}${
+    thin ? ", thin" : ""
+  }.</strong>${why}${basis}</p>`;
 }
 
 /** The voter's own issues, first, so what they asked about is what they see first. */
@@ -651,20 +675,40 @@ function shownInPriorities(p: readonly PriorityResult[] | undefined, anchor: str
 
 /**
  * The quick read on the overview: which of the voter's stated views the
- * record conflicts with or matches, conflicts first. Same rule for everyone.
+ * record conflicts with or matches, conflicts first, and full stances
+ * before thin ones, which carry their fact count. Same rule for everyone.
  */
 export function stanceSummary(p: readonly PriorityResult[] | undefined, subject: Subject): string {
-  const of = (st: Stance) => (p ?? []).filter((x) => x.stance === st).map((x) => esc(x.issue));
-  const lines: [Stance, string[]][] = [
-    ["conflicts", of("conflicts")],
-    ["mixed", of("mixed")],
-    ["aligns", of("aligns")],
-  ];
-  return lines.filter(([, issues]) => issues.length).map(([st, issues]) =>
-    `<p class="stance stance-${st}"><strong>${esc(stanceLabel(st, subject)!)}:</strong> ${
-      issues.join("; ")
-    }</p>`
-  ).join("");
+  const order: Stance[] = ["conflicts", "mixed", "aligns"];
+  const lines = [false, true].flatMap((thin) =>
+    order.map((st) => {
+      const issues = (p ?? []).filter((x) => x.stance === st && isThin(x) === thin);
+      if (!issues.length) return "";
+      return `<p class="stance stance-${st}${thin ? " thin" : ""}"><strong>${
+        esc(stanceLabel(st, subject)!)
+      }${thin ? ", thin" : ""}:</strong> ${
+        issues.map((x) =>
+          esc(
+            thin
+              ? `${x.issue} (${plural(stanceSupport(x.result).facts, "sourced fact")})`
+              : x.issue,
+          )
+        ).join("; ")
+      }</p>`;
+    })
+  );
+  const before = lines.some(Boolean) && predatesStanceThreshold(p ?? [])
+    ? `<p class="stance-old">Marked before stances needed two outlets or a primary record: possibly thin.</p>`
+    : "";
+  return lines.join("") + before;
+}
+
+/**
+ * Whether any stance here was judged before the threshold existed: those
+ * stood on any one verified fact, and the page says so.
+ */
+export function predatesStanceThreshold(p: readonly PriorityResult[]): boolean {
+  return p.some((x) => marksView(x.stance) && !x.stance_strength);
 }
 
 function gapsAndUnverified(
@@ -1156,9 +1200,10 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
       const id = sectionAnchor(at(d), `priority_${i + 1}`);
       if (!x) return `<td class="none">–</td>`;
       if (x.stance && x.stance !== "no_position") {
-        return `<td><a class="stance-${x.stance}" href="#${esc(id)}">${
+        const thin = isThin(x);
+        return `<td><a class="stance-${x.stance}${thin ? " thin" : ""}" href="#${esc(id)}">${
           STANCE_SHORT[x.stance]
-        }</a></td>`;
+        }${thin ? ", thin" : ""}</a></td>`;
       }
       return glanceCell(
         x.result.facts.length,
@@ -1464,6 +1509,10 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 /* Mixed is both ways: body text, with a rule half conflicts and half aligns. */
 .stance-mixed { color: var(--fg); }
 .stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
+.stance.thin { border-left-style: dashed; }
+.stance-old { font-size: .8rem; color: var(--muted); margin: 2px 0; }
+/* The mixed rule is an image, which a border style can't dash: dash the image instead. */
+.stance.stance-mixed.thin { border-image: repeating-linear-gradient(var(--stance-conflicts) 0 5px, transparent 5px 8px, var(--stance-aligns) 8px 13px, transparent 13px 16px) 1; }
 .measure-q { white-space: pre-line; }
 .votes { display: grid; gap: 10px; margin: 10px 0 6px; }
 @media (min-width: 640px) { .votes { grid-template-columns: 1fr 1fr; } }
@@ -1724,7 +1773,13 @@ ${
 ${cantSee(r.standing_gaps)}
 ${readingGuide("candidates' own statements")}</div>
 
-${askedAbout(r.priorities, "Every candidate was asked about the same issues, in the same words.")}
+${
+    askedAbout(
+      r.priorities,
+      "Every candidate was asked about the same issues, in the same words.",
+      r.candidates.flatMap((d) => d.status === "ok" ? d.priorities ?? [] : []),
+    )
+  }
 <h2${glance ? "" : ` id="glance"`}>${
     r.listing.contest_kind === "retention" ? "On the ballot" : "Candidates"
   }</h2>
@@ -1781,11 +1836,20 @@ ${extra.mine ?? ""}
 </footer>`;
 }
 
-function askedAbout(issues: readonly string[] | undefined, same: string): string {
+function askedAbout(
+  issues: readonly string[] | undefined,
+  same: string,
+  priorities: readonly PriorityResult[],
+): string {
   if (!issues?.length) return "";
+  const before = predatesStanceThreshold(priorities)
+    ? `<p>This run's marks were made before that threshold existed, when one verified source of any kind was enough: read them as possibly thin.</p>`
+    : "";
   return `<div class="note"><p><strong>You asked about:</strong> ${
     issues.map(esc).join("; ")
-  }. ${same}</p><details><summary>How your issues are marked</summary><p>Findings on them come first. Where your wording states a view, each issue is marked as conflicting with it, matching it, or mixed, but only when a verified source backs that up. That is a reading of the cited record, not a recommendation, and there is no overall score: open the sources before relying on it.</p></details></div>`;
+  }. ${same}</p><details${
+    before ? " open" : ""
+  }><summary>How your issues are marked</summary><p>Findings on them come first. Where your wording states a view, each issue is marked as conflicting with it, matching it, or mixed, but only when a verified source backs that up. A mark is full when a primary record backs it, or facts from two different outlets, with the quoted passage found on each page. Below that it is marked thin, with the number of facts behind it, and listed after the full ones. That is a reading of the cited record, not a recommendation, and there is no overall score: open the sources before relying on it.</p>${before}</details></div>`;
 }
 
 /** The standing coverage gaps: always on the page, collapsed under a count. */
@@ -1934,6 +1998,7 @@ ${
     askedAbout(
       d.priority_issues,
       "Supporters' and opponents' claims about them were sought equally.",
+      d.status === "ok" ? d.priorities ?? [] : [],
     )
   }
 ${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
