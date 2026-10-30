@@ -426,11 +426,12 @@ function prioritiesHtml(
   subject: Subject,
   notes: Notes,
   anchor: string,
+  section: (r: SectionResult) => SectionResult | undefined = (r) => r,
 ): string {
   if (!p?.length) return "";
   return `<section class="priorities"><h4>On what you said matters to you</h4>${
     p.map((x, i) =>
-      sectionHtml(x.issue, x.result, notes, {
+      sectionHtml(x.issue, section(x.result), notes, {
         tag: "h5",
         between: stanceBadge(x, subject),
         id: sectionAnchor(anchor, `priority_${i + 1}`),
@@ -571,14 +572,14 @@ function work(c: Contribution): string {
 const alphabetical = (cs: readonly Contribution[]) =>
   [...cs].sort((a, b) => nameKey(a.contributor).localeCompare(nameKey(b.contributor)));
 
+const filingKey = (c: Contribution) =>
+  [c.filer, c.filing_period, c.filing, c.source_name, c.source_url].join("\n");
+
 /**
  * Contributions as tables, one per filing they were read from, so the
  * filer, period, form, and source are said once above the rows that share
  * them. Every field is the record's own words; nothing is added up.
  */
-const filingKey = (c: Contribution) =>
-  [c.filer, c.filing_period, c.filing, c.source_name, c.source_url].join("\n");
-
 function giftTables(cs: readonly Contribution[]): string {
   const groups = new Map<string, Contribution[]>();
   for (const c of alphabetical(cs)) {
@@ -762,7 +763,7 @@ function sharedHtml(
       : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
   const blocks = pairs.map((p) =>
-    `<details class="pair"><summary><h5>${esc(p.a)} and ${esc(p.b)}</h5>${pairCount(p)}</summary>${
+    `<details class="pair"><summary><h5>${esc(p.a)} and ${esc(p.b)}${pairCount(p)}</h5></summary>${
       p.shared.length
         ? `<ul class="shared-list">${
           p.shared.map((x) =>
@@ -881,7 +882,7 @@ function dossierSection(
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
   ${identity}
   ${failed.note}
-  ${prioritiesHtml(d.priorities, "candidate", notes, anchor)}
+  ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section)}
   ${sections}
   ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(anchor, "filed"))}
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
@@ -1006,6 +1007,9 @@ function jumpHtml(
   ].filter(Boolean);
   return `<nav class="jump" aria-label="On this page">${links.join("")}</nav>`;
 }
+
+/** Whether the page's own part holds the voter's pick and notes, not only the ballot walk. */
+const hasMine = (mine: string | undefined) => Boolean(mine?.includes(`id="mine"`));
 
 /** The same bar for a measure: its template's main stops, in page order. */
 function measureJump(d: MeasureDossier, mine: boolean): string {
@@ -1219,9 +1223,9 @@ details.shared { background: var(--card); border: 1px solid var(--line); border-
 details.shared > summary { color: var(--fg); font-weight: 700; padding: 12px 0; }
 details.shared[open] { padding-bottom: 12px; }
 .pair { border-top: 1px solid var(--line); }
-.pair > summary { color: var(--fg); min-height: 44px; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.pair > summary { color: var(--fg); min-height: 44px; }
 .pair > summary h5 { display: inline; margin: 0; }
-.pair > summary .desig { font-size: .85rem; }
+.pair > summary .desig { font-size: .85rem; font-weight: 400; }
 .pair[open] { padding-bottom: 8px; }
 details.fold-race { margin-bottom: 20px; }
 details.fold-race > summary { color: var(--fg); padding: 14px 0 6px; }
@@ -1241,7 +1245,8 @@ details.fold > summary { color: var(--accent); font-weight: 600; font-size: .95r
 a.ent { color: inherit; text-decoration: underline dotted; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .meta a, .searched a { color: var(--muted); text-underline-offset: 2px; padding: 6px 0; }
 .sec { scroll-margin-top: var(--sticky); }
-.dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; scroll-margin-top: calc(var(--sticky) + var(--name)); }
+.dossier .sec { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 2px; }
+.dossier:has(.dossier-name) .sec { scroll-margin-top: calc(var(--sticky) + var(--name)); }
 .dossier .sec > h4, .dossier .sec > h5 { margin-top: 12px; }
 /* A measure's dossier has no header, so its first section needs no rule above it. */
 .dossier > section:first-child { border-top: 0; margin-top: 0; }
@@ -1311,7 +1316,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 .gifts .num { text-align: right; white-space: nowrap; }
 .gifts .date { white-space: nowrap; color: var(--muted); padding-right: 0; }
 /* Last, so it wins over the screen rules above. */
-@media print { nav.top, nav.jump, .dock, .to-top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } }
+@media print { nav.top, nav.jump, .dock, .to-top, .actions, .noprint, .tabs, .walk, .bar, .picks summary::after { display: none; } .picks > li { padding: 4px 14px; } .printonly { display: block; } body { font-size: 12pt; } .picks li { break-inside: avoid; } details.fold::details-content, details.pair::details-content { content-visibility: visible; display: contents; } }
 `;
 
 export interface PageOptions {
@@ -1464,7 +1469,7 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map((d, i) => overviewCard(d, anchors[i])).join("")}</ul>
 ${glance}
-${jumpHtml(r, anchors, showShared, Boolean(extra.mine))}
+${jumpHtml(r, anchors, showShared, hasMine(extra.mine))}
 
 ${
     r.candidates.map((d, i) =>
@@ -1579,7 +1584,7 @@ export function measureBody(
         ? "Research on this measure stopped before it finished. Research it again to fill this in."
         : "Research on this measure is still running. This page updates on its own."
     }</p>`
-    : `${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m")}
+    : `${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m", failed.section)}
 ${
       MEASURE_SECTIONS.map((s) =>
         sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {
@@ -1636,7 +1641,7 @@ ${
 ${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
 ${question}
 ${identity}
-${d.status === "pending" ? "" : measureJump(d, Boolean(extra.mine))}
+${d.status === "pending" ? "" : measureJump(d, hasMine(extra.mine))}
 <article class="dossier">
 ${body}
 </article>

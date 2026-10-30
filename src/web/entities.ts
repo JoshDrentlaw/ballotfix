@@ -448,7 +448,7 @@ function sharedHtml(v: EntityView, base: string): string {
     ).join("");
     return `<details class="pair"><summary><h5>${entityLink(p.entity, base)} <span class="desig">${
       peerLabel(p)
-    }</span></h5>${pairCount(p.pair)}</summary>${shared}${possible}</details>`;
+    }</span>${pairCount(p.pair)}</h5></summary>${shared}${possible}</details>`;
   }).join("");
   const body = peers.length
     ? blocks

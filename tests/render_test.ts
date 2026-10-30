@@ -421,7 +421,7 @@ Deno.test("a failed candidate says why once, and every section keeps its place, 
   const a = { name: "Joz Sida", ballot_designation: null, incumbent: false };
   const b = { name: "Sal Casillas", ballot_designation: null, incumbent: false };
   const port = new FakeResearch(listing([a, b]), { "Sal Casillas": new Error("rate limited") });
-  const html = renderRace(await runRace(QUERY, port));
+  const html = renderRace(await runRace(QUERY, port, { priorities: ["renters", "parks"] }));
   const failed = html.slice(html.indexOf(`<article class="dossier" id="sal-casillas"`));
   const dossier = failed.slice(0, failed.indexOf("</article>"));
   assertEquals(dossier.split("Research for this candidate failed in this run").length - 1, 1);
