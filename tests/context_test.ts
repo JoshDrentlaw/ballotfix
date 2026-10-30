@@ -696,3 +696,21 @@ Deno.test("a rerun looks its names up afresh, even where another race reused its
   assertEquals((await s.runs.get(rerun.id))!.race!.context!.notes[0].reused_from, undefined);
   s.db.close();
 });
+
+Deno.test("brackets, slashed titles, and plural titles don't make names", () => {
+  assertEquals(findNames("Joe Armendarez (Businessowner/Chief Financial Officer)."), [
+    "Joe Armendarez",
+  ]);
+  assertEquals(
+    findNames("The committee Building a Better California, funded by Sergey Brin, sponsored it."),
+    ["Building a Better California", "Sergey Brin"],
+  );
+  assertEquals(findNames("Councilmembers Phil Cothran Jr. and Jesse Armendarez endorsed him."), [
+    "Phil Cothran Jr.",
+    "Jesse Armendarez",
+  ]);
+  assertEquals(findNames("He thanked the School Police Officers Association (SPOA)."), [
+    "School Police Officers Association",
+    "SPOA",
+  ]);
+});

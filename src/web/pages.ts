@@ -1,6 +1,6 @@
 /** HTML for the web app. Every page goes through render.ts's page(): no scripts, strict CSP. */
 
-import { measuresOf } from "../dossier.ts";
+import { ballotPlace, measuresOf } from "../dossier.ts";
 import { ballotConnections } from "../finance.ts";
 import {
   ballotSharedHtml,
@@ -47,13 +47,21 @@ export const DEFAULT_FORM: FormValues = {
   priorities: "",
 };
 
+/**
+ * What makes an issue findable, said wherever issues are entered. An issue
+ * that finds nothing is often outside what the office decides, or one its
+ * candidates rarely speak to, rather than badly worded.
+ */
+const ISSUE_TIP =
+  `Issues a record can show work best: name the local topic and your view ("rent control: I support it", "Measure I sales tax: I oppose it"). A national stance ("oppose the MAGA platform") or a broad value ("support community services") is rarely in a local candidate's record, so it often finds nothing; "What this office can do" says which issues are in the office's reach.`;
+
 /** The optional "what matters most" field, shared by the race form and the ballot review. */
 function prioritiesField(value: string, forBallot = false): string {
   return `<label>What matters most to you? <span class="hint">Optional. Up to ${MAX_PRIORITIES_PER_LIST} issues, one per line.${
     forBallot
       ? " These apply to everything you research from this ballot; each contest and measure can add its own below its name."
       : ""
-  } Name a topic ("housing costs") or state your view ("protect abortion access", "oppose new sales taxes"). Where you state a view, each one is marked as conflicting with it or matching it when a cited source backs that up. Every candidate is checked against the same list.</span>
+  } Name a topic ("housing costs") or state your view ("protect abortion access", "oppose new sales taxes"). Where you state a view, each one is marked as conflicting with it or matching it when a cited source backs that up. Every candidate is checked against the same list. ${ISSUE_TIP}</span>
     <textarea name="priorities" maxlength="700">${esc(value)}</textarea></label>`;
 }
 
@@ -371,8 +379,13 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
     }</textarea></label>`;
   };
 
-  const contests = r.contests.map((c, i) => {
+  const contests = r.contests.map((read, i) => {
     if (b.started[String(i)]) return "";
+    // Readings saved before ballotPlace held section headings ("School Offices") as the place.
+    const c = {
+      ...read,
+      jurisdiction: ballotPlace(read.jurisdiction, read.office, r.county, r.state),
+    };
     const where = [
       c.jurisdiction,
       c.vote_for ? `vote for ${c.vote_for}` : "",
@@ -403,7 +416,7 @@ export function ballotPage(b: BallotRecord, o: BallotPageOptions): string {
   <label>Office <input name="office_${i}" maxlength="80" value="${
         esc(posted(`office_${i}`, c.office.slice(0, 80)))
       }"></label>
-  <label>City or district <input name="city_${i}" maxlength="80" value="${
+  <label>Whose office <span class="hint">The city, county, district, or state, e.g. "City of Fontana". Research looks the office and its filings up by this name.</span> <input name="city_${i}" maxlength="80" value="${
         esc(posted(`city_${i}`, c.jurisdiction.slice(0, 80)))
       }"></label>
   <label>Candidates, one per line, in ballot order <span class="hint">If you change this list, the race says its order was entered by you rather than taken from the ballot.</span>
@@ -878,6 +891,8 @@ function walkNav(w: BallotWalk): string {
 }
 
 export interface RunPageOptions {
+  /** The place to suggest when researching again: the saved one, read as ballotPlace reads it. */
+  againPlace?: string;
   /** Started from a ballot: links to the ballot and its other researched items. */
   walk?: BallotWalk;
   /** The voter's saved notes and pick, when the app keeps them. */
@@ -890,6 +905,29 @@ export interface RunPageOptions {
   links?: EntityLinks;
 }
 
+/**
+ * "Research again", with this item's issues and place to change first. No
+ * script: a details element opens the form in place. The voter's pick and
+ * notes stay with the item whatever changes here.
+ */
+function againForm(run: RunRecord, base: string, place?: string): string {
+  const issues = (run.priorities ?? []).join("\n");
+  const where = place ?? run.measure?.jurisdiction ?? run.query.city;
+  return `<details class="settings again"><summary>Research again</summary>
+<form method="post" action="${base}/races/${esc(run.id)}/rerun">
+  <label>Your issues for this one <span class="hint">One per line, up to ${MAX_PRIORITIES}. Only this ${
+    run.measure ? "measure" : "race"
+  } changes; your ballot's other items keep theirs. ${ISSUE_TIP}</span>
+    <textarea name="priorities" maxlength="1100">${esc(issues)}</textarea></label>
+  <label>${
+    run.measure ? "Placed on the ballot by" : "Whose office"
+  } <span class="hint">The city, county, district, or state, e.g. "City of Fontana".</span>
+    <input name="place" maxlength="80" required value="${esc(where.slice(0, 80))}"></label>
+  <p class="hint">Starts new research, which costs about as much as the first run. Your pick and notes stay with it.</p>
+  <button type="submit">Research again</button>
+</form></details>`;
+}
+
 export function runPage(
   run: RunRecord,
   canResearch: boolean,
@@ -897,11 +935,7 @@ export function runPage(
   opts: RunPageOptions = {},
 ): string {
   const active = run.status === "queued" || run.status === "running";
-  const rerun = canResearch && !active
-    ? `<form class="inline" method="post" action="${base}/races/${
-      esc(run.id)
-    }/rerun"><button class="secondary" type="submit">Research again</button></form>`
-    : "";
+  const rerun = canResearch && !active ? againForm(run, base, opts.againPlace) : "";
   const download = (run.measure ? run.measure_result : run.race) && run.status === "done"
     ? `<a class="button secondary" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";

@@ -967,6 +967,57 @@ Deno.test("notes and a pick are saved apart from the run, kept on rerun, and lis
   assertEquals(b.started["0"], rerun.id);
 });
 
+Deno.test("research again can change the issues and the place, keeping the pick and notes", async () => {
+  const s = await setup();
+  const loc = await readBallot(s);
+  await s.app(postForm(`${loc}/research`, [...MAYOR, ["priorities", "housing costs"]]));
+  s.port.release();
+  await s.jobs.idle();
+  const [first] = await s.store.list();
+  await s.app(postForm(`/races/${first.id}/choice`, [["pick", "Joz Sida"], ["notes", "mine"]]));
+
+  // The form offers the run's own issues and place to change.
+  const page = await (await s.app(new Request(`http://app.test/races/${first.id}`))).text();
+  assertStringIncludes(page, `<details class="settings again"><summary>Research again</summary>`);
+  assertStringIncludes(
+    page,
+    `<textarea name="priorities" maxlength="1100">housing costs</textarea>`,
+  );
+  assertStringIncludes(page, `name="place" maxlength="80" required value="${first.query.city}"`);
+
+  const res = await s.app(postForm(`/races/${first.id}/rerun`, [
+    ["priorities", "rent control: I support it\nlibrary hours"],
+    ["place", "City of Fontana"],
+  ]));
+  assertEquals(res.status, 303);
+  await s.jobs.idle();
+  const again = (await s.store.list()).find((r) => r.id !== first.id)!;
+  assertEquals(again.priorities, ["rent control: I support it", "library hours"]);
+  assertEquals(again.query.city, "City of Fontana");
+  assertEquals(again.choice_id, first.choice_id);
+  const shown = await (await s.app(new Request(`http://app.test/races/${again.id}`))).text();
+  assertStringIncludes(shown, `value="Joz Sida" checked`);
+
+  // Up to the combined limit in one list; a place is required.
+  const nine = Array.from({ length: 9 }, (_, i) => `issue ${i}`).join("\n");
+  const tooMany = await s.app(
+    postForm(`/races/${again.id}/rerun`, [["priorities", nine], ["place", "Fontana"]]),
+  );
+  assertEquals(tooMany.status, 400);
+  assertStringIncludes(await tooMany.text(), "up to 8 issues");
+  const noPlace = await s.app(
+    postForm(`/races/${again.id}/rerun`, [["priorities", ""], ["place", ""]]),
+  );
+  assertEquals(noPlace.status, 400);
+  // Emptied issues are allowed: research again without any.
+  const none = await s.app(
+    postForm(`/races/${again.id}/rerun`, [["priorities", ""], ["place", "Fontana"]]),
+  );
+  assertEquals(none.status, 303);
+  await s.jobs.idle();
+  assertEquals((await s.store.list())[0].priorities ?? [], []);
+});
+
 Deno.test("each contest can add its own issues to the ballot-wide ones", async () => {
   const s = await setup();
   const loc = await readBallot(s);

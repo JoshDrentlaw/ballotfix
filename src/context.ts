@@ -88,7 +88,7 @@ export const CHARACTERIZATIONS = [
  * Lowercase words allowed inside a name: "Board of Realtors", "Friends for the Park". Not
  * "and": "a PAC and the Labor Council" is two names far more often than one.
  */
-const CONNECTORS = new Set(["of", "for", "the", "&", "de", "del", "la", "los", "las", "on"]);
+const CONNECTORS = new Set(["of", "for", "the", "a", "&", "de", "del", "la", "los", "las", "on"]);
 
 /** Titles and sentence openers stripped from the front of a run of capitalized words. */
 const LEADING = new Set(
@@ -97,7 +97,8 @@ const LEADING = new Set(
   then mayor councilmember councilwoman councilman council member supervisor judge justice
   senator sen assemblymember assemblyman assemblywoman rep representative gov governor
   president chair chairman chairwoman commissioner trustee director dr mr ms mrs sheriff chief
-  vice deputy candidate incumbent challenger placeholder`).split(/\s+/),
+  vice deputy candidate incumbent challenger placeholder councilmembers supervisors senators
+  assemblymembers trustees commissioners judges justices directors`).split(/\s+/),
 );
 
 /** Words that are never a name a voter needs explained, alone or together. */
@@ -114,7 +115,9 @@ const GENERIC = new Set(
   missouri montana nebraska nevada new hampshire jersey mexico york carolina dakota ohio
   oklahoma oregon pennsylvania rhode island tennessee texas utah vermont virginia washington
   wisconsin wyoming californians americans legislature legislative senate assembly congress
-  constitution constitutional amendment initiative statute law act bill`).split(/\s+/),
+  constitution constitutional amendment initiative statute law act bill chief executive
+  financial officer officers manager owner businessowner businessman businesswoman retired
+  teacher educator parent deputy`).split(/\s+/),
 );
 
 /** A run starting with one of these is a ballot item or a law, not a name. */
@@ -154,6 +157,8 @@ interface Token {
   sentenceStart: boolean;
   /** Punctuation after it ends the run. */
   breaks: boolean;
+  /** An opening bracket or quote before it: it starts a new run ("Joe Smith (Businessowner"). */
+  opens: boolean;
 }
 
 function tokens(text: string): Token[] {
@@ -180,12 +185,20 @@ function tokens(text: string): Token[] {
         endsSentence = true;
       }
     }
+    // A bracket or quote before the period: "Financial Officer)."
+    const inner = word.match(/[)"”’'\]]+$/)?.[0] ?? "";
+    if (inner) {
+      word = word.slice(0, -inner.length);
+      breaks = true;
+    }
     const possessive = word.match(/['’]s$/);
     if (possessive) {
       word = word.slice(0, -2);
       breaks = true;
     }
-    if (word) out.push({ word, start, end: start + word.length, sentenceStart, breaks });
+    if (word) {
+      out.push({ word, start, end: start + word.length, sentenceStart, breaks, opens: lead > 0 });
+    }
     sentenceStart = endsSentence || (!word && sentenceStart);
   }
   return out;
@@ -230,6 +243,7 @@ export function findNames(statement: string, exclude: Exclusions = NOTHING_EXCLU
     run = [];
   };
   for (const t of ts) {
+    if (t.opens) close();
     const prev = run.at(-1);
     const fits = isCap(t.word) ||
       (prev && CONNECTORS.has(t.word.toLowerCase())) ||
@@ -264,6 +278,8 @@ export function findNames(statement: string, exclude: Exclusions = NOTHING_EXCLU
       if (w.length < 3 && !isAcronym(w)) continue;
     }
     const name = statement.slice(r[0].start, r.at(-1)!.end);
+    // "Businessowner/Chief Financial Officer" is a ballot designation, not a name.
+    if (name.includes("/")) continue;
     const k = ` ${nameKey(name)} `;
     if (exclude.people.some((p) => ` ${p} `.includes(k))) continue;
     out.push(name);

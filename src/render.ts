@@ -1145,6 +1145,68 @@ function financeSource(finance: FinanceResult): string {
     : "Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.";
 }
 
+/**
+ * Said on every race and measure page. Three runs of one race shared about
+ * half their pages (ROADMAP item 7), so what a dossier lacks may only be
+ * what this session didn't come across.
+ */
+const ONE_SESSION =
+  "Each dossier is one research session: researching again often finds different sources, so something missing here may only be something this session didn't come across.";
+
+/** The site a link goes to, shown beside links the voter is asked to follow. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Pages the research found but couldn't read here: a voter guide or notice
+ * that is a PDF, a filing portal that only works with JavaScript or holds
+ * scanned images. Shown in plain view, with the site each goes to, so the
+ * voter can read them. A portal asking for a login is not listed: public
+ * filings never need one.
+ */
+export function readYourselfHtml(
+  shared: SharedSources | undefined,
+  finance: FinanceResult | undefined,
+): string {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  const add = (url: string | null, text: string, why: string) => {
+    const href = safeHref(url);
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    items.push(
+      `<li>${link(href, text)} <span class="meta">${esc(hostOf(href))} · ${esc(why)}</span></li>`,
+    );
+  };
+  for (const l of shared?.left_out ?? []) {
+    if (l.reason === "not_read") {
+      add(
+        l.url,
+        l.source_name,
+        "covers this race, but its text couldn't be read here (often a PDF)",
+      );
+    }
+  }
+  for (const g of finance?.portal_gaps ?? []) {
+    if (g.problem === "javascript_only" || g.problem === "scanned_pdf") {
+      add(
+        g.url,
+        g.portal,
+        `campaign filings; ${PORTAL_PROBLEM_LABEL[g.problem]}, so they weren't read here`,
+      );
+    }
+  }
+  if (!items.length) return "";
+  return `<section class="sec read-yourself"><h3>Pages to read yourself</h3>
+<p class="sub">The research found these but couldn't read them, so nothing from them is on this page. They open on the site shown, outside this app. They are public pages: none should ask you to sign in, pay, or download a program.</p>
+<ul>${items.join("")}</ul></section>`;
+}
+
 /** The filing portals this run couldn't read: coverage gaps, shown, not collapsed. */
 function portalGapsHtml(finance: FinanceResult | undefined): string {
   if (!finance) return "";
@@ -1723,6 +1785,9 @@ form.ballot h2 { margin-top: 8px; }
 details.settings { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; }
 details.settings[open] { padding-bottom: 14px; }
 details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
+details.again { margin: 10px 0; flex-basis: 100%; }
+details.again textarea { min-height: 9em; }
+details.again form > .hint { color: var(--muted); font-size: .85rem; margin: 4px 0 10px; }
 details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
 details.settings[open] > div.row { margin-bottom: 14px; }
 details.banner > summary { color: var(--warn-fg); padding: 0; }
@@ -2046,7 +2111,7 @@ export function raceBody(
 ${extra.status ?? ""}
 ${extra.actions ?? ""}
 
-<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions.</p>
+<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions. ${ONE_SESSION}</p>
 ${predatesQuoteChecks(raceFacts) ? BEFORE_QUOTE_CHECKS : ""}${
     predatesEventDates(raceFacts) ? BEFORE_EVENT_DATES : ""
   }
@@ -2072,6 +2137,7 @@ ${empty}
 ${glance}
 ${startedFromHtml(r.shared)}
 ${officeHtml(r.office)}
+${readYourselfHtml(r.shared, r.finance)}
 ${jumpHtml(r, anchors, showShared, hasMine(extra.mine))}
 
 ${
@@ -2248,6 +2314,7 @@ ${
       ).join("")
     }
 ${gapsAndUnverified(d.gaps, d.unverified, notes)}
+${readYourselfHtml(undefined, d.finance)}
 ${portalGapsHtml(d.finance)}
 ${
       sharedHtml(
@@ -2269,7 +2336,7 @@ ${official}
 ${extra.status ?? ""}
 ${extra.actions ?? ""}
 
-<div class="banner info"><p><strong>This page does not recommend a yes or no vote.</strong> Every measure gets the same sections, and the case for and the case against are researched with the same instructions.</p>
+<div class="banner info"><p><strong>This page does not recommend a yes or no vote.</strong> Every measure gets the same sections, and the case for and the case against are researched with the same instructions. ${ONE_SESSION}</p>
 ${
     d.status === "ok" && predatesQuoteChecks(shownFacts(d.sections, d.priorities, d.vote_means))
       ? BEFORE_QUOTE_CHECKS

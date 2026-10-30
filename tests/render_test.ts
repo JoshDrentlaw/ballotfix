@@ -5,11 +5,13 @@ import {
   measureBody,
   page,
   readableDate,
+  readYourselfHtml,
   renderMeasure,
   renderRace,
   safeHref,
   slug,
 } from "../src/render.ts";
+import type { FinanceResult } from "../src/types.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { FakeResearch, listing, QUERY, raw, rawMeasure } from "./fakes.ts";
 
@@ -711,4 +713,52 @@ Deno.test("a section's range ends with the period that ends last", async () => {
   });
   const html = renderRace(await runRace(QUERY, port));
   assertStringIncludes(html, "Events Dec 2023 to 2024.");
+});
+
+Deno.test("pages the research couldn't read are listed to read yourself, with their site", () => {
+  assertEquals(readYourselfHtml(undefined, undefined), "");
+  const html = readYourselfHtml(
+    {
+      pages: [],
+      left_out: [
+        {
+          url: "https://www.fontanaca.gov/DocumentCenter/View/1/Notice",
+          source_name: "City of Fontana",
+          reason: "not_read",
+        },
+        { url: "https://example.com/seen", source_name: "Seen only", reason: "not_opened" },
+        { url: "javascript:alert(1)", source_name: "Bad", reason: "not_read" },
+      ],
+      gaps: [],
+      model: "m",
+      looked_up: "2026-10-30T00:00:00Z",
+      effort: { searches: 1, fetches: 1 },
+    },
+    {
+      subjects: [],
+      portal_gaps: [
+        {
+          portal: "Fontana NetFile portal",
+          url: "https://netfile.com/public/FTA/campaign",
+          problem: "javascript_only",
+          note: "",
+        },
+        {
+          portal: "Login portal",
+          url: "https://example.org/login",
+          problem: "login_required",
+          note: "",
+        },
+      ],
+      model: "m",
+      looked_up: "2026-10-30T00:00:00Z",
+    } as unknown as FinanceResult,
+  );
+  assertStringIncludes(html, "Pages to read yourself");
+  assertStringIncludes(html, "fontanaca.gov · covers this race");
+  assertStringIncludes(html, "netfile.com · campaign filings; only works with JavaScript");
+  assertStringIncludes(html, `rel="noopener noreferrer nofollow"`);
+  assert(!html.includes("Seen only"), "only pages found and unreadable");
+  assert(!html.includes("javascript:"), "only http(s) links");
+  assert(!html.includes("Login portal"), "never a portal asking for a login");
 });

@@ -115,7 +115,13 @@ show it. A found quote shows the page has those words, not that the statement re
   `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
   reviews and corrects the reading before any research starts. Races started from it carry
-  `candidate_source` with `order_basis: "official_ballot_order"`.
+  `candidate_source` with `order_basis: "official_ballot_order"`. A contest's place is the
+  government the office belongs to, never a section heading (`ballotPlace` in `src/dossier.ts`:
+  "City of Fontana Offices" is the City of Fontana; under a bare heading such as "School Offices"
+  the office's title decides, statewide offices being the state's and an agency after a comma that
+  agency's, then the ballot's county). The shared pass, office powers, NetFile, and context notes
+  all look the place up by this name. Readings saved before it are read through it on the review
+  form and when researching again; their saved data is unchanged.
 - A read ballot has three tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
   each also taking a pick and notes; "Hide the N with a saved pick" is a CSS-only toggle that posts
   with the form and comes back as `?hide=decided`, never hides an item checked to research, and is
@@ -154,7 +160,11 @@ show it. A found quote shows the page has those words, not that the statement re
   (`data/ballotfix.db`, `db.ts`, Deno's built-in `node:sqlite`). `openStores()` imports the JSON
   files older versions wrote, once, and leaves them in place. No client JavaScript: forms post,
   running races use a meta refresh. POSTs must be same-origin (`Sec-Fetch-Site`, then `Origin`),
-  because starting research spends money.
+  because starting research spends money. "Research again" on a race or measure page opens a form
+  (`againForm`, a details element) with the run's issues, up to `MAX_PRIORITIES` in one list, and
+  its place, both editable (`parseAgain`; a post without the fields keeps the run's own). Only that
+  item changes; the new run keeps the item's choice id, so the voter's pick and notes stay with it.
+  Wherever issues are entered, `ISSUE_TIP` says what makes one findable.
 - `BASE_PATH` (same convention as tower-expert's `main.ts`) lets the app sit behind a Caddy `handle`
   block that preserves the path prefix, e.g. `/ballotfix` on nucklehead. Every link, form action,
   and redirect is generated with it (`server.ts`, `pages.ts`, `render.ts`'s `page()`). Requests work
@@ -236,33 +246,45 @@ show it. A found quote shows the page has those words, not that the statement re
 - NetFile adapter (roadmap item 10, `src/netfile.ts`): a deterministic `FinanceResearcher` in front
   of the model lookup (`NetFileResearcher`, its `fallback`). Where a California place matches one
   NetFile agency (`agencyFor`: `BALLOTFIX_NETFILE_AGENCIES` set by hand, else by `agencyKey` in
-  NetFile's agency list, never a guess between two), it reads the agency's public transaction export
-  for the election year and the year before (Form 460 Schedules A and C, Form 497 Part 1; a 497 row
-  repeated on a 460 is kept once) and maps fields with no model in between. Nothing about the race
-  is sent. Committees are matched locally (`filerMatches`): a candidate's by first and last name,
-  candidate-controlled when the type is stated, never a recall or opposing committee, one naming
-  another office (`officeFits`), or one named for another year; a measure side's by the label plus
-  "Yes on"/"No on" it, else words of that side only. A committee whose reports state another
-  election's date is never matched, and an amended report's transactions are kept once, from the
-  latest filing (`latestOnly`). A committee fitting two subjects goes to neither. Each unmatched
-  subject gets a gap note saying how it was looked for. The place not on NetFile, no subject
-  matched, or the export unreadable: the model looks up every subject (a portal gap says why when it
-  was on NetFile), never a mix in one run. Rows keep the export's fields; `source_url` is the year's
-  export URL (what counts as retrieved) and `filing_url` the filing's image. The result names its
-  `source`, and only then `checkFinance` takes its larger share (`MAX_EXPORT_PER_SUBJECT`, the same
-  for every subject). `BALLOTFIX_NETFILE=off` or CLI `--no-netfile` always uses the model; with the
-  finance model off, the step is off. The page says which source the rows came from
-  (`financeSource`).
+  NetFile's agency list at `/public/campaign/agencies`, never a guess between two), it reads the
+  agency's public transaction search (`/public/campaign/search/transaction/query`, by the agency's
+  number, current filings only, so superseded amended rows are left out by NetFile) for the election
+  year and the year before, plus its committee list (`/public/campaign/list/filer`), and keeps Form
+  460 Schedules A and C and Form 497 Part 1 (search types 0, 1, 20; a 497 row repeated on a 460 is
+  kept once), with no model in between. NetFile retired the per-year and per-filer CAL exports in
+  2026; `fromSearch` puts search rows in the CAL field names the rest reads. The search has no
+  entity code: a contributor with its own FPPC id is an organization, one with an occupation or
+  employer an individual, anyone else unknown (never matched). Nothing about the race is sent.
+  Committees are matched locally (`filerMatches`): a candidate's by first and last name, or by
+  surname only when the name also states the election's year and the race's office and no other
+  given name comes right before the surname ("Armendarez for City Treasurer 2026", never "Jane Smith
+  for ..." for John Smith; a nickname committee is missed), never a recall or opposing committee,
+  one naming another office (`officeFits`), or one named for another year; a measure side's by the
+  label plus "Yes on"/"No on" it, else words of that side only. The search and the committee list
+  state no committee type or election date (checked live, 2026-10), so the candidate-controlled and
+  other-election checks in `filerMatches` only apply to sources that give them; on NetFile the name,
+  year, and office rules carry it. An amended report's transactions are kept once, from the latest
+  filing (`latestOnly`). A committee fitting two subjects goes to neither. Each unmatched subject
+  gets a gap note saying how it was looked for. The place not on NetFile, no subject matched, or the
+  export unreadable: the model looks up every subject (a portal gap says why when it was on
+  NetFile), never a mix in one run. Rows keep the record's fields; `source_url` is the year's search
+  URL (what counts as retrieved) and `filing_url` the filing's image. The result names its `source`,
+  and only then `checkFinance` takes its larger share (`MAX_EXPORT_PER_SUBJECT`, the same for every
+  subject). `BALLOTFIX_NETFILE=off` or CLI `--no-netfile` always uses the model; with the finance
+  model off, the step is off. The page says which source the rows came from (`financeSource`).
 - Office powers (roadmap item 8, `src/office.ts`): after the other steps, races only, `JobRunner`
   looks up what the race's office can do (`OfficeResearcher.findOfficePowers`: `LOOKUP_EFFORT`,
   `BALLOTFIX_OFFICE_MODEL` or `DEFAULT_OFFICE_MODEL`, "off" skips it; CLI `--no-powers`), with
   searches and fetches counted across continuations (`OFFICE_MAX_SEARCHES`/`FETCHES` +
-  `OFFICE_MAX_CONTINUATIONS`). Nothing about the candidates is sent. Its fixed sections
-  (`OFFICE_SECTIONS`: what it decides, budget, seats, term) get the same provenance and quote check
-  as a dossier (`assembleSections`), without the name check (a state law rightly never names the
-  place). One lookup per office: `RunStore.knownOffice` reuses the newest verified, unfailed lookup
-  from a finished race whose `officeKey` matches (state + jurisdiction + office with any district,
-  seat, or area number left out) and whose lookup (`looked_up`) is under `OFFICE_REUSE_DAYS` old
+  `OFFICE_MAX_CONTINUATIONS`). Nothing about the candidates is sent. It is told to fetch the charter
+  or code section on the office's duties rather than cite search snippets, and to say who decides
+  what voters often assume the office does (taxes, the budget, policing), so issues outside its say
+  can be marked "outside" rather than "unclear". Its fixed sections (`OFFICE_SECTIONS`: what it
+  decides, budget, seats, term) get the same provenance and quote check as a dossier
+  (`assembleSections`), without the name check (a state law rightly never names the place). One
+  lookup per office: `RunStore.knownOffice` reuses the newest verified, unfailed lookup from a
+  finished race whose `officeKey` matches (state + jurisdiction + office with any district, seat, or
+  area number left out) and whose lookup (`looked_up`) is under `OFFICE_REUSE_DAYS` old
   (`reused_from`, said on the page). Then each of the race's issues is marked inside, partly,
   outside, or unclear by a call without web tools that sees only the verified facts
   (`markIssueScopes`); a mark other than unclear stands only on a cited verified fact that isn't
@@ -356,7 +378,13 @@ show it. A found quote shows the page has those words, not that the statement re
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are
   said once. Fields stay as the record states them.
 - Explanations live in collapsed "How to read this page" (`readingGuide`) and similar details, so
-  findings come before boilerplate. Standing gaps stay on the page, collapsed under a count.
+  findings come before boilerplate. Standing gaps stay on the page, collapsed under a count. The
+  banner says each dossier is one research session (`ONE_SESSION`).
+- Pages the research found but couldn't read (the shared pass's unreadable pages, often PDFs, and
+  filing portals that need JavaScript or are scanned) are listed in plain view as "Pages to read
+  yourself" (`readYourselfHtml`), each with the site it goes to and a line that public pages never
+  ask for a sign-in or payment. A portal that asks for a login is not listed. Nothing on them is
+  shown as a fact. PDF text extraction and JavaScript rendering are not planned.
 
 ## Verifying UI changes
 
