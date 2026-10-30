@@ -140,7 +140,10 @@ function factMeta(f: Fact): string {
   const flag = f.check?.missing_name
     ? ` · <span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
     : "";
-  return sourceMeta({ ...f, url: f.source_url }) + flag;
+  const when = f.event_date
+    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span> · `
+    : "";
+  return when + sourceMeta({ ...f, url: f.source_url }) + flag;
 }
 
 /** What a quote-check level says on the page. */
@@ -439,9 +442,10 @@ function sectionHtml(
   r ??= NOT_IN_THIS_RUN;
   const tag = o.tag ?? "h4";
   const id = o.id ? ` id="${esc(o.id)}"` : "";
+  const ordered = byWhen(r.facts);
   const facts = r.facts.length
-    ? `<ul class="facts">${
-      r.facts.map((f) => {
+    ? `${whenRange(r.facts)}<ul class="facts">${
+      ordered.map((f) => {
         const at = o.shown?.get(shownKey(f));
         return at ? refItem(f, at, notes) : factItem(f, notes);
       }).join("")
@@ -460,6 +464,67 @@ function sectionHtml(
     o.between ?? ""
   }${facts}${gap}${searched}</section>`;
 }
+
+/**
+ * When a fact's event happened: its own date, or for a merged fact with
+ * none, the most specific date one of its other sources gives.
+ */
+export function eventOf(f: Fact): string | null {
+  if (f.event_date) return f.event_date;
+  const dates = (f.also ?? []).map((a) => a.event_date ?? "").filter(Boolean);
+  return dates.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+/** Whether these facts come from a run saved before event dates: they are then ordered by publication. */
+export function predatesEventDates(facts: readonly Fact[]): boolean {
+  return facts.some((f) => f.event_date === undefined);
+}
+
+const datedOrNull = (s: string | null | undefined) => s && DATED.test(s) ? s : null;
+
+/** Newest first; a date as text sorts by its parts, and a missing one comes last. */
+function newestFirst(a: string | null, b: string | null): number {
+  return a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? 1 : -1;
+}
+
+/**
+ * A section's facts by when they happened, newest first; those with no event
+ * date come last, by publication date. Runs saved before event dates are
+ * ordered by publication date alone. The order is the same rule for every
+ * candidate and measure, never a judgment of which fact matters more.
+ */
+export function byWhen(facts: readonly Fact[]): Fact[] {
+  const old = predatesEventDates(facts);
+  return facts.map((f, i) => ({ f, i, when: old ? null : eventOf(f) }))
+    .sort((a, b) =>
+      newestFirst(a.when, b.when) ||
+      newestFirst(datedOrNull(a.f.published), datedOrNull(b.f.published)) || a.i - b.i
+    ).map((x) => x.f);
+}
+
+/** The span of dates a section's facts cover, said above them when there are two or more. */
+function whenRange(facts: readonly Fact[]): string {
+  // One fact's date is on the fact itself.
+  if (facts.length < 2) return "";
+  const old = predatesEventDates(facts);
+  const dates = facts.map((f) => old ? datedOrNull(f.published) : eventOf(f))
+    .filter((d): d is string => d !== null).sort();
+  const span = !dates.length ? "" : dates.at(-1)!.startsWith(dates[0])
+    ? sourceDate(dates[0]) // a year or month and days inside it
+    : `${sourceDate(dates[0])} to ${sourceDate(dates.at(-1)!)}`;
+  const undated = facts.length - dates.length;
+  const text = old
+    ? span ? `Sources published ${span}` : "No source gives a date"
+    : !span
+    ? "No fact here gives an event date; listed by publication date"
+    : `Events ${span}${
+      undated ? `; ${plural(undated, "fact")} without an event date listed last` : ""
+    }`;
+  return `<p class="when-range">${esc(text)}.</p>`;
+}
+
+const BEFORE_EVENT_DATES =
+  `<p class="note">This run was saved before event dates were recorded: each section lists its facts by when their sources were published, newest first, not by when the events happened.</p>`;
 
 /**
  * What a yes vote and a no vote each mean, side by side above the effect
@@ -1344,6 +1409,7 @@ a { color: var(--accent); }
 p, li { overflow-wrap: anywhere; }
 .sub, .desig, .meta, .searched, .cov { color: var(--muted); }
 .meta, .searched { font-size: .85rem; margin: 2px 0 0; }
+.when-range { color: var(--muted); font-size: .85rem; margin: 2px 0 6px; }
 .banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: var(--r); padding: 12px 14px; margin: 14px 0; }
 .banner p { margin: 0; }
 .banner details { margin-top: 8px; }
@@ -1769,6 +1835,12 @@ ${
       )
       ? BEFORE_QUOTE_CHECKS
       : ""
+  }${
+    predatesEventDates(
+        r.candidates.flatMap((d) => d.status === "ok" ? shownFacts(d.sections, d.priorities) : []),
+      )
+      ? BEFORE_EVENT_DATES
+      : ""
   }
 ${cantSee(r.standing_gaps)}
 ${readingGuide("candidates' own statements")}</div>
@@ -1990,6 +2062,10 @@ ${extra.actions ?? ""}
 ${
     d.status === "ok" && predatesQuoteChecks(shownFacts(d.sections, d.priorities, d.vote_means))
       ? BEFORE_QUOTE_CHECKS
+      : ""
+  }${
+    d.status === "ok" && predatesEventDates(shownFacts(d.sections, d.priorities))
+      ? BEFORE_EVENT_DATES
       : ""
   }
 ${cantSee(d.standing_gaps)}

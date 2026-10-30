@@ -243,3 +243,24 @@ Deno.test("a retention question's note explains there is no opponent", () => {
   assertStringIncludes(note!, "yes/no retention question");
   assert(!note!.includes("Challengers"));
 });
+
+Deno.test("an event date is kept only as an ISO day, month, or year", () => {
+  const dates = ["2024-08-05", "2024-08", "2024", "August 2024", "2024-13", " ", undefined];
+  const d = assembleCandidate(
+    SIDA,
+    raw({
+      sections: {
+        record: {
+          facts: dates.map((event_date, i) => fact(`https://p.example/${i}`, { event_date })),
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: dates.map((_, i) => `https://p.example/${i}`),
+    }),
+  );
+  assertEquals(
+    d.sections.record.facts.map((f) => f.event_date),
+    ["2024-08-05", "2024-08", "2024", null, null, null, null],
+  );
+});

@@ -336,6 +336,11 @@ const SECTION_GUIDE = SECTIONS.map((s) => `- ${s.id} (${s.title}): ${s.ask}`).jo
 const QUOTE_RULE =
   `- quote: one short passage (a sentence or less, under 300 characters) copied exactly from the page at source_url that supports the statement: the page's own words, unchanged, with no ellipsis and nothing added. Leave it empty if you only saw the page in search results or can't copy a passage. It is checked against the page.`;
 
+// The same for every fact. published is the page's date; this is the event's,
+// so sections can be ordered by when things happened (src/render.ts).
+const EVENT_DATE_RULE =
+  `- event_date: when what the statement describes happened (the vote, filing, ruling, statement, or appointment), as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all the page gives), taken from the page. It is not the page's publication date unless the page says the event happened that day. Leave it empty if the page doesn't say when, or if the statement describes something ongoing rather than one event.`;
+
 const candidateSystem = (priorities: readonly string[]) =>
   `You research one candidate in a local election and fill a fixed template. Every candidate in the race gets this exact template and these exact instructions.
 
@@ -353,6 +358,7 @@ How to report each fact:
 - source_url must be a page you actually retrieved in this session via search results or fetch. Never construct or guess a URL. If you can't cite a retrieved page, leave the fact out.
 ${QUOTE_RULE}
 - source_name is the publisher or agency, author is the named author if the page gives one (else leave empty), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else leave empty).
+${EVENT_DATE_RULE}
 - evidence_type: "primary_record" for government or official documents and filings; "reported" for journalism describing events; "opinion" for editorials, endorsements, candidate statements, and advocacy; "unsourced" for anything asserted without support.
 
 For every section, list in "searched" the kinds of sources you tried (short phrases, e.g. "city council minutes 2022-2024", "Fontana Herald News archive"). When a section has little or nothing, say what was missing and why in gap_note (else leave empty). List anything you could not reach or check (paywalls, fetch failures, records not online) in gaps.
@@ -381,6 +387,8 @@ const FACT_SCHEMA = {
     source_url: { type: "string" },
     author: { type: "string" },
     published: { type: "string" },
+    // Plain string for the same reason as author: "" means unknown.
+    event_date: { type: "string" },
     evidence_type: { type: "string", enum: ["primary_record", "reported", "opinion", "unsourced"] },
     // Plain string for the same reason as author: "" means no quote.
     quote: { type: "string" },
@@ -391,6 +399,7 @@ const FACT_SCHEMA = {
     "source_url",
     "author",
     "published",
+    "event_date",
     "evidence_type",
     "quote",
   ],
@@ -473,6 +482,7 @@ How to report each fact:
 - source_url must be a page you actually retrieved in this session via search results or fetch. Never construct or guess a URL. If you can't cite a retrieved page, leave the fact out.
 ${QUOTE_RULE}
 - source_name is the publisher or agency, author is the named author if the page gives one (else leave empty), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else leave empty).
+${EVENT_DATE_RULE}
 - evidence_type: "primary_record" for government or official documents and filings; "reported" for journalism describing events; "opinion" for editorials, endorsements, ballot arguments, and advocacy; "unsourced" for anything asserted without support.
 
 For every section, list in "searched" the kinds of sources you tried (short phrases). When a section has little or nothing, say what was missing and why in gap_note (else leave empty). List anything you could not reach or check in gaps.

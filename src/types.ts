@@ -137,6 +137,8 @@ export interface RawFact {
   author: string | null;
   /** ISO date (or partial date) the source was published, when known. */
   published: string | null;
+  /** ISO date (or partial date) of what the statement describes; "" or absent when unknown. */
+  event_date?: string | null;
   evidence_type: string;
   /** A short passage copied from the page that supports the statement; "" or absent when none. */
   quote?: string;
@@ -213,6 +215,13 @@ export interface Fact {
   source_url: string;
   author: string | null;
   published: string | null;
+  /**
+   * When what the statement describes happened (a vote, a filing, a ruling,
+   * a remark), as an ISO date, month, or year: not the page's date. null when
+   * the research gave none in that form; absent on runs saved before event
+   * dates, whose sections are ordered by `published` instead.
+   */
+  event_date?: string | null;
   evidence_type: EvidenceType;
   /** The quote the research gave from the page, when it gave one. Absent on older runs. */
   quote?: string;

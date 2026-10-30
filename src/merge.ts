@@ -13,6 +13,8 @@
  * - A group's facts share one evidence type and one quote-check level, so
  *   the tag and the level still describe every citation under it.
  * - Each publisher (and each page) counts once, so N counts outlets.
+ * - Known event dates in a group agree (one may be the year or month of
+ *   another), so a merged fact describes one event.
  * - The fact shown is the group's earliest in dossier order, in its source's
  *   words; the others are kept on it as `also`. The model writes no text.
  * - The same rule and the same call cover every candidate in the run.
@@ -157,6 +159,9 @@ function plan(subjects: readonly Subject[]) {
   return { blocks, slots, skipped };
 }
 
+/** Two event dates that can be the same day: equal, or one a year or month of the other. */
+const sameEvent = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
+
 /** Keeps only groups that obey the rules in this file's header; each fact joins one group. */
 function checkGroups(raw: unknown, slots: ReadonlyMap<string, Slot>): Group[] {
   const used = new Set<string>();
@@ -178,11 +183,16 @@ function checkGroups(raw: unknown, slots: ReadonlyMap<string, Slot>): Group[] {
     for (const same of byType.values()) {
       same.sort((a, b) => a.index - b.index);
       const outlets = new Set<string>(), pages = new Set<string>();
+      const dates: string[] = [];
       const kept = same.filter((m) => {
         const outlet = publisherKey(m.fact), page = normalizeUrl(m.fact.source_url) ?? "";
         if (outlets.has(outlet) || pages.has(page)) return false;
+        // Two event dates that disagree are two events, whatever the words.
+        const when = m.fact.event_date;
+        if (when && dates.some((d) => !sameEvent(d, when))) return false;
         outlets.add(outlet);
         pages.add(page);
+        if (when) dates.push(when);
         return true;
       });
       if (kept.length < 2) continue;

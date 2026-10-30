@@ -343,3 +343,24 @@ Deno.test("the job runner merges after saving the run as done, and a failed merg
   assert(logs.some((l) => l.includes("merging duplicate claims failed: overloaded")));
   s.db.close();
 });
+
+Deno.test("facts whose event dates disagree are never merged; a year matches its days", async () => {
+  const port = new FakeResearch(listing([CANDS[0]]), {
+    "Acquanetta Warren": raw({
+      sections: {
+        record: section(
+          fact("Voted for the budget.", HERALD, "Fontana Herald News", { event_date: "2025-06" }),
+          fact("Approved the budget.", PE, "Press-Enterprise", { event_date: "2024-06-03" }),
+          fact("Backed the budget.", KVCR, "KVCR", { event_date: "2025" }),
+          fact("Voted yes on the budget.", HERALD2, "Inland Daily", { event_date: "" }),
+        ),
+      },
+      retrieved_urls: [HERALD, PE, KVCR, HERALD2],
+    }),
+  });
+  const r = await runRace(QUERY, port, { candidates: [CANDS[0]] });
+  const out = await mergeRace(r, new FakeMerger((b) => [idsWhere(b, "Acquanetta", () => true)]));
+  const facts = out.dossier.candidates[0].sections.record.facts;
+  assertEquals(facts.map((f) => f.statement), ["Voted for the budget.", "Approved the budget."]);
+  assertEquals(facts[0].also?.map((f) => f.source_name), ["KVCR", "Inland Daily"]);
+});
