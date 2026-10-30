@@ -83,11 +83,11 @@ Branch `feature/focused-feynman-f4fej8`. Decisions made in the PR:
 
 Follow-ups:
 
-- Not yet run against the live API. The schema gained one plain string per fact (no new unions; a
-  test counts them), but the API has also rejected this schema for "compiled grammar too large"
-  before. Run one real race and one measure before relying on it, and watch how often quotes come
-  back `not_found` (if often, look at the fetched text's format before blaming the model).
-- PDF text extraction, so PDFs can reach `quoted`.
+- Run live Oct 30, 2026 (item 11): the schema was accepted; 39 of 49 race facts and 30 of 67 measure
+  facts `quoted`, none `not_found`. Most `seen` facts were on opened pages with no quote, so the
+  quote rule now says to always copy one from an opened page.
+- ~~PDF text extraction~~: dropped (owner, Oct 30, 2026). PDFs stay `seen`; unreadable pages are
+  listed for the voter to read (item 11).
 - Context notes and finance rows have no quote check yet.
 - The name check is a heuristic: a one-letter or very common surname passes easily, and a measure
   page that uses only a nickname ("the parks tax") is flagged.
@@ -210,8 +210,8 @@ Follow-ups:
 
 - The knowledge graph doesn't store event dates yet, so entity pages still order by run. Add a
   column (and bump `KNOWLEDGE_VERSION`) when entity pages need a timeline.
-- Not yet run against the live API: watch how often the model gives the publication date as the
-  event date.
+- Run live Oct 30, 2026: the event dates that equal publication dates were real (a questionnaire's
+  answers, a dated notice); no sign of the model copying page dates.
 
 Original plan:
 
@@ -247,10 +247,10 @@ Branch `ccr-79f4f0bc-5rxe3r`. Decisions made in the PR:
 
 Follow-ups:
 
-- Not yet run against the live API (it spends money; nothing was run from the build session). Run
-  one race three times and record the overlap here. If it is low, add a line to the page saying a
-  dossier is one research session and another may find different sources, and consider showing the
-  union across runs on entity pages (the graph already holds every done run).
+- Run live Oct 30, 2026 (Fontana City Treasurer, 3 runs): Kamal Namou 64% of pages (lowest 55%), 55%
+  of facts; Joe Armendarez 41% of pages (lowest 38%), 25% of facts. Two sections read "Found" in
+  some runs only. Low enough that every page now says a dossier is one research session
+  (`ONE_SESSION`, item 11). Showing the union across runs on entity pages is still open.
 - The owner writes a key for a past race and judges a sample; record precision and recall here.
 - Measures aren't covered by the stability run yet.
 
@@ -290,8 +290,10 @@ Branch `feature/bold-babbage-ulso2g`. Decisions made in the PR:
 
 Follow-ups:
 
-- Not yet run against the live API. Check that the lookup finds the charter or code rather than a
-  generic explainer, and how often marks come back unclear.
+- Run live Oct 30, 2026: with "School Offices" as the place the lookup searched nothing; with "City
+  of Fontana Offices" it searched 4 times, opened nothing, and cited council pages (6 of 7 issues
+  unclear). Fixed in item 11 (the place, and a prompt to fetch the code and say who decides what).
+  Check the next live run's marks.
 - The knowledge graph doesn't hold office facts yet, so the office's entity page doesn't show them.
 - Two races for one office finishing close together (council districts on one ballot) can each pay
   for a lookup, since reuse only sees saved results. An in-flight map by `officeKey` in `JobRunner`
@@ -336,9 +338,9 @@ Branch `feature/upbeat-turing-mvu6yc`. Decisions made in the PR:
 
 Follow-ups:
 
-- Not yet run against the live API. Check how often a county voter guide is found and kept: many are
-  PDFs, which the pass can't read yet (left out as "not read"), and the surname check may miss a
-  page that writes names differently.
+- Run live Oct 30, 2026 (Fontana City Treasurer): kept 0; the two pages it found were city PDFs
+  ("not read") and it used its 6 searches. Kept (it costs about $0.10 a race), and its unreadable
+  pages are now listed for the voter to read (item 11). PDF reading is not planned.
 - The first candidates start together (concurrency 3), so each writes the cache rather than reading
   it; only later candidates read. Starting one candidate first would trade time for cost.
 - The graph doesn't record which facts came from shared pages.
@@ -380,13 +382,12 @@ Branch `feature/upbeat-turing-mvu6yc`. Decisions made in the PR:
 
 Follow-ups:
 
-- Not yet run against the live API (this environment couldn't reach netfile.com). The export's
-  endpoint, parameters, and field names are from NetFile's public Connect2 API as documented by
-  open-data users; the parser accepts the CAL field names in either `Tran_NamL` or `tranNamL` form,
-  but a first live run should confirm the agency list's shape and paging.
+- Run live Oct 30, 2026: the agency list's address was wrong (404) and NetFile has retired the CAL
+  exports, so every place fell back to the model, which kept 0 rows (Fontana's portal needs
+  JavaScript). Rebuilt on the transaction search in item 11.
 - Form 460 summary totals aren't read yet (another export); rows only.
-- Amended filings: the export is assumed to carry only current filings. Check whether superseded
-  reports appear.
+- Amended filings: settled. The search's `ShowSuperceded=false` leaves superseded rows out (Fontana
+  2025 on: 3,897 rows with them, 3,362 without).
 - Big agencies (San Francisco) may exceed the page bound (40 pages of 1,000 rows a year); the page
   says so as a portal gap. A per-filer query would avoid reading the whole year.
 - `BALLOTFIX_FINANCE_MODEL=off` turns the whole finance step off, NetFile included: running NetFile
@@ -394,8 +395,8 @@ Follow-ups:
   NetFile-only is wanted.
 - Office words in committee names (`officeFits`) are a fixed list; a committee naming an office in
   other words is matched on the person's name alone.
-- Surname-only committee names ("Re-elect Kaplan") fall back to a gap note, not the model; watch how
-  often that happens.
+- Surname-only committee names: matched when the name also states the election's year and the race's
+  office ("Armendarez for City Treasurer 2026", item 11); otherwise still a gap note.
 
 Original plan:
 
@@ -403,3 +404,47 @@ A deterministic primary-record adapter behind `ResearchPort`/`FinanceResearcher`
 public transaction exports, removing the transcription risk and the per-subject row cap where a city
 uses NetFile. Fall back to the model lookup elsewhere. Rows keep the export's own fields; provenance
 is the export URL and the filing. Update CLAUDE.md's runtime note about outbound hosts (approved).
+
+## 11. Live API run and fixes — done
+
+Branch `fix/live-api-followups`. The follow-ups above that needed the live API were run on Oct 30,
+2026, against a copy of the app's database (the live one was backed up first and never touched):
+Fontana City Treasurer and Proposition 40 rerun through the app, three stability runs of the
+Treasurer race, and NetFile read directly. About $9.30 in all. What it found, and what changed:
+
+- **NetFile was never read** (wrong agency-list address; the CAL exports are retired). Rebuilt on
+  the transaction search and committee list (`fromSearch`); surname-only committees match with the
+  year and office. Read live: Treasurer 8 and 19 rows, Clerk 7, 6, and a committee with none.
+- **Ballot headings were saved as places** ("School Offices", "City of Fontana Offices"), which
+  starved office powers, NetFile, and the shared pass. The reader prompt no longer allows a heading,
+  and `ballotPlace` reads saved headings as the office's government.
+- **Research again with changes**: the voter's issues (up to 8) and the place can be edited before
+  rerunning one item; picks and notes stay with it. A tip on wording goes wherever issues are
+  entered. Why issues find nothing: on the Treasurer race, each issue's own note said nothing was on
+  record ("I found nothing documenting his position on taxing high earners"), and the office marks
+  that should have said "outside this office" came back "unclear" because the office lookup cited
+  only council pages.
+- **Office powers** opened no pages; it is now told to fetch the code or charter and to say who
+  decides what voters assume the office does.
+- **Context notes** made 0 searches and wrote 0 notes in both runs ("a name you can't get to is
+  unknown" read as leave to skip). The prompt now says to search first. The name finder no longer
+  makes names of bracketed designations or slashed titles ("Businessowner/Chief Financial Officer"),
+  plural titles, or "Building" alone ("Building a Better California").
+- **PDFs and JavaScript-only portals**: not pursued (owner). Pages the research found but couldn't
+  read are listed as "Pages to read yourself", with each site shown.
+- **Stability**: every page now says a dossier is one research session.
+
+Rerun on this branch's code (same copy, Fontana City Treasurer, place corrected to "City of Fontana"
+in the new form, about $2.35): NetFile kept 27 contributions (8 and 19); context notes searched 8
+times and kept 7 notes (before: 0 and 0); office powers opened 4 pages, kept 7 facts, and marked 3
+of 7 issues "outside" (before: 1), the national and tax views still "unclear".
+
+Follow-ups:
+
+- One office fact cited another county's ballot pamphlet (ocvote.gov, Orange County) for what a
+  treasurer decides. It was only `seen`, but the office lookup has no name check; a place check (the
+  page names the jurisdiction, or is state law) would catch it.
+- Issues phrased as national views stay "unclear" on the office: no source says who decides "the
+  MAGA platform". The tip on wording is the only remedy for now.
+- A note already saved for a non-name ("Building", from Prop 42's run) stays on the pages of runs
+  that hold it until they are researched again.

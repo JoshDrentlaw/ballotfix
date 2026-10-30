@@ -3,8 +3,10 @@
  * the California cities and counties whose filings are on NetFile.
  *
  * Instead of a model reading contributions off filings, the rows come from
- * NetFile's public transaction export (the CAL format behind Form 460 and
- * 497), field by field, with no model in between. That removes the
+ * NetFile's public transaction search (Form 460 Schedules A and C, Form 497
+ * Part 1; current filings only), field by field, with no model in between.
+ * NetFile retired the per-year CAL export this first read; the search's rows
+ * are put in the same CAL field names (fromSearch). That removes the
  * transcription risk, and the per-subject cap becomes a bound on the page
  * (MAX_EXPORT_PER_SUBJECT) rather than on what a call can read.
  *
@@ -13,7 +15,8 @@
  *   when the export can't be read, or when no subject's committee is found,
  *   the model lookup runs instead (the fallback), for every subject alike.
  * - A committee is matched to a candidate only by a name holding the
- *   candidate's first and last name, never a recall or opposing committee,
+ *   candidate's first and last name (or the surname with this race's office
+ *   and the election's year), never a recall or opposing committee,
  *   never a committee of another type, never one named for another year's
  *   election; to a measure's side only by a name holding the measure's label
  *   and words of one side only. A committee that matches two subjects goes to
@@ -52,6 +55,8 @@ export interface NetFileAgency {
   /** NetFile's agency id ("shortcut"), e.g. "COAK". */
   id: string;
   name: string;
+  /** NetFile's agency number, which its transaction search takes; from the agency list. */
+  number?: number;
 }
 
 /** One transaction row, keys normalized (lowercase, letters and digits only). */
@@ -113,6 +118,8 @@ export class NetFileClient implements NetFileSource {
   #agencies: Promise<NetFileAgency[]> | null = null;
   /** Per agency and year, so a ballot's items in one place read its export once. */
   readonly #years = new Map<string, { at: number; got: Promise<ExportYear> }>();
+  /** Per agency: its committees, read once with its first year. */
+  readonly #filers = new Map<string, Promise<Filer[]>>();
 
   constructor(opts: { fetch?: Fetch; base?: string } = {}) {
     this.#fetch = opts.fetch ?? ((u, i) => fetch(u, i));
@@ -132,14 +139,16 @@ export class NetFileClient implements NetFileSource {
   }
 
   agencies(): Promise<NetFileAgency[]> {
-    this.#agencies ??= this.#json(`${this.#base}/public/list/agencies?format=json`).then(
+    this.#agencies ??= this.#json(`${this.#base}/public/campaign/agencies?format=json`).then(
       (json) =>
         arrayIn(json).flatMap((a): NetFileAgency[] => {
           const r = normalizeRow(a);
           if (!r) return [];
           const id = get(r, "shortcut", "aid", "agencyshortcut");
           const name = get(r, "name", "agencyname");
-          return id && name ? [{ id, name }] : [];
+          // The transaction search takes the agency's number, not its shortcut.
+          const number = typeof r.id === "number" && Number.isInteger(r.id) ? r.id : undefined;
+          return id && name ? [{ id, name, ...(number !== undefined ? { number } : {}) }] : [];
         }),
     ).catch((err) => {
       this.#agencies = null; // a failed read is tried again next time
@@ -160,12 +169,59 @@ export class NetFileClient implements NetFileSource {
     return got;
   }
 
+  /** The agency's number for the transaction search, from its shortcut. */
+  async #numberOf(agency: string): Promise<number> {
+    const n = (await this.agencies()).find((a) => a.id === agency)?.number;
+    if (n === undefined) throw new Error(`NetFile lists no agency ${agency}`);
+    return n;
+  }
+
+  /** Every committee the agency lists, so one that filed no rows is still found. */
+  #agencyFilers(agency: string): Promise<Filer[]> {
+    let got = this.#filers.get(agency);
+    if (!got) {
+      got = this.#json(
+        `${this.#base}/public/campaign/list/filer?${new URLSearchParams({
+          AID: agency,
+          PageSize: String(NETFILE_PAGE_SIZE),
+          CurrentPageIndex: "0",
+          format: "json",
+        })}`,
+      ).then((json) => {
+        const list = (json as Record<string, unknown> | null)?.filers;
+        return (Array.isArray(list) ? list : []).flatMap((o): Filer[] => {
+          const r = normalizeRow(o);
+          const name = r ? get(r, "name") : "";
+          const id = r ? get(r, "localagencyid", "fppcid") : "";
+          return id && name ? [{ id, name, type: "", elections: [] }] : [];
+        });
+      }).catch((err) => {
+        this.#filers.delete(agency);
+        throw err;
+      });
+      this.#filers.set(agency, got);
+    }
+    return got;
+  }
+
+  /**
+   * One year of the agency's transactions from NetFile's public transaction
+   * search (the per-year CAL export it replaced is retired), current filings
+   * only: an amended report's superseded rows are left out by NetFile itself.
+   * Each row is put in the CAL field names the rest of this file reads.
+   */
   async #readYear(agency: string, year: number): Promise<ExportYear> {
-    const url = `${this.#base}/public/campaign/export/cal201/transaction/year?${new URLSearchParams(
-      { Year: String(year), AID: agency, Format: "json" },
-    )}`;
+    const number = await this.#numberOf(agency);
+    const url = `${this.#base}/public/campaign/search/transaction/query?${new URLSearchParams({
+      Agency: String(number),
+      DateStart: `${year}-01-01`,
+      DateEnd: `${year}-12-31`,
+      ShowSuperceded: "false",
+      format: "json",
+    })}`;
     const rows: ExportRow[] = [];
     const filers = new Map<string, Filer>();
+    for (const f of await this.#agencyFilers(agency)) filers.set(f.id, f);
     for (let page = 0; page < NETFILE_MAX_PAGES; page++) {
       const json = await this.#json(
         `${url}&${new URLSearchParams({
@@ -173,10 +229,14 @@ export class NetFileClient implements NetFileSource {
           CurrentPageIndex: String(page),
         })}`,
       );
-      const batch = arrayIn(json).map(normalizeRow).filter((r): r is ExportRow => r !== null);
+      const batch = arrayIn(json).map(normalizeRow).filter((r): r is ExportRow => r !== null)
+        .map(fromSearch);
       rows.push(...batch.filter(isContribution));
-      for (const r of batch) addFiler(filers, r);
-      const pages = Number((json as Record<string, unknown> | null)?.totalMatchingPages);
+      for (const r of batch) if (!filers.has(filerId(r))) addFiler(filers, r);
+      const pages = Number(
+        (json as Record<string, unknown> | null)?.totalmatchingpages ??
+          (json as Record<string, unknown> | null)?.totalMatchingPages,
+      );
       const last = Number.isFinite(pages) && pages > 0
         ? page + 1 >= pages
         : batch.length < NETFILE_PAGE_SIZE;
@@ -184,6 +244,35 @@ export class NetFileClient implements NetFileSource {
     }
     return { year, url, rows, filers: [...filers.values()], truncated: true };
   }
+}
+
+/** The search's transaction types for contributions received, as CAL form codes. */
+const SEARCH_TYPES: Record<string, string> = { "0": "A", "1": "C", "20": "F497P1" };
+
+/**
+ * A transaction search row in CAL field names. The search gives the
+ * contributor as one name and no entity code: a contributor with its own FPPC
+ * id is a committee (an organization); one with an occupation or employer,
+ * which the forms ask only of individuals, is an individual; anyone else is
+ * unknown, and src/finance.ts never matches an unknown.
+ */
+export function fromSearch(r: ExportRow): ExportRow {
+  if (!("transactiontype" in r) || "formtype" in r) return r;
+  const occ = get(r, "occupation"), emp = get(r, "employer");
+  const entity = get(r, "transactionfppcid") ? "COM" : occ || emp ? "IND" : "";
+  return {
+    filerid: get(r, "filerlocalid", "filerfppcid"),
+    filernaml: get(r, "filername"),
+    formtype: SEARCH_TYPES[get(r, "transactiontype")] ?? `type ${get(r, "transactiontype")}`,
+    entitycd: entity,
+    trannaml: get(r, "name"),
+    tranocc: occ,
+    tranemp: emp,
+    tranamt1: r.amount,
+    trandate: get(r, "date"),
+    filingid: get(r, "filingid"),
+    tranid: get(r, "id"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +422,16 @@ function officeFits(filerName: string, contest: string | undefined): boolean {
   );
 }
 
+/** The committee's name holds an office word that the race's office has too. */
+function namesOffice(filerName: string, contest: string | undefined): boolean {
+  if (!contest) return false;
+  const office = words(contest);
+  return OFFICE_WORDS.some((w) =>
+    w !== "district" && filerName.includes(` ${w} `) &&
+    (office.includes(` ${w} `) || office.includes(` ${w}s `))
+  );
+}
+
 const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "md", "phd", "esq"]);
 /** Never a candidate's own committee, whatever names it holds. */
 const AGAINST = /\b(recall|oppose|opposing|against|stop|defeat|no on)\b/;
@@ -365,8 +464,11 @@ export function filerMatches(
     if (AGAINST.test(name)) return false;
     if (!officeFits(name, contest)) return false;
     const parts = nameKey(s.name).split(" ").filter((w) => w.length > 1 && !SUFFIXES.has(w));
-    if (parts.length < 2) return false;
-    return name.includes(` ${parts[0]} `) && name.includes(` ${parts.at(-1)} `);
+    if (parts.length < 2 || !name.includes(` ${parts.at(-1)} `)) return false;
+    if (name.includes(` ${parts[0]} `)) return true;
+    // Surname only ("Armendarez for City Treasurer 2026"): only when the name also states
+    // this election's year and this race's office, so it can't be a namesake's elsewhere.
+    return name.includes(` ${year} `) && namesOffice(name, contest);
   }
   const label = labelWords(s.name).trim();
   const named = labelWords(f.name);
@@ -393,7 +495,7 @@ const ENTITY: Record<string, string> = {
   SCC: "organization",
 };
 
-const plainDate = (d: string) => d.replace(/T00:00:00(\.0+)?Z?$/, "");
+const plainDate = (d: string) => d.replace(/T00:00:00(\.0+)?(Z|[+-]\d\d:\d\d)?$/, "");
 
 function amountOf(r: ExportRow): string {
   return get(r, "tranamt1", "amount", "tranamount");
@@ -602,7 +704,7 @@ export class NetFileResearcher implements FinanceResearcher {
         ? [
           `No committee in ${agency.name}'s NetFile filings for ${span} has a name this check ties to ${
             s.role === "candidate"
-              ? `${s.name} (it needs their first and last name, and no other office named)`
+              ? `${s.name} (it needs their first and last name, or their surname with this race's office and ${year}, and no other office named)`
               : `the ${
                 s.role === "support" ? "yes" : "no"
               } side of ${s.name} (it needs the label and words of that side only)`

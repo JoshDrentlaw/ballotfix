@@ -145,6 +145,18 @@ Deno.test("a committee is a candidate's only by first and last name, never again
   assert(filerMatches(f("Committee to Elect Jane Q. Smith"), jane, 2026));
   assert(filerMatches(f("Jane Smith for Mayor", ""), jane, 2026), "type not stated");
   assert(!filerMatches(f("Re-elect Smith"), jane, 2026), "surname only");
+  // Surname only, with this race's office and year: no namesake elsewhere fits that.
+  const treasurer = subject("Joe Armendarez");
+  assert(
+    filerMatches(f("Armendarez for City Treasurer 2026", ""), treasurer, 2026, "City Treasurer"),
+  );
+  assert(
+    !filerMatches(f("Armendarez for City Treasurer"), treasurer, 2026, "City Treasurer"),
+    "no year",
+  );
+  assert(!filerMatches(f("Armendarez for Supervisor 2026"), treasurer, 2026, "City Treasurer"));
+  assert(!filerMatches(f("Armendarez 2026"), treasurer, 2026, "City Treasurer"), "no office");
+  assert(!filerMatches(f("Armendarez for City Treasurer 2026"), treasurer, 2026), "no contest");
   assert(!filerMatches(f("Recall Jane Smith"), jane, 2026));
   assert(!filerMatches(f("Oaklanders Against Jane Smith"), jane, 2026));
   assert(!filerMatches(f("Jane Smith for Council 2022"), jane, 2026), "another election");
@@ -366,38 +378,117 @@ Deno.test("only a named export source gets the larger share", () => {
   assertEquals(checkFinance(plan, base).subjects[0].gap_note, NOTHING_OPENED);
 });
 
-Deno.test("the client pages through a year, keeps contributions, and reads agencies once", async () => {
+Deno.test("the client reads NetFile's transaction search, current filings only", async () => {
   const asked: string[] = [];
+  // Shaped as NetFile answered on Oct 30, 2026.
   const pages = [
     {
+      totalMatchingCount: 3,
       totalMatchingPages: 2,
       results: [
-        { Filer_NamL: "Jane Smith for Mayor", Form_Type: "A", Tran_Amt1: 5 },
-        { Filer_NamL: "Jane Smith for Mayor", Form_Type: "E", Tran_Amt1: 9 },
+        {
+          id: "t1",
+          filingId: "217855381",
+          filerLocalId: "COAK-1",
+          filerFppcId: "1256423",
+          filerName: "Jane Smith for Mayor 2026",
+          date: "2026-10-29T00:00:00.0000000-07:00",
+          amount: 1000,
+          transactionType: 0,
+          name: "Shayan Assar",
+          transactionFppcId: "",
+          occupation: "Real Estate Agent",
+          employer: "Voit",
+        },
+        // An expenditure (Schedule E): left out.
+        {
+          id: "t2",
+          filerLocalId: "COAK-1",
+          filerName: "Jane Smith for Mayor 2026",
+          transactionType: 6,
+          amount: 20,
+          name: "GoDaddy.com LLC",
+        },
       ],
     },
-    { totalMatchingPages: 2, results: [{ filerName: "X", formType: "C", tranAmt1: 7 }] },
+    {
+      totalMatchingCount: 3,
+      totalMatchingPages: 2,
+      results: [{
+        id: "t3",
+        filingId: "217855382",
+        filerLocalId: "COAK-2",
+        filerName: "Pat Lee for Mayor",
+        date: "2026-10-01T00:00:00.0000000-07:00",
+        amount: 4645,
+        transactionType: 20,
+        name: "Builders PAC",
+        transactionFppcId: "1484470",
+        occupation: "",
+        employer: "",
+      }],
+    },
   ];
   let agencyReads = 0;
   const client = new NetFileClient({
     fetch: (url) => {
       asked.push(url);
-      if (url.includes("/list/agencies")) {
+      if (url.includes("/public/campaign/agencies")) {
         agencyReads++;
-        return Promise.resolve(Response.json([{ id: 13, shortcut: "COAK", name: "Oakland" }]));
+        return Promise.resolve(
+          Response.json({ agencies: [{ id: 13, shortcut: "COAK", name: "Oakland, City of" }] }),
+        );
+      }
+      if (url.includes("/public/campaign/list/filer")) {
+        return Promise.resolve(Response.json({
+          filers: [{ localAgencyId: "COAK-9", fppcId: "9", name: "Luis Ortega for Mayor 2026" }],
+        }));
       }
       const page = Number(new URL(url).searchParams.get("CurrentPageIndex"));
       return Promise.resolve(Response.json(pages[page]));
     },
   });
   const y = await client.transactions("COAK", 2026);
-  assertEquals(asked.length, 2);
-  assertEquals(y.url, exportUrl(2026));
-  assertEquals(y.rows.map((r) => r.tranamt1), [5, 7], "expenditures are left out");
+  const search = new URL(y.url);
+  assertEquals(search.pathname, "/Connect2/api/public/campaign/search/transaction/query");
+  assertEquals(search.searchParams.get("Agency"), "13", "the agency's number, not its shortcut");
+  assertEquals(search.searchParams.get("ShowSuperceded"), "false");
+  assertEquals(search.searchParams.get("DateStart"), "2026-01-01");
+  assertEquals(y.rows.map((r) => [r.formtype, r.trannaml, r.entitycd]), [
+    ["A", "Shayan Assar", "IND"],
+    ["F497P1", "Builders PAC", "COM"],
+  ]);
   assertEquals(y.truncated, false);
-  await client.agencies();
-  assertEquals(await client.agencies(), [{ id: "COAK", name: "Oakland" }]);
+  assertEquals(
+    y.filers!.map((f) => f.name).sort(),
+    ["Jane Smith for Mayor 2026", "Luis Ortega for Mayor 2026", "Pat Lee for Mayor"],
+    "a listed committee with no rows still counts",
+  );
+  assertEquals(await client.agencies(), [{ id: "COAK", name: "Oakland, City of", number: 13 }]);
   assertEquals(agencyReads, 1);
+
+  // The rows read as any other: the date without its offset, the filing image linked.
+  const r = new NetFileResearcher({
+    source: {
+      agencies: () => client.agencies(),
+      transactions: (a, yr) => client.transactions(a, yr),
+    },
+  });
+  const got = await r.findContributions({
+    place: "Oakland, CA",
+    electionDate: "2026-11-03",
+    contest: "Mayor",
+    subjects: [subject("Jane Q. Smith")],
+    perSubject: 100,
+  });
+  const [c] = got.subjects[0].contributions;
+  assertEquals([c.contributor, c.amount, c.date, c.filing], [
+    "Shayan Assar",
+    "1000",
+    "2026-10-29",
+    "Form 460, Schedule A, filing 217855381",
+  ]);
+  assertEquals(c.filing_url, "https://netfile.com/Connect2/api/public/image/217855381");
 
   const failing = new NetFileClient({
     fetch: () => Promise.resolve(new Response("no", { status: 500 })),

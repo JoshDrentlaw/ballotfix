@@ -23,7 +23,7 @@
  *   GET  /apple-touch-icon.png  home-screen icon (public, like /healthz)
  */
 
-import { measuresOf, parsePriorities } from "../dossier.ts";
+import { ballotPlace, measuresOf, parsePriorities } from "../dossier.ts";
 import { nameKey } from "../knowledge.ts";
 import {
   CSP,
@@ -546,6 +546,27 @@ export function parseBallotResearch(
   return { ok: true, picks };
 }
 
+/**
+ * "Research again": the issues and place the voter left in the form. A form
+ * without the fields (an older page) keeps the run's own.
+ */
+export function parseAgain(
+  run: RunRecord,
+  form: FormData,
+): { ok: true; place: string; priorities: string[] } | { ok: false; error: string } {
+  const place = form.has("place") ? field(form, "place") : run.query.city;
+  if (!place || place.length > 80) {
+    return {
+      ok: false,
+      error:
+        "Enter whose office this is (or who put the measure on the ballot), up to 80 characters.",
+    };
+  }
+  if (!form.has("priorities")) return { ok: true, place, priorities: run.priorities ?? [] };
+  const issues = parsePriorities(field(form, "priorities"), MAX_PRIORITIES);
+  return issues.ok ? { ok: true, place, priorities: issues.issues } : issues;
+}
+
 /** Validates the notes-and-pick form against what can be picked. */
 export function parseChoice(
   { options, max }: { options: readonly string[]; max: number },
@@ -598,7 +619,10 @@ export function ballotItem(
   if (!c) return null;
   return {
     heading: c.office,
-    detail: [c.jurisdiction, c.vote_for ? `vote for ${c.vote_for}` : ""].filter(Boolean).join(
+    detail: [
+      ballotPlace(c.jurisdiction, c.office, r.county, r.state),
+      c.vote_for ? `vote for ${c.vote_for}` : "",
+    ].filter(Boolean).join(
       " · ",
     ),
     options: c.candidates.map((x) => x.name),
@@ -676,6 +700,23 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       if (!(err instanceof QueueFullError)) throw err;
       return html(await home({ values, error: err.message }), 429);
     }
+  };
+  /**
+   * The place to suggest for research again. Runs started from readings saved
+   * before ballotPlace hold a section heading ("School Offices"); the ballot's
+   * county lets it be read as the office's own government.
+   */
+  const againPlace = async (run: RunRecord): Promise<string> => {
+    const saved = run.measure?.jurisdiction || run.query.city;
+    const reading = run.ballot && o.ballots
+      ? (await o.ballots.store.get(run.ballot.id))?.reading
+      : null;
+    return ballotPlace(
+      saved,
+      run.measure?.label ?? run.query.office,
+      reading?.county ?? null,
+      run.query.state,
+    );
   };
   const choiceFor = async (run: RunRecord): Promise<ChoiceRecord | null> =>
     o.choices ? await o.choices.get(run.choice_id ?? run.id) : null;
@@ -1094,6 +1135,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           choice: await choiceFor(run),
           walk: await walkFor(run),
           links: linksFor(run),
+          againPlace: await againPlace(run),
           ...extra,
         });
       if (!suffix && req.method === "GET") {
@@ -1135,16 +1177,20 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
       if (suffix === "/rerun" && req.method === "POST") {
         if (!o.canResearch) return researchOff();
+        const again = parseAgain(run, await req.formData());
+        if (!again.ok) return html(messagePage("Not started", again.error, BASE), 400);
+        const query = { ...run.query, city: again.place };
         const values: FormValues = {
           ...DEFAULT_FORM,
-          city: run.query.city,
-          state: run.query.state,
-          office: run.query.office,
-          election: run.query.electionDate,
+          city: query.city,
+          state: query.state,
+          office: query.office,
+          election: query.electionDate,
         };
-        const res = await start(run.query, run.candidates, values, run.candidate_source ?? null, {
-          priorities: run.priorities,
-          measure: run.measure ?? undefined,
+        const measure = run.measure ? { ...run.measure, jurisdiction: again.place } : undefined;
+        const res = await start(query, run.candidates, values, run.candidate_source ?? null, {
+          priorities: again.priorities,
+          measure,
           choiceId: run.choice_id ?? run.id,
           ballot: run.ballot,
         });

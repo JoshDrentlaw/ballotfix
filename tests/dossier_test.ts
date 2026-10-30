@@ -2,6 +2,7 @@ import { assert, assertEquals, assertMatch, assertStringIncludes } from "@std/as
 import {
   assembleCandidate,
   assembleMeasure,
+  ballotPlace,
   failedCandidate,
   incumbencyNote,
   measuresOf,
@@ -262,5 +263,46 @@ Deno.test("an event date is kept only as an ISO day, month, or year, not after t
   assertEquals(
     d.sections.record.facts.map((f) => f.event_date),
     ["2024-08-05", "2024-08", "2024", null, null, null, null, null],
+  );
+});
+
+Deno.test("a ballot heading is read as the government the office belongs to", () => {
+  const county = "San Bernardino";
+  const cases: [string, string, string][] = [
+    ["State Offices", "Governor", "State of California"],
+    ["State Offices", "Treasurer", "State of California"],
+    [
+      "Voter-Nominated and Nonpartisan Offices",
+      "United States Representative District 35",
+      "State of California",
+    ],
+    [
+      "Voter-Nominated and Nonpartisan Offices",
+      "Member of the State Assembly District 50",
+      "State of California",
+    ],
+    ["School Offices", "Superintendent of Public Instruction", "State of California"],
+    ["School Offices", "County Superintendent of Schools", "San Bernardino County"],
+    ["City of Fontana Offices", "City Treasurer", "City of Fontana"],
+    [
+      "District Offices",
+      "Member, Board of Directors Division 4, Inland Empire Utilities Agency",
+      "Inland Empire Utilities Agency",
+    ],
+    [
+      "Fontana Unified School District",
+      "Governing Board Member",
+      "Fontana Unified School District",
+    ],
+    ["San Bernardino County", "Measure I", "San Bernardino County"],
+    ["District Offices", "Director, Division 2", "San Bernardino County"],
+  ];
+  for (const [heading, office, want] of cases) {
+    assertEquals(ballotPlace(heading, office, county), want, `${heading} / ${office}`);
+  }
+  assertEquals(
+    ballotPlace("School Offices", "County Superintendent of Schools", null),
+    "School Offices",
+    "nothing to go on: left as read",
   );
 });

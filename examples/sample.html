@@ -155,6 +155,9 @@ form.ballot h2 { margin-top: 8px; }
 details.settings { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; }
 details.settings[open] { padding-bottom: 14px; }
 details.settings > summary { color: var(--fg); font-weight: 600; padding: 12px 0; }
+details.again { margin: 10px 0; flex-basis: 100%; }
+details.again textarea { min-height: 9em; }
+details.again form > .hint { color: var(--muted); font-size: .85rem; margin: 4px 0 10px; }
 details.settings > summary .item-meta { display: block; font-weight: 400; padding-left: 1.1em; }
 details.settings[open] > div.row { margin-bottom: 14px; }
 details.banner > summary { color: var(--warn-fg); padding: 0; }
@@ -348,7 +351,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 
 
 
-<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions.</p>
+<div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions. Each dossier is one research session: researching again often finds different sources, so something missing here may only be something this session didn't come across.</p>
 
 <details><summary>What this research can't see (5)</summary>
 <ul><li>Phase 0 researches with general web search, plus one capped lookup of campaign finance filings per run. It does not read council minutes or budget documents directly, and filing portals behind a login or JavaScript can&#39;t be read, so records that search engines don&#39;t index are likely missing.</li><li>Paywalled local news is usually not readable, so coverage from subscription outlets may be absent or represented only by headlines.</li><li>Social media is not searched: Facebook community groups, Nextdoor, Instagram, and TikTok, where much local political discussion happens, are a blind spot.</li><li>PDF records (agendas, minutes, budgets, filings) are only included when search surfaced them and they could be fetched.</li><li>Absence of a finding is not evidence of absence. An empty section means this run found nothing, not that nothing exists.</li></ul></details>
@@ -424,6 +427,9 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <details class="quote"><summary>Quote from the page</summary><blockquote>Members shall serve terms of four years and no more than three terms</blockquote></details>
 </li></ul><p class="searched">Looked at: city charter; adopted budget</p></section></details>
 </section>
+<section class="sec read-yourself"><h3>Pages to read yourself</h3>
+<p class="sub">The research found these but couldn't read them, so nothing from them is on this page. They open on the site shown, outside this app. They are public pages: none should ask you to sign in, pay, or download a program.</p>
+<ul><li><a href="https://example.org/county/efile" rel="noopener noreferrer nofollow" target="_blank">Example County Registrar e-filing (placeholder)</a> <span class="meta">example.org · campaign filings; only works with JavaScript, so they weren&#39;t read here</span></li></ul></section>
 <nav class="jump" aria-label="On this page"><a href="#glance">Overview</a><a href="#office">Office</a><a href="#sample-candidate-a">Sample Candidate A</a><a href="#sample-candidate-b">Sample Candidate B</a><a href="#sample-candidate-c">Sample Candidate C</a><a href="#shared">Shared</a></nav>
 
 <article class="dossier" id="sample-candidate-a">
