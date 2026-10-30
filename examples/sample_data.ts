@@ -495,8 +495,15 @@ export function samplePort(delayMs = 0): ResearchPort {
     researchCandidate: async (_q, c, _l, priorities = []) => {
       await wait();
       await wait();
-      if (c.name.endsWith("C")) throw new Error("placeholder failure");
-      const base = c.incumbent ? withFacts : { ...withFacts, identity_note: null, gaps: [] };
+      if (c.name.endsWith("C")) {
+        // A failed call still reports what it spent.
+        throw Object.assign(new Error("placeholder failure"), {
+          effort: { searches: 19, fetches: 8 },
+        });
+      }
+      const base = c.incumbent
+        ? { ...withFacts, effort: { searches: 16, fetches: 7 } }
+        : { ...withFacts, identity_note: null, gaps: [], effort: { searches: 11, fetches: 4 } };
       if (!priorities.length) return base;
       // Placeholder stance on the first issue, backed by a retrieved page, so the layout shows.
       return {
@@ -511,7 +518,7 @@ export function samplePort(delayMs = 0): ResearchPort {
     },
     researchMeasure: async () => {
       await wait();
-      return measureFacts;
+      return { ...measureFacts, effort: { searches: 12, fetches: 5 } };
     },
   };
 }

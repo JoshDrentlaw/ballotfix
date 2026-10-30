@@ -11,7 +11,7 @@ import {
   slug,
 } from "../src/render.ts";
 import { runMeasure, runRace } from "../src/race.ts";
-import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
+import { FakeResearch, listing, QUERY, raw, rawMeasure } from "./fakes.ts";
 
 const hostile = {
   name: `Eve <script>alert("x")</script>`,
@@ -310,7 +310,13 @@ Deno.test("the overview grid has every section for every candidate, in ballot or
   ) {
     assertStringIncludes(grid, `<th scope="row">${title}</th>`);
   }
-  assertStringIncludes(grid, `href="#joz-sida--criticisms">1</a>`);
+  // Found or not, never how many: a count mostly measures press attention.
+  assertStringIncludes(
+    grid,
+    `href="#joz-sida--criticisms">Found<span class="vh">: Criticisms and controversies, Joz Sida</span></a>`,
+  );
+  assertStringIncludes(grid, `<td class="none">Nothing found</td>`);
+  assert(!/<a [^>]*>\d+<\/a>/.test(grid));
   assertStringIncludes(grid, `class="stance-conflicts" href="#joz-sida--priority-1">Conflicts</a>`);
   // Not the incumbent: record in this office doesn't apply, said as such.
   assertEquals(grid.split(`<td class="none">n/a</td>`).length - 1, 1);
@@ -510,4 +516,106 @@ Deno.test("a race with look-alike names links each candidate to their own dossie
   assert(at("jose-garcia-1") > 0 && at("jose-garcia-1") < at("jose-garcia-2"));
   assert(at("jose-garcia-2") < at("王小明"));
   assertStringIncludes(html, `<a href="#jose-garcia-2">Jose Garcia</a>`);
+});
+
+Deno.test("the grid and each dossier show the research behind it, never a score", async () => {
+  const cands = [
+    { name: "Acquanetta Warren", ballot_designation: "Mayor", incumbent: true },
+    { name: "Joz Sida", ballot_designation: null, incumbent: false },
+    { name: "Sal Casillas", ballot_designation: null, incumbent: false },
+  ];
+  const news = {
+    ...minutes,
+    statement: "Opposed the ordinance at a forum.",
+    source_name: "Fontana Herald News",
+    source_url: "https://herald.example/a",
+    published: "2022-10-01",
+    evidence_type: "reported",
+  };
+  const failure = Object.assign(new Error("still paused"), { effort: { searches: 9, fetches: 4 } });
+  const port = new FakeResearch(listing(cands), {
+    "Acquanetta Warren": raw(),
+    "Joz Sida": raw({
+      sections: {
+        criticisms: { facts: [minutes, news], searched: [], gap_note: null },
+        // The same fact under a voter's issue counts once.
+        priority_1: { facts: [minutes], searched: [], gap_note: null },
+      },
+      retrieved_urls: [minutes.source_url, news.source_url],
+      effort: { searches: 14, fetches: 6 },
+    }),
+    "Sal Casillas": failure,
+  });
+  const race = await runRace(QUERY, port, { priorities: ["renters"] });
+  assertEquals(race.candidates[2].effort, { searches: 9, fetches: 4 });
+  const html = renderRace(race);
+  const grid = html.slice(
+    html.indexOf('<section class="glance"'),
+    html.indexOf("</section>", html.indexOf('<section class="glance"')),
+  );
+  const rowOf = (label: string) => {
+    const at = grid.indexOf(`<th scope="row">${label}</th>`);
+    return grid.slice(at, grid.indexOf("</tr>", at));
+  };
+  // Warren's run (from the fake) has no counts: said so, not shown as zero.
+  assertStringIncludes(
+    rowOf("Searches"),
+    `<td class="none">Not recorded</td><td class="ev-cell">14</td><td class="ev-cell">9</td>`,
+  );
+  assertStringIncludes(
+    rowOf("Pages opened"),
+    `<td class="ev-cell">6</td><td class="ev-cell">4</td>`,
+  );
+  assertStringIncludes(rowOf("Outlets cited"), `<td class="ev-cell">2</td>`);
+  assertStringIncludes(rowOf("Primary records"), `<td class="ev-cell">1 of 2</td>`);
+  assertStringIncludes(rowOf("Sources dated"), `<td class="ev-cell">2022–2025</td>`);
+  assertStringIncludes(rowOf("Sources dated"), `<td class="none">No dates</td>`);
+  // A failed candidate shows what its research spent, and nothing about facts.
+  assertStringIncludes(rowOf("Outlets cited"), "research failed");
+  assert(!/total|score|rank/i.test(grid));
+  // The same line under every dossier's name, a failed one too.
+  assertStringIncludes(
+    html,
+    "Research behind this: 14 searches and 6 pages opened · 2 sourced facts from 2 outlets, 1 of them primary records · sources dated Oct 1, 2022 to Mar 4, 2025.",
+  );
+  assertStringIncludes(html, "Research behind this: searches and pages opened not recorded");
+  assertStringIncludes(
+    html,
+    "Research behind this: 9 searches and 4 pages opened · nothing kept, since the research failed.",
+  );
+});
+
+Deno.test("a measure page shows the research behind it, a failed one too", async () => {
+  const q = {
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  };
+  const failure = Object.assign(new Error("overloaded"), { effort: { searches: 3, fetches: 1 } });
+  const failed = await runMeasure(q, new FakeResearch(listing([]), {}, { "Measure X": failure }));
+  assertEquals(failed.effort, { searches: 3, fetches: 1 });
+  assertStringIncludes(
+    renderMeasure(failed),
+    "Research behind this: 3 searches and 1 page opened · nothing kept, since the research failed.",
+  );
+  const monthly = await runMeasure(
+    q,
+    new FakeResearch(listing([]), {}, {
+      "Measure X": rawMeasure({
+        sections: {
+          effect: { facts: [{ ...minutes, published: "2026-08" }], searched: [], gap_note: null },
+        },
+        retrieved_urls: [minutes.source_url],
+      }),
+    }),
+  );
+  // A month alone reads as a month, not as the source's digits.
+  assertStringIncludes(renderMeasure(monthly), "sources dated Aug 2026.");
+  const ok = await runMeasure(q, new FakeResearch(listing([]), {}, {}));
+  assertStringIncludes(
+    renderMeasure(ok),
+    "Research behind this: searches and pages opened not recorded",
+  );
 });

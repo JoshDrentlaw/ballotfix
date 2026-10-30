@@ -362,6 +362,21 @@ Deno.test("refusal raises ResearchRefusedError", async () => {
   );
 });
 
+Deno.test("a failed research call's error carries the searches and fetches it made", async () => {
+  const { client } = stubClient([
+    { stop_reason: "pause_turn", content: [...toolUses("web_search", 2, "s"), search] },
+    {
+      stop_reason: "end_turn",
+      content: [...toolUses("web_fetch", 1, "f"), { type: "text", text: "Sorry" }],
+    },
+  ]);
+  const err = await assertRejects(
+    () => new AnthropicResearcher({ client }).researchCandidate(QUERY, cand, listing([cand])),
+    ResearchIncompleteError,
+  );
+  assertEquals((err as { effort?: unknown }).effort, { searches: 2, fetches: 1 });
+});
+
 Deno.test("non-JSON final text raises ResearchIncompleteError", async () => {
   const { client } = stubClient([{
     stop_reason: "end_turn",
