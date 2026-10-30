@@ -829,7 +829,7 @@ function leftOutText(x: SharedLeftOut): string {
     case "not_opened":
       return "only seen as a search result, not opened";
     case "not_read":
-      return "opened but its text couldn't be read (a PDF, for now)";
+      return "opened but its text couldn't be read (often a PDF)";
     case "missing_names":
       return `doesn't name ${(x.missing ?? []).join(", ")}`;
     case "over_cap":
@@ -1059,11 +1059,6 @@ function giftTables(cs: readonly Contribution[]): string {
 }
 
 /**
- * One candidate's or side's money, the same block for everyone, including a
- * subject with nothing found (its gap note). Nothing for runs from before the
- * step, or where it didn't run.
- */
-/**
  * A candidate's contributions come only from the finance step (the money
  * section leaves them out), so a race it hasn't run for says so.
  */
@@ -1072,6 +1067,11 @@ const NO_FINANCE_STEP = (anchor: string) =>
     esc(anchor)
   }"><h4>Contributions on file</h4><p class="gap">Contributions to the campaign come from a separate step that reads them off the filings, and it hasn't run for this race.</p></section>`;
 
+/**
+ * One candidate's or side's money, the same block for everyone, including a
+ * subject with nothing found (its gap note). Nothing for runs from before the
+ * step, or where it didn't run.
+ */
 function moneyHtml(
   finance: FinanceResult | undefined,
   s: FinanceSubjectResult | undefined,

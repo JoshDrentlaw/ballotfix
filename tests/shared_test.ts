@@ -334,3 +334,18 @@ Deno.test("the shared pass call sends the race and parses pages", async () => {
   assertEquals(requests[0].model, "claude-sonnet-5-5");
   assert(Array.isArray(requests[0].tools));
 });
+
+Deno.test("a shared page's url is shown to the model exactly as it is recorded as retrieved", () => {
+  const odd = 'https://e.org/a "b"<c>';
+  const pass = assembleShared(
+    rawShared({
+      pages: [{ url: odd, source_name: "S", title: "", kind: "other" }],
+      opened_pages: [{ url: odd, text: "Warren Sandoval" }],
+    }),
+    [A, B],
+    "t",
+  );
+  const url = pass.pages[0].url;
+  assertStringIncludes(sharedPrefix(QUERY, listing([A, B]), pass.pages), `url="${url}"`);
+  assertEquals(withShared(raw(), pass.pages).retrieved_urls, [url]);
+});

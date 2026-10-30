@@ -66,17 +66,19 @@ export function assembleShared(
   const opened = new Map<string, string | null>();
   for (const p of raw.opened_pages ?? []) {
     const key = normalizeUrl(p.url);
-    // A page fetched twice keeps the copy whose text can be read.
-    if (key && (opened.get(key) ?? null) === null) opened.set(key, p.text);
+    // A page fetched twice keeps the copy whose text can be read (an empty copy can't be).
+    if (key && !(opened.get(key) ?? "").trim()) opened.set(key, p.text);
   }
   const subjects = candidates.map((c) => ({ name: c.name, terms: candidateSubject(c).terms }));
   const pages: SharedPageText[] = [];
   const left_out: SharedLeftOut[] = [];
   const seen = new Set<string>();
   for (const p of raw.pages) {
-    const url = typeof p.url === "string" ? p.url.trim() : "";
-    const key = normalizeUrl(url);
+    const given = typeof p.url === "string" ? p.url.trim() : "";
+    const key = normalizeUrl(given);
     if (!key || seen.has(key)) continue;
+    // Percent-encoded, so the prompt shows the url exactly as it is recorded as retrieved.
+    const url = new URL(given).href;
     seen.add(key);
     const source_name = label(p.source_name) || key.split("/")[0];
     const out = (reason: SharedLeftOut["reason"], missing?: string[]) =>
@@ -92,8 +94,10 @@ export function assembleShared(
     }
     const text = full.slice(0, SHARED_PAGE_MAX_CHARS);
     const hay = plainText(text);
-    const missing = subjects.filter((s) => !s.terms.some((t) => hay.includes(plainText(t))))
-      .map((s) => s.name);
+    // A name with no surname to look for can't be checked, as in the quote check's name flag.
+    const missing = subjects.filter((s) =>
+      s.terms.length && !s.terms.some((t) => hay.includes(plainText(t)))
+    ).map((s) => s.name);
     if (missing.length) {
       out("missing_names", missing);
       continue;
