@@ -8,6 +8,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import Anthropic_ from "@anthropic-ai/sdk";
 import {
   AnthropicResearcher,
+  CARS_CUTOVER,
   CONTEXT_MAX_CONTINUATIONS,
   CONTEXT_MAX_FETCHES,
   CONTEXT_MAX_SEARCHES,
@@ -722,8 +723,11 @@ Deno.test("campaign finance is one call: capped web tools, medium effort, its ow
     stop_reason: "end_turn",
     content: [searchUse("s1"), search, { type: "text", text: JSON.stringify(answer) }],
   }]);
-  const out = await new AnthropicResearcher({ client, financeModel: "claude-sonnet-5-5" })
-    .findContributions(FINANCE);
+  const out = await new AnthropicResearcher({
+    client,
+    financeModel: "claude-sonnet-5-5",
+    now: () => new Date("2026-10-30T12:00:00Z"),
+  }).findContributions(FINANCE);
   assertEquals(out.subjects.length, 1);
   assertEquals(out.subjects[0].contributions, [row]);
   assertEquals(out.portal_gaps.length, 1);
@@ -745,6 +749,31 @@ Deno.test("campaign finance is one call: capped web tools, medium effort, its ow
   const prompt = JSON.stringify(req.messages);
   assertStringIncludes(prompt, "Contributions per subject, at most: 20");
   assertStringIncludes(prompt, "Joz Sida");
+});
+
+Deno.test("state filings point to Cal-Access before the CARS cutover and CARS after it", async () => {
+  const systemOn = async (day: string) => {
+    const { client, requests } = stubClient([{
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({ subjects: [], portal_gaps: [] }) }],
+    }]);
+    await new AnthropicResearcher({ client, now: () => new Date(`${day}T12:00:00Z`) })
+      .findContributions(FINANCE);
+    return String(requests[0].system);
+  };
+  const before = await systemOn("2026-11-10");
+  assertStringIncludes(before, "Cal-Access (cal-access.sos.ca.gov) for state committees");
+  assert(!before.includes("CARS"));
+  // The lookup's date decides, not the election's: FINANCE is a 2026-11-03 election.
+  for (const day of [CARS_CUTOVER, "2027-03-01"]) {
+    const after = await systemOn(day);
+    assertStringIncludes(after, "CAL-ACCESS Replacement System, for state committees");
+    assertStringIncludes(after, "never guess its address");
+    assertStringIncludes(after, "If CARS isn't open yet, use Cal-Access");
+    // Local filers keep the FPPC form numbers.
+    assertStringIncludes(after, "Local filings are California Form 460");
+    assertStringIncludes(after, "copy the form name the record itself shows");
+  }
 });
 
 Deno.test("finance searches and fetches are counted across pause_turn continuations", async () => {

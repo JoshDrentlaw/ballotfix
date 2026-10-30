@@ -645,17 +645,42 @@ function contextNotes(raw: unknown): RawContextNote[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * The day CARS (CAL-ACCESS Replacement System) replaces Cal-Access, after
+ * which the old site is gone and its filings are in CARS. The Secretary of
+ * State's go-live page (checked Oct 30, 2026) says only "post-election,
+ * November 2026"; its reports and briefings have said Nov 11, 16, and 26. This
+ * is the earliest, and the prompt after it still allows for Cal-Access if CARS
+ * isn't open yet. Update it once the Secretary of State names the day.
+ */
+export const CARS_CUTOVER = "2026-11-11";
+
+/**
+ * Where state committees' filings are, on the day of the lookup (YYYY-MM-DD).
+ * It goes by the lookup's date, not the election's: once Cal-Access is gone,
+ * an earlier election's filings are only in CARS. No CARS address is given,
+ * since none was confirmed; the prompt says to find it from sos.ca.gov.
+ */
+export function stateFilings(today: string): string {
+  if (today < CARS_CUTOVER) {
+    return `- Cal-Access (cal-access.sos.ca.gov) for state committees, and for any committee that also files with the Secretary of State.
+- Filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Outside California, the state's equivalent.`;
+  }
+  return `- CARS, the Secretary of State's CAL-ACCESS Replacement System, for state committees, and for any committee that also files with the Secretary of State. It replaces Cal-Access in November 2026 and takes over Cal-Access's older filings. Find it from sos.ca.gov; never guess its address. If CARS isn't open yet, use Cal-Access (cal-access.sos.ca.gov).
+- Local filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Filings made in CARS may name their forms differently; copy the form name the record itself shows. Outside California, the state's equivalent.`;
+}
+
+/**
  * One instruction for every subject. The roles differ only in which
  * committees count as the subject's: the candidate's own, or those formed
- * to support or to oppose the measure.
+ * to support or to oppose the measure. Only the state filing source depends
+ * on the date, and it's the same for every subject in a call.
  */
-const FINANCE_SYSTEM =
+const financeSystem = (today: string) =>
   `You read campaign finance filings for a voter guide. You get the candidates in one local contest, or the two sides of one ballot measure, each with an id. For each, find the itemized contributions on the official filings and copy them exactly.
 
 Where to look, for every subject alike:
 - The filing officer's public portal: the city clerk for city offices and city measures, the county registrar or elections office for county offices and measures. California cities and counties often use NetFile (public.netfile.com), SouthTech (campaigndocs or similar), or another e-filing portal; some post PDFs of the filings.
-- Cal-Access (cal-access.sos.ca.gov) for state committees, and for any committee that also files with the Secretary of State.
-- Filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Outside California, the state's equivalent.
+${stateFilings(today)}
 
 Which committees are each subject's:
 - role "candidate": the candidate's own controlled committee for this election (often "<Name> for <Office> <year>"). Not independent expenditure committees.
@@ -864,6 +889,8 @@ export interface AnthropicResearcherOptions {
   financeModel?: string;
   /** Receives one line per call: its tokens, searches, and estimated cost. */
   log?: (message: string) => void;
+  /** The clock, for the finance lookup's state filing source (CARS_CUTOVER). */
+  now?: () => Date;
 }
 
 /**
@@ -1006,6 +1033,7 @@ export class AnthropicResearcher
   readonly #maxFetches: number;
   readonly #effort: NonNullable<AnthropicResearcherOptions["effort"]>;
   readonly #log: (message: string) => void;
+  readonly #now: () => Date;
 
   constructor(opts: AnthropicResearcherOptions = {}) {
     this.#client = opts.client ?? new Anthropic();
@@ -1017,6 +1045,7 @@ export class AnthropicResearcher
     this.#maxFetches = opts.maxFetches ?? 10;
     this.#effort = opts.effort ?? "high";
     this.#log = opts.log ?? (() => {});
+    this.#now = opts.now ?? (() => new Date());
   }
 
   get model(): string {
@@ -1215,7 +1244,8 @@ export class AnthropicResearcher
       "",
       "Return one entry per id.",
     ].join("\n");
-    const { json, urls } = await this.#run(FINANCE_SYSTEM, prompt, FINANCE_SCHEMA, {
+    const today = this.#now().toISOString().slice(0, 10);
+    const { json, urls } = await this.#run(financeSystem(today), prompt, FINANCE_SCHEMA, {
       searches: FINANCE_MAX_SEARCHES,
       fetches: FINANCE_MAX_FETCHES,
     }, {

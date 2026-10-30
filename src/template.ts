@@ -97,7 +97,7 @@ export const MEASURE_SECTIONS = [
     id: "money",
     title: "Money",
     ask:
-      "Committees formed to support or oppose it, how much each has raised, and their largest contributors (California Form 410, 460, and 497 or local equivalent). Who would pay and who would receive money if it passes, when a source documents it.",
+      "Committees formed to support or oppose it, how much each has raised, and their largest contributors (California Form 410, 460, and 497, the CARS equivalent, or local equivalent). Who would pay and who would receive money if it passes, when a source documents it.",
   },
   {
     id: "fiscal",

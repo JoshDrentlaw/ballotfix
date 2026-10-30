@@ -167,18 +167,19 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - Campaign finance and shared connections (step 4, `src/finance.ts`): after the context step,
   `JobRunner` makes one capped call per run (`FinanceResearcher.findContributions`: `LOOKUP_EFFORT`,
   `BALLOTFIX_FINANCE_MODEL` or `DEFAULT_FINANCE_MODEL`, "off" skips it; CLI `--no-finance`), asking
-  for itemized contributions (Form 460/497 on the city's or county's portal, Cal-Access for state
-  committees) for every candidate in ballot order, a failed one too, or for a measure's support and
-  oppose committees. Searches and fetches are counted across continuations
-  (`FINANCE_MAX_SEARCHES`/`FETCHES` + `FINANCE_MAX_CONTINUATIONS`); max_tokens fails the call. Every
-  subject gets the same share (`shareFor`: `MAX_FINANCE_CONTRIBUTIONS` split equally, at most
-  `MAX_CONTRIBUTIONS_PER_SUBJECT`); verified rows over it are listed on the page, not kept. A row is
-  shown only if its URL was retrieved by that call (else collapsed as unverified, never matched);
-  fields stay as the record states them, and a row with a field too long or missing filer,
-  contributor, or amount is dropped and counted, never cut. A subject with nothing gets a gap note;
-  a failed call gives every subject one and records `finance.error`; a call that opened no page
-  gives every subject `NOTHING_OPENED`, whatever it claims to have searched. Unreadable portals are
-  `portal_gaps`, shown as coverage gaps. Matching (`contributorRef`): an organization by the
+  for itemized contributions (Form 460/497 on the city's or county's portal; for state committees,
+  Cal-Access before `CARS_CUTOVER` and its replacement CARS from then on, by the lookup's date, not
+  the election's, since Cal-Access's filings move to CARS) for every candidate in ballot order, a
+  failed one too, or for a measure's support and oppose committees. Searches and fetches are counted
+  across continuations (`FINANCE_MAX_SEARCHES`/`FETCHES` + `FINANCE_MAX_CONTINUATIONS`); max_tokens
+  fails the call. Every subject gets the same share (`shareFor`: `MAX_FINANCE_CONTRIBUTIONS` split
+  equally, at most `MAX_CONTRIBUTIONS_PER_SUBJECT`); verified rows over it are listed on the page,
+  not kept. A row is shown only if its URL was retrieved by that call (else collapsed as unverified,
+  never matched); fields stay as the record states them, and a row with a field too long or missing
+  filer, contributor, or amount is dropped and counted, never cut. A subject with nothing gets a gap
+  note; a failed call gives every subject one and records `finance.error`; a call that opened no
+  page gives every subject `NOTHING_OPENED`, whatever it claims to have searched. Unreadable portals
+  are `portal_gaps`, shown as coverage gaps. Matching (`contributorRef`): an organization by the
   named-entity rule exactly; an individual also needs the same identifying occupation and employer,
   else it is its own entity; an unknown type is never matched. Near misses ("Smith Development" /
   "... LLC", same-named retirees) are listed as "possibly the same, kept separate". Jurisdictions
