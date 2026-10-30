@@ -16,6 +16,7 @@ import {
   type Tie,
 } from "./finance.ts";
 import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
+import { publisherKey } from "./merge.ts";
 import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
@@ -31,6 +32,7 @@ import type {
   OrderBasis,
   PriorityResult,
   RaceDossier,
+  ResearchEffort,
   SectionResult,
   Stance,
   VoteMeanings,
@@ -477,6 +479,84 @@ export function coverageLine(d: CandidateDossier): string {
   } of ${SECTIONS.length} sections.</p>`;
 }
 
+/**
+ * The work behind one dossier, for its evidence row: what its research
+ * searched and opened, and what the facts it kept rest on. Counts of effort
+ * and of sources, never a score, and never totaled across candidates.
+ */
+export interface Evidence {
+  /** Absent on runs saved before searches and fetches were counted. */
+  effort?: ResearchEffort;
+  /** Verified facts shown, a merged group once and a fact under a voter's issue once. */
+  facts: number;
+  /** Of those, primary records. */
+  primary: number;
+  /** Different outlets cited, merged sources included. */
+  outlets: number;
+  /** Earliest and latest publication date the sources give; null when none gives a date. */
+  from: string | null;
+  to: string | null;
+}
+
+const DATED = /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/;
+
+export function evidenceOf(facts: readonly Fact[], effort?: ResearchEffort): Evidence {
+  const kept = [...new Map(facts.map((f) => [shownKey(f), f])).values()];
+  const cited = kept.flatMap((f) => [f, ...(f.also ?? [])]);
+  // A year, a month, or a day, as the source gave it: these sort as text.
+  const dates = cited.map((f) => f.published ?? "").filter((p) => DATED.test(p)).sort();
+  return {
+    ...(effort ? { effort } : {}),
+    facts: kept.length,
+    primary: kept.filter((f) => f.evidence_type === "primary_record").length,
+    outlets: new Set(cited.map(publisherKey)).size,
+    from: dates[0] ?? null,
+    to: dates.at(-1) ?? null,
+  };
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Searches and pages opened, or that they weren't counted. */
+function effortText(e: ResearchEffort | undefined): string {
+  return e
+    ? `${plural(e.searches, "search", "searches")} and ${plural(e.fetches, "page")} opened`
+    : "searches and pages opened not recorded (researched before they were counted)";
+}
+
+/** A year, month, or day as the page writes dates: "2024", "Aug 2024", "Aug 5, 2024". */
+function sourceDate(s: string): string {
+  if (!/^\d{4}-\d{2}$/.test(s)) return publishedDate(s);
+  const d = new Date(`${s}-01T00:00:00Z`);
+  return isNaN(d.getTime())
+    ? s
+    : d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", year: "numeric" });
+}
+
+function datesText(e: Evidence): string {
+  if (!e.from || !e.to) return "no source gives a date";
+  return e.from === e.to
+    ? `sources dated ${sourceDate(e.from)}`
+    : `sources dated ${sourceDate(e.from)} to ${sourceDate(e.to)}`;
+}
+
+/**
+ * One line under a dossier's name: the same line for every candidate and
+ * measure. A failed one still shows what its research spent.
+ */
+function evidenceLine(e: Evidence, failed: boolean): string {
+  const kept = failed
+    ? "nothing kept, since the research failed"
+    : e.facts
+    ? `${plural(e.facts, "sourced fact")} from ${
+      plural(e.outlets, "outlet")
+    }, ${e.primary} of them primary records · ${datesText(e)}`
+    : "no sourced facts kept";
+  return `<p class="cov evidence">Research behind this: ${esc(effortText(e.effort))} · ${
+    esc(kept)
+  }.</p>`;
+}
+
 function overviewCard(d: CandidateDossier, anchor: string): string {
   const c = d.candidate;
   const status = d.status === "failed"
@@ -861,6 +941,9 @@ function sharedHtml(
     !context?.notes.some((n) => n.verified)
       ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
       : "",
+    finance && !finance.error
+      ? `Each candidate or side keeps at most ${finance.per_subject} contributions from the filings, so finding no shared contributor means little: the filings may list more.`
+      : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
   const blocks = pairs.map((p) =>
     `<details class="pair"><summary><h5>${esc(p.a)} and ${esc(p.b)}${pairCount(p)}</h5></summary>${
@@ -925,6 +1008,11 @@ export function ballotSharedHtml(
     }</ul>`
     : `<p class="gap">No contributor or endorser is tied to more than one item.</p>`;
   const gaps = [
+    ...(c.per_subject
+      ? [
+        `Each candidate or side keeps at most ${c.per_subject} contributions from its filings, so finding nothing shared means little: the filings may list more.`,
+      ]
+      : []),
     ...(notCompared.length
       ? [`Not compared, because their research isn't done: ${notCompared.join("; ")}.`]
       : []),
@@ -980,6 +1068,7 @@ function dossierSection(
   <p class="desig dossier-desig">${
     c.ballot_designation ? esc(c.ballot_designation) : "Ballot designation not found"
   }${c.incumbent ? ` · <span class="inc">Incumbent</span>` : ""}</p>
+  ${evidenceLine(evidenceOf(candidateFacts(d), d.effort), d.status === "failed")}
   ${identity}
   ${failed.note}
   ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section)}
@@ -1000,18 +1089,26 @@ const STANCE_SHORT: Record<Exclude<Stance, "no_position">, string> = {
   unclear: "Unclear",
 };
 
-/** One cell: a link to the section when it holds anything, else a quiet dash that says why. */
+/**
+ * One cell: "Found", linking to the section, when it holds anything, else a
+ * quiet label that says why. Never a count: how many facts a section holds
+ * mostly measures how much press someone gets.
+ */
 function glanceCell(n: number, href: string, none: string): string {
-  return n
-    ? `<td><a href="#${esc(href)}">${n}</a></td>`
-    : `<td class="none"><span aria-hidden="true">–</span><span class="vh">${esc(none)}</span></td>`;
+  return n ? `<td><a href="#${esc(href)}">Found</a></td>` : `<td class="none">${esc(none)}</td>`;
+}
+
+/** Facts a candidate's dossier shows, for its evidence row. */
+function candidateFacts(d: CandidateDossier): Fact[] {
+  return d.status === "ok" ? shownFacts(d.sections, d.priorities) : [];
 }
 
 /**
- * Every candidate against every section, in ballot order: how many sourced
- * facts each section holds, each a link into the dossier, and the stance on
- * each of the voter's issues. It shows where to look, nothing more. Rows are
- * the template, so every candidate gets the same rows; nothing is totaled.
+ * Every candidate against every section, in ballot order: whether each
+ * section found sourced facts, each a link into the dossier, the stance on
+ * each of the voter's issues, and the research behind each dossier. It shows
+ * where to look, nothing more. Rows are the template, so every candidate gets
+ * the same rows; nothing is totaled.
  */
 function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
   const ds = r.candidates;
@@ -1051,7 +1148,7 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
           STANCE_SHORT[x.stance]
         }</a></td>`;
       }
-      return glanceCell(x.result.facts.length, id, "nothing found");
+      return glanceCell(x.result.facts.length, id, "Nothing found");
     })
   );
   const sections = SECTIONS.map((s) =>
@@ -1061,7 +1158,7 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
       const notHeld = "incumbentOnly" in s && s.incumbentOnly && !d.candidate.incumbent;
       return notHeld && !n
         ? `<td class="none">n/a</td>`
-        : glanceCell(n, sectionAnchor(at(d), s.id), "nothing found");
+        : glanceCell(n, sectionAnchor(at(d), s.id), "Nothing found");
     })
   );
   const money = r.finance
@@ -1071,24 +1168,48 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
       return glanceCell(
         m?.contributions.length ?? 0,
         sectionAnchor(at(d), "filed"),
-        m ? "none found" : "not looked up",
+        m ? "None found" : "Not looked up",
       );
     }, true)]
     : [];
+  // What each dossier's research spent and rests on. A failed one still shows what it spent.
+  const ev = new Map(ds.map((d) => [d, evidenceOf(candidateFacts(d), d.effort)]));
+  const plain = (v: string) => `<td class="ev-cell">${esc(v)}</td>`;
+  const spent = (f: (e: ResearchEffort) => number) => (d: CandidateDossier) => {
+    const e = ev.get(d)!.effort;
+    return e ? plain(String(f(e))) : `<td class="none">Not recorded</td>`;
+  };
+  const evidence = [
+    row("Searches", spent((e) => e.searches), true),
+    row("Pages opened", spent((e) => e.fetches), true),
+    row("Outlets cited", (d) => plain(String(ev.get(d)!.outlets))),
+    row("Primary records", (d) => {
+      const e = ev.get(d)!;
+      return plain(`${e.primary} of ${e.facts}`);
+    }),
+    row("Sources dated", (d) => {
+      const e = ev.get(d)!;
+      if (!e.from || !e.to) return `<td class="none">No dates</td>`;
+      const [a, b] = [e.from.slice(0, 4), e.to.slice(0, 4)];
+      return plain(a === b ? a : `${a}–${b}`);
+    }),
+  ];
   const issueHead = issues.length
     ? `<tr class="group"><th scope="rowgroup" colspan="${ds.length + 1}">Your issues</th></tr>`
     : "";
   return `<section class="glance" id="glance"><h2>At a glance</h2>
-<p class="sub">Sourced facts found in each section, as links into each dossier${
-    issues.length ? ", and the reading on each of your issues" : ""
-  }. A number is how much this run found, not whether it is good or bad.</p>
+<p class="sub">Whether this run found sourced facts in each section, as links into each dossier${
+    issues.length ? ", the reading on each of your issues," : ""
+  } and the research behind each one. What was found mostly reflects how much has been written about someone, not whether they are good or bad.</p>
 <div class="grid-wrap"><table class="grid"><thead><tr><td></td>${head}</tr></thead><tbody>${issueHead}${
     issues.join("")
   }${
     issues.length
       ? `<tr class="group"><th scope="rowgroup" colspan="${ds.length + 1}">Every section</th></tr>`
       : ""
-  }${sections.join("")}${money.join("")}</tbody></table></div></section>`;
+  }${sections.join("")}${money.join("")}<tr class="group"><th scope="rowgroup" colspan="${
+    ds.length + 1
+  }">The research behind each</th></tr>${evidence.join("")}</tbody></table></div></section>`;
 }
 
 /** A bar that stays at the top while reading, to move between candidates in ballot order. */
@@ -1167,6 +1288,7 @@ p, li { overflow-wrap: anywhere; }
 .card a { display: block; padding: 2px 0; }
 .card p { margin: 2px 0; font-size: .9rem; }
 .cov-fail { color: var(--bad); }
+.cov.evidence { font-size: .88rem; }
 .cov-pending { font-style: italic; }
 .inc { font-weight: 600; color: var(--fg); }
 .dossier { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 16px; margin: 24px 0; }
@@ -1395,7 +1517,8 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .grid thead a { text-decoration: none; font-weight: 700; }
 .grid tbody th { text-align: left; font-weight: 500; font-size: .84rem; position: sticky; left: 0; background: var(--card); width: 30%; min-width: 104px; padding: 6px 6px 6px 10px; }
 .grid td a { display: block; min-height: 36px; line-height: 36px; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
-.grid td.none { color: var(--muted); font-size: .82rem; }
+.grid td.none { color: var(--muted); font-size: .78rem; padding: 8px 4px; }
+.grid td.ev-cell { padding: 8px 4px; font-variant-numeric: tabular-nums; }
 .grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }
 .inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
 .inc-mark.cov-fail { color: var(--bad); font-weight: 600; }
@@ -1725,7 +1848,15 @@ export function measureBody(
         ? "Research on this measure stopped before it finished. Research it again to fill this in."
         : "Research on this measure is still running. This page updates on its own."
     }</p>`
-    : `${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m", failed.section)}
+    : `${
+      evidenceLine(
+        evidenceOf(
+          d.status === "ok" ? shownFacts(d.sections, d.priorities, d.vote_means) : [],
+          d.effort,
+        ),
+        d.status === "failed",
+      )
+    }${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m", failed.section)}
 ${
       MEASURE_SECTIONS.map((s) =>
         sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {

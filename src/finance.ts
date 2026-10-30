@@ -588,6 +588,8 @@ export interface BallotConnections {
   places: number;
   /** What each item couldn't contribute, in ballot order: never omitted silently. */
   gaps: { item: string; why: string }[];
+  /** The most contributions any item kept per subject; 0 when no item's filings were read. */
+  per_subject: number;
 }
 
 /** Why an item's ties may be incomplete, in the words the race pages' caveats use. */
@@ -687,5 +689,12 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
     subjects: subjects.length,
     places: new Set(subjects.map((s) => s.place)).size,
     gaps: items.flatMap((it) => itemGaps(it).map((why) => ({ item: it.heading, why }))),
+    per_subject: Math.max(
+      0,
+      ...items.map((it) => {
+        const f = (it.measure ?? it.race)?.finance;
+        return f && !f.error ? f.per_subject : 0;
+      }),
+    ),
   };
 }

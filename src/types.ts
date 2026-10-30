@@ -161,6 +161,7 @@ export interface RawSection {
 /**
  * Web searches and page fetches one research session made, as the API
  * reported them, so effort across candidates can be compared, not assumed.
+ * A session that fails throws an Error carrying the same counts as `effort`.
  */
 export interface ResearchEffort {
   searches: number;

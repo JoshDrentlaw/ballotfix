@@ -168,6 +168,8 @@ Deno.test("an entity tied to subjects of two items is listed once, every holder 
   assert(!html.includes("different places"));
   // Neither measure's finance was looked up here, and the page says so for each.
   assertStringIncludes(html, "Proposition 37: campaign finance filings weren&#39;t looked up");
+  // No filings were read, so there is no row cap to mention.
+  assert(!html.includes("keeps at most"));
   assertStringIncludes(
     ballotSharedHtml(same, undefined, ["Measure B"]),
     "Not compared, because their research isn&#39;t done: Measure B.",

@@ -383,6 +383,13 @@ Deno.test("a contributor and an endorser are one connection when they are one en
   );
   assertStringIncludes(page, "named in Endorsements and affiliations");
   assertStringIncludes(page, FILING);
+  // Rows are capped per subject, so no overlap found says little; the page says so.
+  assertStringIncludes(
+    page,
+    `keeps at most ${
+      dossier.finance!.per_subject
+    } contributions from the filings, so finding no shared contributor means little`,
+  );
 });
 
 Deno.test("a run without the step still compares endorsements, and says money wasn't looked up", async () => {

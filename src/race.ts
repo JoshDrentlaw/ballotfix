@@ -4,6 +4,7 @@ import {
   assembleCandidate,
   assembleMeasure,
   failedCandidate,
+  failureEffort,
   pendingCandidate,
   placeholderMeasure,
   STANDING_GAPS,
@@ -112,7 +113,7 @@ export async function runRace(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`Failed: ${c.name}: ${msg}`);
-      current[i] = failedCandidate(c, msg, priorities);
+      current[i] = failedCandidate(c, msg, priorities, failureEffort(err));
     }
     await emit();
   });
@@ -146,6 +147,6 @@ export async function runMeasure(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`Failed: ${query.label}: ${msg}`);
-    return placeholderMeasure(query, priorities, now(), msg);
+    return placeholderMeasure(query, priorities, now(), msg, failureEffort(err));
   }
 }

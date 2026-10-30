@@ -94,6 +94,11 @@ function effortOf(e: unknown): { effort?: ResearchEffort } {
     : {};
 }
 
+/** The searches and fetches a failed research call made, when its error carries them. */
+export function failureEffort(err: unknown): ResearchEffort | undefined {
+  return effortOf((err as { effort?: unknown } | null)?.effort).effort;
+}
+
 function cleanOrNull(s: unknown): string | null {
   const v = clean(s);
   return v ? v : null;
@@ -371,6 +376,7 @@ export function failedCandidate(
   candidate: BallotCandidate,
   error: string,
   priorities: readonly string[] = [],
+  effort?: ResearchEffort,
 ): CandidateDossier {
   const note = "Research for this candidate failed in this run; nothing was checked.";
   const sections = {} as Record<SectionId, SectionResult>;
@@ -384,6 +390,7 @@ export function failedCandidate(
     priorities: placeholderPriorities(priorities, note),
     gaps: [`Research failed: ${error}`],
     model: null,
+    ...effortOf(effort),
     error,
   };
 }
@@ -469,6 +476,7 @@ export function placeholderMeasure(
   priorities: readonly string[],
   now: Date,
   error: string | null,
+  effort?: ResearchEffort,
 ): MeasureDossier {
   const note = error
     ? "Research for this measure failed in this run; nothing was checked."
@@ -487,6 +495,7 @@ export function placeholderMeasure(
     gaps: error ? [`Research failed: ${error}`] : [],
     standing_gaps: [...STANDING_GAPS],
     model: null,
+    ...effortOf(effort),
     error,
     generated_at: now.toISOString(),
   };

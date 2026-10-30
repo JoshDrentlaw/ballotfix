@@ -122,7 +122,26 @@ person.
   facts at the same level. Entity pages show the level.
 - Update the "Provenance check" section of CLAUDE.md. Don't weaken the existing check.
 
-## 4. At a glance: labels and an evidence row
+## 4. At a glance: labels and an evidence row — done
+
+Branch `feature/serene-sagan-6e2oss`. Decisions made in the PR:
+
+- Cells say "Found" (a link) or "Nothing found" in plain view; the money row says "None found" or
+  "Not looked up". No numbers are left in the section cells.
+- The evidence row is five rows at the bottom of the grid ("The research behind each"): searches,
+  pages opened, outlets cited (distinct publishers by `publisherKey`, merged sources included),
+  primary records as "N of M facts kept", and the years the sources are dated. A fact shown under a
+  voter's issue and in its section counts once. Because a race with one candidate has no grid, every
+  dossier and the measure page also get one line under the name with the same counts and the full
+  dates (`evidenceLine`).
+- Item 1's follow-up is done here: the adapter attaches `effort` to the error a research call
+  throws, and `failedCandidate`/`placeholderMeasure` save it (`failureEffort`). A failed candidate's
+  searches and pages show in the grid; its fact rows say research failed.
+- The cap line on shared connections uses the run's own `per_subject` (race and measure pages) and
+  the largest one among the ballot's items (`BallotConnections.per_subject`, ballot page), shown
+  only where filings were read.
+
+Original plan:
 
 `glanceHtml` (`src/render.ts` ~line 869) shows fact counts per cell; "Criticisms: 9 | 1" mostly
 measures press attention.

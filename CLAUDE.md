@@ -80,10 +80,11 @@ show it. A found quote shows the page has those words, not that the statement re
   continuations (`remaining`): the API counts `max_uses` per request, and a fresh budget per pause
   would give a well-covered candidate more searches. A capped tool still allows one use per
   continuation, so a call makes at most its cap plus its continuation limit. Candidate and measure
-  research save what they used as `effort` on the dossier, so effort parity can be checked. Every
-  call logs one `[usage]` line (tokens, searches, an estimate at list prices via `PRICES`). It also
-  implements `BallotReader` (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in
-  printed order out, with no web tools.
+  research save what they used as `effort` on the dossier, so effort parity can be checked; a failed
+  call's error carries the same counts, and the failed dossier saves them. Every call logs one
+  `[usage]` line (tokens, searches, an estimate at list prices via `PRICES`). It also implements
+  `BallotReader` (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed
+  order out, with no web tools.
 - Ballot upload: images are held in memory for the one read call and never written to disk; only the
   `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
@@ -243,9 +244,16 @@ show it. A found quote shows the page has those words, not that the statement re
   the jump bar's height, for `scroll-margin-top`.
 - Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
 - A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
-  candidates across in ballot order, each cell a fact count or stance linking to
-  `sectionAnchor(candidateAnchor, section)`; counts only, never totals), then a sticky jump bar
-  (`jumpHtml`) over the dossiers.
+  candidates across in ballot order, each cell "Found" or "Nothing found" or a stance, linking to
+  `sectionAnchor(candidateAnchor, section)`; never a fact count, which mostly measures press
+  attention), then a sticky jump bar (`jumpHtml`) over the dossiers. The grid ends with "The
+  research behind each" (`evidenceOf`): searches and pages opened (the dossier's `effort`, "Not
+  recorded" on runs saved before it), outlets cited, primary records of facts kept, and the years
+  its sources are dated. Every dossier and measure page has the same line under its name
+  (`evidenceLine`), a failed one included: research errors carry their counts (`failureEffort`).
+  Counts of effort and sources, never a score, never totaled across candidates.
+- Shared connections (race, measure, and ballot) say each subject keeps at most `per_subject`
+  contributions, so no overlap found means little.
 - Long pages stay navigable without script: each dossier's name (`.dossier-name`) is sticky under
   the jump bar; a measure page gets the same jump bar (`measureJump`); app race and measure pages
   have a sticky pick dock (`dockNav`: pick plus prev/next in the ballot walk) that sits in the page

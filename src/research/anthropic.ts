@@ -1350,6 +1350,10 @@ export class AnthropicResearcher
     // Logged however the call ends, so a failed call's spend shows too.
     try {
       return await this.#runTurns(system, messages, seen, schema, tools, call, model, usage);
+    } catch (err) {
+      // A failed call's searches count too: its failed dossier saves them (failureEffort).
+      if (tools && err instanceof Error) Object.assign(err, { effort: toolUses(seen) });
+      throw err;
     } finally {
       if (usage.requests) this.#log(usageLine(call.label ?? "call", model, usage));
     }
