@@ -314,6 +314,12 @@ export interface RaceDossier {
   finance?: FinanceResult;
   /** What the office can do (src/office.ts). Absent until that step has run. */
   office?: OfficeResult;
+  /**
+   * Pages covering every candidate, found once before any candidate's research
+   * and put first in each one's prompt (src/shared.ts). Absent on runs saved
+   * before the shared pass, and when it was off.
+   */
+  shared?: SharedSources;
 }
 
 /** One ballot measure to research. */
@@ -765,16 +771,117 @@ export interface OfficeResult {
  */
 export interface ResearchPort {
   findBallot(query: RaceQuery): Promise<BallotListing>;
+  /**
+   * `shared`: the race's shared pages, the same for every candidate, put first
+   * in the prompt. The caller adds them to what the session retrieved.
+   */
   researchCandidate(
     query: RaceQuery,
     candidate: BallotCandidate,
     listing: BallotListing,
     priorities?: readonly string[],
+    shared?: readonly SharedPageText[],
   ): Promise<RawCandidateResearch>;
   researchMeasure(
     measure: MeasureQuery,
     priorities?: readonly string[],
   ): Promise<RawMeasureResearch>;
+}
+
+// ---------------------------------------------------------------------------
+// Shared race-level pass (src/shared.ts)
+// ---------------------------------------------------------------------------
+
+/** What kind of page covers the whole race. */
+export const SHARED_KINDS = [
+  "voter_guide",
+  "questionnaire",
+  "forum",
+  "nonpartisan_guide",
+  "other",
+] as const;
+export type SharedKind = typeof SHARED_KINDS[number];
+
+/** The race, for finding pages that cover every candidate in it. */
+export interface SharedRequest {
+  /** City or jurisdiction and state, e.g. "Fontana, CA". */
+  place: string;
+  office: string;
+  electionDate: string;
+  /** Every candidate's name, in ballot order. */
+  candidates: string[];
+  /** Most pages to report. */
+  max_pages: number;
+}
+
+/** One page the shared pass reports: unvalidated. */
+export interface RawSharedPage {
+  url: string;
+  source_name: string;
+  title: string;
+  kind: string;
+}
+
+/** What the shared pass returns: unvalidated. */
+export interface RawSharedSources {
+  pages: RawSharedPage[];
+  gaps: string[];
+  retrieved_urls: string[];
+  /** Pages it opened: the only text a kept page can carry. Never saved. */
+  opened_pages?: OpenedPage[];
+  model: string;
+  effort?: ResearchEffort;
+}
+
+export interface SharedSourceFinder {
+  findSharedSources(request: SharedRequest): Promise<RawSharedSources>;
+}
+
+/** A kept shared page, as saved: no text. */
+export interface SharedPage {
+  url: string;
+  source_name: string;
+  title: string | null;
+  kind: SharedKind;
+  /** True when its text was cut at SHARED_PAGE_MAX_CHARS before it went to the candidates. */
+  cut?: boolean;
+}
+
+/**
+ * A kept shared page with the text every candidate's research is given. In
+ * memory only, like OpenedPage: never saved.
+ */
+export interface SharedPageText extends SharedPage {
+  /** What the candidates see: the page's text, cut at SHARED_PAGE_MAX_CHARS. */
+  text: string;
+  /** The page's whole text, for the quote check. */
+  full_text: string;
+}
+
+/** Why a page the shared pass reported wasn't given to the candidates. */
+export type SharedLeftOutReason = "not_opened" | "not_read" | "missing_names" | "over_cap";
+
+export interface SharedLeftOut {
+  url: string;
+  source_name: string;
+  reason: SharedLeftOutReason;
+  /** For missing_names: the candidates the page (as given) doesn't name, in ballot order. */
+  missing?: string[];
+}
+
+/** The shared pass as saved on the race. */
+export interface SharedSources {
+  /** Pages every candidate's research started from, in the order reported. */
+  pages: SharedPage[];
+  left_out: SharedLeftOut[];
+  gaps: string[];
+  model: string | null;
+  looked_up: string;
+  effort?: ResearchEffort;
+  /** Set when the call failed: every candidate started without shared pages. */
+  error?: string;
+  /** Set when the pass didn't run, and why (one candidate). */
+  skipped?: string;
 }
 
 // Re-exported here so every module agrees on section ids without importing

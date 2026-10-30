@@ -310,7 +310,40 @@ inside or outside the office's authority, so "unclear" on an issue the office ha
 read as evasive. The same note for every candidate in the race. Cap and "off" switch like the other
 steps (`BALLOTFIX_OFFICE_MODEL`).
 
-## 9. Shared race-level pass
+## 9. Shared race-level pass — done
+
+Branch `feature/upbeat-turing-mvu6yc`. Decisions made in the PR:
+
+- The pass is its own capped call (`src/shared.ts`, 6 searches, 6 fetches, 3 continuations, Sonnet
+  at medium effort, `BALLOTFIX_SHARED_MODEL`/`--no-shared`), run inside `runRace` before any
+  candidate, since every candidate's research depends on it. Only the race and the candidates' names
+  are sent.
+- "Covers every candidate" is checked locally, not taken from the model: a page is kept only if the
+  pass opened it, its text could be read, and the text as the candidates get it (cut at 40,000
+  characters) names every candidate's surname. At most 4 pages. A page that names only some
+  candidates is left out, since it would start the others behind. Every page left out is saved with
+  its reason and shown.
+- The pages' text, not just their links, goes first in every candidate's prompt, in one block that
+  is identical for every candidate and carries its own cache breakpoint. Those pages count as
+  retrieved by each candidate's session, and their whole text goes to the quote check, so a fact
+  from the voter guide is verified and quote-checked like any page the session opened. Page text is
+  never saved; the race saves the page list, what was left out, gaps, and effort.
+- A failed pass is recorded and every candidate starts without shared pages; a race of one gets no
+  pass. The stability run finds it once and hands it to every run, like the candidate list.
+- The money section drops contributions, contributors, and fundraising totals and keeps independent
+  expenditures and Form 700. Since contributions now come only from the finance step, each dossier's
+  "Contributions on file" says so when that step hasn't run for the race.
+
+Follow-ups:
+
+- Not yet run against the live API. Check how often a county voter guide is found and kept: many are
+  PDFs, which the pass can't read yet (left out as "not read"), and the surname check may miss a
+  page that writes names differently.
+- The first candidates start together (concurrency 3), so each writes the cache rather than reading
+  it; only later candidates read. Starting one candidate first would trade time for cost.
+- The graph doesn't record which facts came from shared pages.
+
+Original plan:
 
 - One search pass per race for pages that cover every candidate: the county voter guide's
   statements, the local paper's Q&A, forum write-ups, Voter's Edge. Put those pages first in every

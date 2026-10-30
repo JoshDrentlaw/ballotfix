@@ -9,6 +9,7 @@ import {
   placeholderMeasure,
   STANDING_GAPS,
 } from "./dossier.ts";
+import { findShared, type SharedPass, withShared } from "./shared.ts";
 import type {
   BallotCandidate,
   BallotListing,
@@ -19,6 +20,8 @@ import type {
   RaceDossier,
   RaceQuery,
   ResearchPort,
+  SharedSourceFinder,
+  SharedSources,
 } from "./types.ts";
 
 export interface RunRaceOptions {
@@ -28,6 +31,13 @@ export interface RunRaceOptions {
   candidateSource?: CandidateSource;
   /** Issues the voter said matter most; asked about identically for every candidate. */
   priorities?: readonly string[];
+  /**
+   * Finds pages covering every candidate, once, before any candidate's
+   * research (src/shared.ts). Absent: no shared pass, and the race says nothing of one.
+   */
+  shared?: SharedSourceFinder;
+  /** A shared pass already made, given to every candidate as it is, in place of `shared`. */
+  sharedPass?: SharedPass;
   concurrency?: number;
   onProgress?: (msg: string) => void;
   /**
@@ -83,6 +93,7 @@ export async function runRace(
 
   const now = opts.now ?? (() => new Date());
   const priorities = [...(opts.priorities ?? [])];
+  let shared: SharedSources | undefined;
   const snapshot = (candidates: CandidateDossier[]): RaceDossier => ({
     query,
     listing,
@@ -90,6 +101,7 @@ export async function runRace(
     candidates: [...candidates],
     standing_gaps: [...STANDING_GAPS],
     generated_at: now().toISOString(),
+    ...(shared ? { shared } : {}),
   });
   const current = listing.candidates.map((c) => pendingCandidate(c, priorities));
   // Updates are chained so a slow save can't land after a newer one.
@@ -104,11 +116,24 @@ export async function runRace(
   };
   await emit();
 
+  let pass = opts.sharedPass;
+  if (!pass && opts.shared && listing.candidates.length) {
+    log("Looking for pages that cover every candidate...");
+    pass = await findShared(query, listing.candidates, opts.shared, now());
+    if (pass.result.error) log(`Shared pass failed: ${pass.result.error}`);
+    else if (!pass.result.skipped) log(`Shared pages kept: ${pass.pages.length}.`);
+  }
+  const sharedPages = pass?.pages ?? [];
+  if (pass) {
+    shared = pass.result;
+    await emit();
+  }
+
   await mapLimit(listing.candidates, opts.concurrency ?? 3, async (c, i) => {
     log(`Researching ${c.name}...`);
     try {
-      const raw = await port.researchCandidate(query, c, listing, priorities);
-      current[i] = assembleCandidate(c, raw, priorities);
+      const raw = await port.researchCandidate(query, c, listing, priorities, sharedPages);
+      current[i] = assembleCandidate(c, withShared(raw, sharedPages), priorities);
       log(`Done: ${c.name}.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

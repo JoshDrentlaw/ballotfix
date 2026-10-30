@@ -6,6 +6,7 @@ import type {
   RawCandidateResearch,
   RawMeasureResearch,
   ResearchPort,
+  SharedPageText,
 } from "../src/types.ts";
 
 export const QUERY: RaceQuery = {
@@ -53,6 +54,8 @@ export function rawMeasure(overrides: Partial<RawMeasureResearch> = {}): RawMeas
 export class FakeResearch implements ResearchPort {
   calls: string[] = [];
   priorities: (readonly string[] | undefined)[] = [];
+  /** The shared pages each candidate call was given, in call order. */
+  shared: (readonly SharedPageText[] | undefined)[] = [];
   constructor(
     readonly ballot: BallotListing,
     readonly results: Record<string, RawCandidateResearch | Error>,
@@ -74,9 +77,11 @@ export class FakeResearch implements ResearchPort {
     c: BallotCandidate,
     _l: BallotListing,
     priorities?: readonly string[],
+    shared?: readonly SharedPageText[],
   ): Promise<RawCandidateResearch> {
     this.calls.push(c.name);
     this.priorities.push(priorities);
+    this.shared.push(shared);
     const r = this.results[c.name];
     if (r instanceof Error) return Promise.reject(r);
     return Promise.resolve(r ?? raw());

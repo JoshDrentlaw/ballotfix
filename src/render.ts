@@ -28,6 +28,7 @@ import {
 import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
 import { publisherKey } from "./merge.ts";
 import { factAt, OFFICE_TITLE } from "./office.ts";
+import { SHARED_PAGE_MAX_CHARS } from "./shared.ts";
 import { MEASURE_SECTIONS, OFFICE_SECTION_IDS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
@@ -48,6 +49,9 @@ import type {
   RaceDossier,
   ResearchEffort,
   SectionResult,
+  SharedKind,
+  SharedLeftOut,
+  SharedSources,
   Stance,
   VoteMeanings,
 } from "./types.ts";
@@ -812,6 +816,67 @@ ${failed}${scopeFailed}${
 </section>`;
 }
 
+const SHARED_KIND_LABEL: Record<SharedKind, string> = {
+  voter_guide: "Voter guide",
+  questionnaire: "Questionnaire",
+  forum: "Forum write-up",
+  nonpartisan_guide: "Nonpartisan guide",
+  other: "Page",
+};
+
+function leftOutText(x: SharedLeftOut): string {
+  switch (x.reason) {
+    case "not_opened":
+      return "only seen as a search result, not opened";
+    case "not_read":
+      return "opened but its text couldn't be read (often a PDF)";
+    case "missing_names":
+      return `doesn't name ${(x.missing ?? []).join(", ")}`;
+    case "over_cap":
+      return "over the limit of pages given to every candidate";
+  }
+}
+
+/**
+ * The pages every candidate's research started from, once per race and the
+ * same for everyone, with what the pass found and left out. Runs saved
+ * before the shared pass, and races of one, show nothing.
+ */
+function startedFromHtml(x: SharedSources | undefined): string {
+  if (!x || x.skipped) return "";
+  if (x.error) {
+    return `<p class="gap shared-pass">Looking for pages that cover every candidate failed in this run (${
+      esc(x.error)
+    }), so each candidate's research started on its own.</p>`;
+  }
+  const pages = x.pages.length
+    ? `<ul class="shared-pages">${
+      x.pages.map((p) =>
+        `<li>${link(p.url, p.title ?? p.source_name)} <span class="meta">${
+          esc(SHARED_KIND_LABEL[p.kind])
+        }${p.title ? ` · ${esc(p.source_name)}` : ""}${
+          p.cut
+            ? ` · only its first ${SHARED_PAGE_MAX_CHARS.toLocaleString("en-US")} characters`
+            : ""
+        }</span></li>`
+      ).join("")
+    }</ul>`
+    : `<p class="gap">No page covering every candidate was found, so each candidate's research started on its own.</p>`;
+  const leftOut = x.left_out.length
+    ? `<p class="meta">Not used: ${
+      x.left_out.map((l) => `${link(l.url, l.source_name)} (${esc(leftOutText(l))})`).join("; ")
+    }.</p>`
+    : "";
+  const gaps = x.gaps.length
+    ? `<p class="meta">Couldn't reach or find: ${x.gaps.map(esc).join("; ")}</p>`
+    : "";
+  return `<details class="shared-pass"><summary>Pages every candidate started from (${x.pages.length})</summary>
+<p class="sub">Found once for the race (${
+    esc(effortText(x.effort))
+  }) and put first in every candidate's research, in the same words. A page is used only if it was opened and names every candidate. Facts from these pages appear in each dossier with their source as usual.</p>
+${pages}${leftOut}${gaps}</details>`;
+}
+
 /** Facts the voter's issues show in full, so the template sections can point to them. */
 function shownInPriorities(p: readonly PriorityResult[] | undefined, anchor: string): Shown {
   const shown: Shown = new Map();
@@ -992,6 +1057,15 @@ function giftTables(cs: readonly Contribution[]): string {
     }</tbody></table></div>`;
   }).join("");
 }
+
+/**
+ * A candidate's contributions come only from the finance step (the money
+ * section leaves them out), so a race it hasn't run for says so.
+ */
+const NO_FINANCE_STEP = (anchor: string) =>
+  `<section class="sec money empty" id="${
+    esc(anchor)
+  }"><h4>Contributions on file</h4><p class="gap">Contributions to the campaign come from a separate step that reads them off the filings, and it hasn't run for this race.</p></section>`;
 
 /**
  * One candidate's or side's money, the same block for everyone, including a
@@ -1280,7 +1354,17 @@ function dossierSection(
   ${failed.note}
   ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section, scopes)}
   ${sections}
-  ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(anchor, "filed"))}
+  ${
+    finance || d.status !== "ok"
+      ? moneyHtml(
+        finance,
+        money,
+        "Contributions on file",
+        undefined,
+        sectionAnchor(anchor, "filed"),
+      )
+      : NO_FINANCE_STEP(sectionAnchor(anchor, "filed"))
+  }
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
   <p class="back"><a href="#glance">Back to the overview</a>${
     next ? ` · <a href="#${next.anchor}">Next: ${esc(next.d.candidate.name)}</a>` : ""
@@ -1769,6 +1853,10 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .scopes li { margin: 0 0 10px; }
 .scopes .meta { padding-left: 13px; }
 .scope-mark { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+.shared-pass { margin: 16px 0 8px; }
+.shared-pass .sub { margin: 6px 0; font-size: .9rem; }
+.shared-pages { margin: 6px 0; padding-left: 20px; }
+.shared-pages li { margin: 0 0 6px; overflow-wrap: anywhere; }
 .office { margin: 28px 0 8px; }
 .office .sub { margin: 4px 0 10px; font-size: .9rem; }
 .inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
@@ -1970,6 +2058,7 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map((d, i) => overviewCard(d, anchors[i])).join("")}</ul>
 ${glance}
+${startedFromHtml(r.shared)}
 ${officeHtml(r.office)}
 ${jumpHtml(r, anchors, showShared, hasMine(extra.mine))}
 
