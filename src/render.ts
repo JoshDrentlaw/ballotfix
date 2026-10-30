@@ -9,6 +9,8 @@ import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import { coveredSections, incumbencyNote, NOTHING_FOUND } from "./dossier.ts";
 import {
   type BallotConnections,
+  capCaveat,
+  filingsRead,
   measureConnections,
   type PairConnections,
   raceConnections,
@@ -501,7 +503,19 @@ export interface Evidence {
 const DATED = /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/;
 
 export function evidenceOf(facts: readonly Fact[], effort?: ResearchEffort): Evidence {
-  const kept = [...new Map(facts.map((f) => [shownKey(f), f])).values()];
+  // A fact shown under a voter's issue and in its section counts once, with
+  // every source either copy has: a merge in one may have joined outlets the
+  // other lacks.
+  const byKey = new Map<string, Fact>();
+  for (const f of facts) {
+    const prev = byKey.get(shownKey(f));
+    const also = [...(prev?.also ?? []), ...(f.also ?? [])];
+    byKey.set(
+      shownKey(f),
+      prev ? { ...prev, also: [...new Map(also.map((a) => [shownKey(a), a])).values()] } : f,
+    );
+  }
+  const kept = [...byKey.values()];
   const cited = kept.flatMap((f) => [f, ...(f.also ?? [])]);
   // A year, a month, or a day, as the source gave it: these sort as text.
   const dates = cited.map((f) => f.published ?? "").filter((p) => DATED.test(p)).sort();
@@ -521,7 +535,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 function effortText(e: ResearchEffort | undefined): string {
   return e
     ? `${plural(e.searches, "search", "searches")} and ${plural(e.fetches, "page")} opened`
-    : "searches and pages opened not recorded (researched before they were counted)";
+    : "searches and pages opened not recorded for this run";
 }
 
 /** A year, month, or day as the page writes dates: "2024", "Aug 2024", "Aug 5, 2024". */
@@ -534,7 +548,8 @@ function sourceDate(s: string): string {
 }
 
 function datesText(e: Evidence): string {
-  if (!e.from || !e.to) return "no source gives a date";
+  // Dates in other forms ("March 2024") don't sort, so they aren't counted: said as such.
+  if (!e.from || !e.to) return "no source gives a date in year-month-day form";
   return e.from === e.to
     ? `sources dated ${sourceDate(e.from)}`
     : `sources dated ${sourceDate(e.from)} to ${sourceDate(e.to)}`;
@@ -941,9 +956,7 @@ function sharedHtml(
     !context?.notes.some((n) => n.verified)
       ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
       : "",
-    finance && !finance.error
-      ? `Each candidate or side keeps at most ${finance.per_subject} contributions from the filings, so finding no shared contributor means little: the filings may list more.`
-      : "",
+    filingsRead(finance) ? capCaveat(finance.per_subject) : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
   const blocks = pairs.map((p) =>
     `<details class="pair"><summary><h5>${esc(p.a)} and ${esc(p.b)}${pairCount(p)}</h5></summary>${
@@ -1008,11 +1021,7 @@ export function ballotSharedHtml(
     }</ul>`
     : `<p class="gap">No contributor or endorser is tied to more than one item.</p>`;
   const gaps = [
-    ...(c.per_subject
-      ? [
-        `Each candidate or side keeps at most ${c.per_subject} contributions from its filings, so finding nothing shared means little: the filings may list more.`,
-      ]
-      : []),
+    ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
     ...(notCompared.length
       ? [`Not compared, because their research isn't done: ${notCompared.join("; ")}.`]
       : []),
@@ -1094,8 +1103,11 @@ const STANCE_SHORT: Record<Exclude<Stance, "no_position">, string> = {
  * quiet label that says why. Never a count: how many facts a section holds
  * mostly measures how much press someone gets.
  */
-function glanceCell(n: number, href: string, none: string): string {
-  return n ? `<td><a href="#${esc(href)}">Found</a></td>` : `<td class="none">${esc(none)}</td>`;
+function glanceCell(n: number, href: string, none: string, what: string): string {
+  // Every link reads "Found", so a screen reader's link list also hears what and whose.
+  return n
+    ? `<td><a href="#${esc(href)}">Found<span class="vh">: ${esc(what)}</span></a></td>`
+    : `<td class="none">${esc(none)}</td>`;
 }
 
 /** Facts a candidate's dossier shows, for its evidence row. */
@@ -1148,7 +1160,12 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
           STANCE_SHORT[x.stance]
         }</a></td>`;
       }
-      return glanceCell(x.result.facts.length, id, "Nothing found");
+      return glanceCell(
+        x.result.facts.length,
+        id,
+        "Nothing found",
+        `${issue}, ${d.candidate.name}`,
+      );
     })
   );
   const sections = SECTIONS.map((s) =>
@@ -1156,9 +1173,12 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
       const n = d.sections[s.id]?.facts.length ?? 0;
       // A non-incumbent's section is n/a only when it is empty: facts found there still show.
       const notHeld = "incumbentOnly" in s && s.incumbentOnly && !d.candidate.incumbent;
-      return notHeld && !n
-        ? `<td class="none">n/a</td>`
-        : glanceCell(n, sectionAnchor(at(d), s.id), "Nothing found");
+      return notHeld && !n ? `<td class="none">n/a</td>` : glanceCell(
+        n,
+        sectionAnchor(at(d), s.id),
+        "Nothing found",
+        `${s.title}, ${d.candidate.name}`,
+      );
     })
   );
   const money = r.finance
@@ -1169,6 +1189,7 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
         m?.contributions.length ?? 0,
         sectionAnchor(at(d), "filed"),
         m ? "None found" : "Not looked up",
+        `contributions on file, ${d.candidate.name}`,
       );
     }, true)]
     : [];
@@ -1516,7 +1537,7 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .grid thead th, .grid thead td { border-top: 0; padding: 10px 4px 8px; vertical-align: bottom; font-size: .82rem; min-width: 64px; overflow-wrap: break-word; }
 .grid thead a { text-decoration: none; font-weight: 700; }
 .grid tbody th { text-align: left; font-weight: 500; font-size: .84rem; position: sticky; left: 0; background: var(--card); width: 30%; min-width: 104px; padding: 6px 6px 6px 10px; }
-.grid td a { display: block; min-height: 36px; line-height: 36px; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
+.grid td a { display: block; min-height: 36px; line-height: 36px; font-weight: 700; text-decoration: none; }
 .grid td.none { color: var(--muted); font-size: .78rem; padding: 8px 4px; }
 .grid td.ev-cell { padding: 8px 4px; font-variant-numeric: tabular-nums; }
 .grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }

@@ -311,7 +311,10 @@ Deno.test("the overview grid has every section for every candidate, in ballot or
     assertStringIncludes(grid, `<th scope="row">${title}</th>`);
   }
   // Found or not, never how many: a count mostly measures press attention.
-  assertStringIncludes(grid, `href="#joz-sida--criticisms">Found</a>`);
+  assertStringIncludes(
+    grid,
+    `href="#joz-sida--criticisms">Found<span class="vh">: Criticisms and controversies, Joz Sida</span></a>`,
+  );
   assertStringIncludes(grid, `<td class="none">Nothing found</td>`);
   assert(!/<a [^>]*>\d+<\/a>/.test(grid));
   assertStringIncludes(grid, `class="stance-conflicts" href="#joz-sida--priority-1">Conflicts</a>`);

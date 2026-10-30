@@ -1352,6 +1352,7 @@ export class AnthropicResearcher
       return await this.#runTurns(system, messages, seen, schema, tools, call, model, usage);
     } catch (err) {
       // A failed call's searches count too: its failed dossier saves them (failureEffort).
+      // A lower bound: tool uses in a turn that threw mid-stream never reach `seen`.
       if (tools && err instanceof Error) Object.assign(err, { effort: toolUses(seen) });
       throw err;
     } finally {

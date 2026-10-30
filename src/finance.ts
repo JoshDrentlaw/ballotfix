@@ -312,6 +312,16 @@ function checkPortalGaps(raw: unknown): PortalGap[] {
 export const NOTHING_OPENED =
   "The campaign finance lookup opened no pages in this run, so nothing was checked.";
 
+/** Whether the lookup read any filing: it didn't fail, and it opened a page. */
+export function filingsRead(f: FinanceResult | undefined): f is FinanceResult {
+  return !!f && !f.error && !f.subjects.every((s) => s.gap_note === NOTHING_OPENED);
+}
+
+/** The caveat on shared connections: each subject's kept contributions are capped. */
+export function capCaveat(perSubject: number): string {
+  return `Each candidate or side keeps at most ${perSubject} contributions from the filings, so finding no shared contributor means little: the filings may list more.`;
+}
+
 /** One result per subject asked about, in the request's order, whatever the answer held. */
 export function checkFinance(
   plan: Pick<Plan, "labels"> & { request: Pick<FinanceRequest, "subjects" | "perSubject"> },
@@ -693,7 +703,7 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
       0,
       ...items.map((it) => {
         const f = (it.measure ?? it.race)?.finance;
-        return f && !f.error ? f.per_subject : 0;
+        return filingsRead(f) ? f.per_subject : 0;
       }),
     ),
   };

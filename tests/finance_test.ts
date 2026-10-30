@@ -8,6 +8,7 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { contextForMeasure, contextForRace } from "../src/context.ts";
 import {
   checkFinance,
+  filingsRead,
   financeForMeasure,
   financeForRace,
   MAX_CONTRIBUTIONS_PER_SUBJECT,
@@ -649,6 +650,9 @@ Deno.test("a lookup that opened no page says nothing was checked, for every subj
     assertEquals(s.searched, []);
     assertEquals(s.contributions, []);
   }
+  // Nothing was read, so the row cap isn't worth a caveat.
+  const read = { ...f, subjects: [{ ...f.subjects[0], gap_note: null }] };
+  assertEquals([filingsRead(f), filingsRead(read)], [false, true]);
 });
 
 Deno.test("a row repeated exactly counts once; a retrieved copy of an unretrieved row still stands", () => {
