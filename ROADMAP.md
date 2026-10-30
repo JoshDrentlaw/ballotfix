@@ -221,7 +221,40 @@ Original plan:
 - Sort facts within a section by event date (unknown last, then by published), and show each
   section's date range. Older runs fall back to `published` and say so.
 
-## 7. Stability run
+## 7. Stability run — done
+
+Branch `ccr-79f4f0bc-5rxe3r`. Decisions made in the PR:
+
+- Only research reruns: merge, context, and finance don't change which pages a run kept, and
+  skipping them keeps the cost to the research calls. The candidate list is found once (or given)
+  and reused, so runs differ only in research. Runs are saved to `out/stability/` with the report.
+- Overlap is Jaccard, mean and lowest over every pair of runs, per section and per candidate (pages
+  in any section). Pages compare normalized (`normalizeUrl`), merged sources included. Facts match
+  one to one by wording (`SAME_FACT`, 60% of words alike by Dice), since two runs rarely word a fact
+  the same way: a heuristic, so the JSON lists the counts and the text says to check it. A section
+  empty in both runs is agreement and has no overlap figure. The report also lists sections that
+  read "Found" in some runs and "Nothing found" in others, since that is what the grid would show
+  differently. A failed candidate's run is left out of its overlap and counted as missing.
+- The estimate is an assumption (`TYPICAL_CANDIDATE_USAGE`, about $1 a candidate on the default
+  model), labeled as such; `--per-candidate` replaces it. Without `--yes` nothing is spent.
+  `--compare` reads saved runs (CLI output or `/races/:id.json`) at no cost.
+- Answer key: `sample` draws facts uniformly at random (seeded) rather than equally per candidate,
+  so precision estimates the research as a whole; it is reported overall and by quote-check level,
+  never per candidate. Judgments are the reviewer's (supported, not supported, wrong person,
+  unsure); unsure is left out. Each rate carries a 95% Wilson interval, because a sample of 25 says
+  little. Recall matches the owner's key by a page it names, then by wording, within a section when
+  the key gives one, and lists every match for a person to check. No key or judgments ship.
+
+Follow-ups:
+
+- Not yet run against the live API (it spends money; nothing was run from the build session). Run
+  one race three times and record the overlap here. If it is low, add a line to the page saying a
+  dossier is one research session and another may find different sources, and consider showing the
+  union across runs on entity pages (the graph already holds every done run).
+- The owner writes a key for a past race and judges a sample; record precision and recall here.
+- Measures aren't covered by the stability run yet.
+
+Original plan:
 
 A `deno task stability` script (spends money, so it only runs when asked; print an estimate first
 and require a flag to proceed): rerun one race N times (default 3) and report, per section, how much
