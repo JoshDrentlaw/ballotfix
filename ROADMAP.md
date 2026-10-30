@@ -46,8 +46,10 @@ from the build session): the Secretary of State's go-live page says only "post-e
 if CARS isn't open yet, and the prompt names no CARS address (it says to find it from sos.ca.gov).
 The source goes by the lookup's date, not the election date as first planned: once Cal-Access is
 gone, an earlier election's filings are only in CARS. Local filings keep Forms 460/497/410; for CARS
-filings the prompt says to copy the record's own form name rather than assume the old numbers.
-Update `CARS_CUTOVER` when the Secretary of State names the day.
+filings the prompt says to copy the record's own form name rather than assume the old numbers. The
+measure `money` ask says "or the state or local equivalent" rather than naming CARS, since the
+template is the same before and after the cutover. Update `CARS_CUTOVER` when the Secretary of State
+names the day.
 
 Original plan:
 
