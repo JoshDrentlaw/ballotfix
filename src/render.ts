@@ -9,6 +9,7 @@ import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import {
   coveredSections,
   incumbencyNote,
+  marksView,
   NOTHING_FOUND,
   type StanceSupport,
   stanceSupport,
@@ -616,11 +617,9 @@ function stanceLabel(st: Stance | undefined, subject: Subject): string | null {
 
 const isThin = (x: PriorityResult) => x.stance_strength === "thin";
 
-const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
 /** What a thin stance rests on, so the voter sees why it isn't full. */
 function thinWords(s: StanceSupport): string {
-  const facts = count(s.facts, "fact");
+  const facts = plural(s.facts, "sourced fact");
   if (!s.quoted) return `Thin: ${facts}, none with its quote found on its page.`;
   return `Thin: ${facts}; ${
     s.quoted === 1
@@ -689,7 +688,11 @@ export function stanceSummary(p: readonly PriorityResult[] | undefined, subject:
         esc(stanceLabel(st, subject)!)
       }${thin ? ", thin" : ""}:</strong> ${
         issues.map((x) =>
-          esc(thin ? `${x.issue} (${count(stanceSupport(x.result).facts, "fact")})` : x.issue)
+          esc(
+            thin
+              ? `${x.issue} (${plural(stanceSupport(x.result).facts, "sourced fact")})`
+              : x.issue,
+          )
         ).join("; ")
       }</p>`;
     })
@@ -702,10 +705,7 @@ export function stanceSummary(p: readonly PriorityResult[] | undefined, subject:
  * stood on any one verified fact, and the page says so.
  */
 export function predatesStanceThreshold(p: readonly PriorityResult[]): boolean {
-  return p.some((x) =>
-    (x.stance === "conflicts" || x.stance === "aligns" || x.stance === "mixed") &&
-    !x.stance_strength
-  );
+  return p.some((x) => marksView(x.stance) && !x.stance_strength);
 }
 
 function gapsAndUnverified(
@@ -1505,8 +1505,10 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .stance-conflicts { color: var(--stance-conflicts); } .stance-aligns { color: var(--stance-aligns); }
 /* Mixed is both ways: body text, with a rule half conflicts and half aligns. */
 .stance-mixed { color: var(--fg); }
-.stance.thin { border-left-style: dashed; }
 .stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
+.stance.thin { border-left-style: dashed; }
+/* The mixed rule is an image, which a border style can't dash: dash the image instead. */
+.stance.stance-mixed.thin { border-image: repeating-linear-gradient(var(--stance-conflicts) 0 5px, transparent 5px 8px, var(--stance-aligns) 8px 13px, transparent 13px 16px) 1; }
 .measure-q { white-space: pre-line; }
 .votes { display: grid; gap: 10px; margin: 10px 0 6px; }
 @media (min-width: 640px) { .votes { grid-template-columns: 1fr 1fr; } }

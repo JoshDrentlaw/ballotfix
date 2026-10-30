@@ -41,11 +41,11 @@ Specific to elections:
    egregiously against their views. A stance other than unclear stands only on verified facts
    (`assemblePriorities` downgrades it otherwise). "conflicts", "aligns", and "mixed" are full only
    on one quoted primary record or quoted facts from two outlets (`stanceSupport`, `strengthOf`:
-   only `quoted` facts count, unsourced never, a merged fact's sources each count); below that the
-   researcher's stance is kept with `stance_strength: "thin"`, shown marked thin with its fact count
-   and listed after full stances on the cards. Runs saved before have no strength and say their
-   marks predate the threshold. Stances are never combined into an overall score or a
-   recommendation.
+   only `quoted` facts on a page that names the subject count, unsourced never, an outlet is one
+   name and one page, a merged fact's sources each count); below that the researcher's stance is
+   kept with `stance_strength: "thin"`, shown marked thin with its fact count and listed after full
+   stances on the cards. Runs saved before have no strength and say their marks predate the
+   threshold. Stances are never combined into an overall score or a recommendation.
 7. **The voter's notes and picks are theirs.** `ChoiceStore` (its own `choices` table), apart from
    runs so a job's progress saves can't overwrite them. Never in downloads or a run's JSON. Ballot
    items use choice id `<ballotId>-<key>`, so a note made before research stays with it, and reruns

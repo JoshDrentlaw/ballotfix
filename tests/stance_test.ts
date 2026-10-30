@@ -84,6 +84,34 @@ Deno.test("only quoted facts count: same outlet twice, or unread pages, stay thi
   assertEquals(unsourced.stance_strength, undefined);
 });
 
+Deno.test("a page lacking the name, or one page under two names, doesn't make a stance full", () => {
+  const f = (source_name: string, url: string, missing_name?: string): Fact => ({
+    statement: "s",
+    source_name,
+    source_url: url,
+    author: null,
+    published: null,
+    evidence_type: missing_name ? "primary_record" : "reported",
+    check: { level: "quoted", opened: true, read: true, ...(missing_name ? { missing_name } : {}) },
+  });
+  const flagged = {
+    facts: [f("Minutes", "https://city.example/m", "Sida")],
+    searched: [],
+    gap_note: null,
+  };
+  assertEquals(strengthOf(stanceSupport(flagged)), "thin");
+  const onePage = {
+    facts: [
+      f("City of X", "https://city.example/p"),
+      f("X City Council", "https://city.example/p"),
+    ],
+    searched: [],
+    gap_note: null,
+  };
+  assertEquals(stanceSupport(onePage).outlets, 1);
+  assertEquals(strengthOf(stanceSupport(onePage)), "thin");
+});
+
 Deno.test("a merged fact's other sources count as their outlets", () => {
   const f = (source_name: string): Fact => ({
     statement: "s",
@@ -128,7 +156,10 @@ Deno.test("the page marks thin stances, lists them after full ones, and notes ol
   );
   // The full "aligns" comes before the thin "conflicts", which carries its count.
   assertStringIncludes(card, "Matches your view:</strong> keep taxes low");
-  assertStringIncludes(card, "Conflicts with your view, thin:</strong> protect renters (1 fact)");
+  assertStringIncludes(
+    card,
+    "Conflicts with your view, thin:</strong> protect renters (1 sourced fact)",
+  );
   assert(card.indexOf("Matches") < card.indexOf("Conflicts"));
   assertStringIncludes(html, "Conflicts with your view, thin.</strong>");
   assertStringIncludes(html, "is from one outlet and isn&#39;t a primary record");

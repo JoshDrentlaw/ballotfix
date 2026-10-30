@@ -300,9 +300,12 @@ function retrievedSet(urls: readonly string[]): Set<string> {
 export interface StanceSupport {
   /** Verified facts on the issue, unsourced ones aside, merged sources included. */
   facts: number;
-  /** Of those, the ones whose quote was found on the page they cite. */
+  /**
+   * Of those, the ones whose quote was found on the page they cite, a page
+   * that names the subject (`missing_name` unset).
+   */
   quoted: number;
-  /** Distinct outlets among the quoted ones. */
+  /** Distinct outlets among the quoted ones, by name and by page alike. */
   outlets: number;
   /** Quoted primary records. */
   primary: number;
@@ -318,13 +321,21 @@ export interface StanceSupport {
 export function stanceSupport(r: SectionResult): StanceSupport {
   const all = r.facts.flatMap((f) => [f, ...(f.also ?? [])])
     .filter((f) => f.evidence_type !== "unsourced");
-  const quoted = all.filter((f) => f.check?.level === "quoted");
+  const quoted = all.filter((f) => f.check?.level === "quoted" && !f.check.missing_name);
+  // One page cited under two names, or two names for one outlet's page, is still one.
+  const names = new Set(quoted.map((f) => nameKey(f.source_name))).size;
+  const pages = new Set(quoted.map((f) => normalizeUrl(f.source_url) ?? f.source_url)).size;
   return {
     facts: all.length,
     quoted: quoted.length,
-    outlets: new Set(quoted.map((f) => nameKey(f.source_name))).size,
+    outlets: Math.min(names, pages),
     primary: quoted.filter((f) => f.evidence_type === "primary_record").length,
   };
+}
+
+/** The stances that mark the voter's view, and so carry a strength. */
+export function marksView(st: Stance | undefined): boolean {
+  return st === "conflicts" || st === "aligns" || st === "mixed";
 }
 
 /** A stance stands in full on one quoted primary record, or quoted facts from two outlets. */
@@ -368,7 +379,7 @@ function assemblePriorities(
         }(Rests only on statements, endorsements, or advocacy, not records or reporting.)`;
       }
     }
-    const strength = stance === "conflicts" || stance === "aligns" || stance === "mixed"
+    const strength = marksView(stance)
       ? { stance_strength: strengthOf(stanceSupport(result)) }
       : {};
     return { issue, result, stance, stance_basis, ...strength };
