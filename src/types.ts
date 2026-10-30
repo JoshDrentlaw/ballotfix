@@ -146,6 +146,15 @@ export interface RawSection {
   gap_note: string | null;
 }
 
+/**
+ * Web searches and page fetches one research session made, as the API
+ * reported them, so effort across candidates can be compared, not assumed.
+ */
+export interface ResearchEffort {
+  searches: number;
+  fetches: number;
+}
+
 /** What a ResearchPort returns for one candidate: unvalidated. */
 export interface RawCandidateResearch {
   sections: Record<string, RawSection | undefined>;
@@ -155,6 +164,8 @@ export interface RawCandidateResearch {
   gaps: string[];
   retrieved_urls: string[];
   model: string;
+  /** Absent from adapters that don't count it. */
+  effort?: ResearchEffort;
 }
 
 export interface Fact {
@@ -219,6 +230,8 @@ export interface CandidateDossier {
   priorities?: PriorityResult[];
   gaps: string[];
   model: string | null;
+  /** Searches and fetches its research made. Absent on unfinished runs and ones saved before it existed. */
+  effort?: ResearchEffort;
   error: string | null;
 }
 
@@ -262,6 +275,8 @@ export interface RawMeasureResearch {
   gaps: string[];
   retrieved_urls: string[];
   model: string;
+  /** Absent from adapters that don't count it. */
+  effort?: ResearchEffort;
 }
 
 /**
@@ -289,6 +304,8 @@ export interface MeasureDossier {
   gaps: string[];
   standing_gaps: string[];
   model: string | null;
+  /** Searches and fetches its research made. Absent on unfinished runs and ones saved before it existed. */
+  effort?: ResearchEffort;
   error: string | null;
   generated_at: string;
   /** Notes on names in the facts (src/context.ts). Absent until that step has run. */

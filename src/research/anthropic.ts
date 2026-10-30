@@ -38,6 +38,7 @@ import {
   type RawMeasureResearch,
   type RawSection,
   type RawStance,
+  type ResearchEffort,
   type ResearchPort,
   STANCES,
 } from "../types.ts";
@@ -980,12 +981,18 @@ const MAX_CONTINUATIONS = 8;
  * still run once per continuation, which the call's continuation limit bounds.
  */
 function remaining(caps: { searches: number; fetches: number }, seen: readonly Block[]) {
+  const used = toolUses(seen);
+  return {
+    searches: Math.max(1, caps.searches - used.searches),
+    fetches: Math.max(1, caps.fetches - used.fetches),
+  };
+}
+
+/** Searches and fetches the turns so far asked for: what the caps count, and what effort records. */
+function toolUses(seen: readonly Block[]): ResearchEffort {
   const used = (name: string) =>
     seen.filter((b) => b.type === "server_tool_use" && b.name === name).length;
-  return {
-    searches: Math.max(1, caps.searches - used("web_search")),
-    fetches: Math.max(1, caps.fetches - used("web_fetch")),
-  };
+  return { searches: used("web_search"), fetches: used("web_fetch") };
 }
 
 export class AnthropicResearcher
@@ -1061,7 +1068,7 @@ export class AnthropicResearcher
       "Research this candidate and fill every section of the template.",
     ].filter((l) => l !== "").join("\n");
 
-    const { json, urls } = await this.#run(
+    const { json, urls, effort } = await this.#run(
       candidateSystem(priorities),
       prompt,
       candidateSchema(priorities),
@@ -1076,6 +1083,7 @@ export class AnthropicResearcher
       gaps: stringList(o.gaps),
       retrieved_urls: urls,
       model: this.#model,
+      effort,
     };
   }
 
@@ -1093,7 +1101,7 @@ export class AnthropicResearcher
       "Research this measure and fill every section of the template.",
     ].filter((l) => l !== "").join("\n");
 
-    const { json, urls } = await this.#run(
+    const { json, urls, effort } = await this.#run(
       measureSystem(priorities),
       prompt,
       measureSchema(priorities),
@@ -1110,6 +1118,7 @@ export class AnthropicResearcher
       gaps: stringList(o.gaps),
       retrieved_urls: urls,
       model: this.#model,
+      effort,
     };
   }
 
@@ -1181,7 +1190,6 @@ export class AnthropicResearcher
     const { json, urls } = await this.#run(CONTEXT_SYSTEM, prompt, CONTEXT_SCHEMA, {
       searches: CONTEXT_MAX_SEARCHES,
       fetches: CONTEXT_MAX_FETCHES,
-      acrossTurns: true,
     }, {
       model: this.#contextModel,
       label: "context notes",
@@ -1210,7 +1218,6 @@ export class AnthropicResearcher
     const { json, urls } = await this.#run(FINANCE_SYSTEM, prompt, FINANCE_SCHEMA, {
       searches: FINANCE_MAX_SEARCHES,
       fetches: FINANCE_MAX_FETCHES,
-      acrossTurns: true,
     }, {
       model: this.#financeModel,
       label: "campaign finance",
@@ -1235,7 +1242,7 @@ export class AnthropicResearcher
     system: string,
     prompt: string | Anthropic.Beta.Messages.BetaContentBlockParam[],
     schema: Record<string, unknown>,
-    tools: { searches: number; fetches: number; acrossTurns?: boolean } | null,
+    tools: { searches: number; fetches: number } | null,
     call: {
       model?: string;
       /** Names the call in the usage log. */
@@ -1244,7 +1251,7 @@ export class AnthropicResearcher
       maxTokens?: number;
       maxContinuations?: number;
     } = {},
-  ): Promise<{ json: unknown; urls: string[] }> {
+  ): Promise<{ json: unknown; urls: string[]; effort: ResearchEffort }> {
     const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
       { role: "user", content: prompt },
     ];
@@ -1272,7 +1279,7 @@ export class AnthropicResearcher
     messages: Anthropic.Beta.Messages.BetaMessageParam[],
     seen: Block[],
     schema: Record<string, unknown>,
-    tools: { searches: number; fetches: number; acrossTurns?: boolean } | null,
+    tools: { searches: number; fetches: number } | null,
     call: {
       effort?: NonNullable<AnthropicResearcherOptions["effort"]>;
       maxTokens?: number;
@@ -1280,10 +1287,11 @@ export class AnthropicResearcher
     },
     model: string,
     usage: CallUsage,
-  ): Promise<{ json: unknown; urls: string[] }> {
+  ): Promise<{ json: unknown; urls: string[]; effort: ResearchEffort }> {
     const maxContinuations = call.maxContinuations ?? MAX_CONTINUATIONS;
     for (let i = 0; i <= maxContinuations; i++) {
-      const caps = tools && (tools.acrossTurns ? remaining(tools, seen) : tools);
+      // Caps are always counted across continuations; see remaining().
+      const caps = tools && remaining(tools, seen);
       let response;
       try {
         response = await this.#client.beta.messages.stream({
@@ -1346,7 +1354,11 @@ export class AnthropicResearcher
         default: {
           const text = lastText(response.content);
           try {
-            return { json: JSON.parse(text), urls: retrievedUrls(seen) };
+            return {
+              json: JSON.parse(text),
+              urls: retrievedUrls(seen),
+              effort: toolUses(seen),
+            };
           } catch {
             throw new ResearchIncompleteError("final response was not valid JSON");
           }
