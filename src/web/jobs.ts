@@ -18,6 +18,7 @@ import {
   raceFinanceFailed,
 } from "../finance.ts";
 import { mergeMeasure, mergeRace } from "../merge.ts";
+import { officeForRace, raceOfficeFailed } from "../office.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
 import type {
@@ -30,6 +31,7 @@ import type {
   FinanceResearcher,
   MeasureDossier,
   MeasureQuery,
+  OfficeResearcher,
   RaceDossier,
   RaceQuery,
   ResearchPort,
@@ -61,6 +63,12 @@ export interface JobRunnerOptions {
    * the context step, then saved again. Omit to skip.
    */
   makeFinanceResearcher?: () => FinanceResearcher;
+  /**
+   * Looks up what a race's office can do, or reuses an earlier run's lookup of
+   * the same office in the same place, and marks the voter's issues against
+   * it: after the finance step, races only. Omit to skip.
+   */
+  makeOfficeResearcher?: () => OfficeResearcher;
 }
 
 /** What one finished run needs for the steps after it, race or measure. */
@@ -142,6 +150,7 @@ export class JobRunner {
   readonly #makeMerger: (() => ClaimMerger) | undefined;
   readonly #makeContextWriter: (() => ContextWriter) | undefined;
   readonly #makeFinanceResearcher: (() => FinanceResearcher) | undefined;
+  readonly #makeOfficeResearcher: (() => OfficeResearcher) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
   #post = new Set<Promise<void>>();
@@ -156,6 +165,7 @@ export class JobRunner {
     this.#makeMerger = opts.makeMerger;
     this.#makeContextWriter = opts.makeContextWriter;
     this.#makeFinanceResearcher = opts.makeFinanceResearcher;
+    this.#makeOfficeResearcher = opts.makeOfficeResearcher;
   }
 
   /**
@@ -198,12 +208,13 @@ export class JobRunner {
   /**
    * Merging duplicate claims, then context notes on names, then campaign
    * finance: each a step of its own, each starting from what the last saved.
+   * Returns the dossier as the last step left it.
    */
   async #afterDone<T extends RaceDossier | MeasureDossier>(
     id: string,
     done: T,
     steps: AfterSteps<T>,
-  ): Promise<void> {
+  ): Promise<T> {
     const makeMerger = this.#makeMerger, makeWriter = this.#makeContextWriter;
     const makeFinance = this.#makeFinanceResearcher;
     const { save } = steps;
@@ -247,7 +258,7 @@ export class JobRunner {
       save,
       (d, error) => steps.contextFailed(d, error, known),
     );
-    await this.#after(
+    return await this.#after(
       id,
       "campaign finance",
       noted,
@@ -269,12 +280,50 @@ export class JobRunner {
   }
 
   /**
+   * The race's office: an earlier run's lookup of the same office in the same
+   * place when one is recent enough, else one capped lookup; then the voter's
+   * issues are marked against it. Always changes the race, so always saved.
+   */
+  async #afterOffice(
+    id: string,
+    race: RaceDossier,
+    save: (d: RaceDossier) => Promise<void>,
+  ): Promise<void> {
+    const make = this.#makeOfficeResearcher;
+    await this.#after(
+      id,
+      "office powers",
+      race,
+      make && (async () => {
+        const now = this.#now();
+        const known = this.#store.knownOffice(race.query, id, now);
+        const r = await officeForRace(race, make(), known, now);
+        return {
+          dossier: r.dossier,
+          changed: true,
+          log: [
+            r.looked_up
+              ? `looked up the office: ${r.shown} verified fact(s)`
+              : `reused the office lookup from ${known!.from.run}`,
+            ...(r.marked ? [`marked ${r.marked} issue(s) against the office's powers`] : []),
+          ],
+        };
+      }),
+      save,
+      raceOfficeFailed,
+    );
+  }
+
+  /**
    * The steps after a run is done run beside the queue, not in it: the run
    * is already saved and readable, and the next race shouldn't wait on them.
    * At most one chain per finished run, so spend stays bounded.
    */
-  #background(p: Promise<void>): void {
-    const tracked = p.catch((err) => this.#log(`after-run steps failed: ${err}`))
+  #background(p: Promise<unknown>): void {
+    const tracked: Promise<void> = p.then(
+      () => {},
+      (err) => this.#log(`after-run steps failed: ${err}`),
+    )
       .finally(() => this.#post.delete(tracked));
     this.#post.add(tracked);
   }
@@ -417,10 +466,11 @@ export class JobRunner {
         onUpdate: (partial) => save({ race: partial }),
       });
       await save({ race, status: "done" });
-      this.#background(this.#afterDone(run.id, race, {
-        ...RACE_STEPS,
-        save: (d) => save({ race: d }),
-      }));
+      const saveRace = (d: RaceDossier) => save({ race: d });
+      this.#background(
+        this.#afterDone(run.id, race, { ...RACE_STEPS, save: saveRace })
+          .then((d) => this.#afterOffice(run.id, d, saveRace)),
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.#log(`[${run.id}] failed: ${msg}`);

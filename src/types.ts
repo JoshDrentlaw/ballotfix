@@ -312,6 +312,8 @@ export interface RaceDossier {
   context?: ContextResult;
   /** Contributions from campaign finance filings (src/finance.ts). Absent until that step has run. */
   finance?: FinanceResult;
+  /** What the office can do (src/office.ts). Absent until that step has run. */
+  office?: OfficeResult;
 }
 
 /** One ballot measure to research. */
@@ -656,6 +658,107 @@ export interface FinanceResult {
   error?: string;
 }
 
+/** The office a race fills, as the office-powers lookup is asked about it. */
+export interface OfficeRequest {
+  /** City or jurisdiction and state, e.g. "Fontana, CA". */
+  place: string;
+  /** The office as the race names it, e.g. "Member, City Council, District 2". */
+  office: string;
+  electionDate: string;
+}
+
+/** What an office-powers lookup returns: unvalidated. Sections keyed by OFFICE_SECTIONS ids. */
+export interface RawOfficePowers {
+  sections: Record<string, RawSection | undefined>;
+  gaps: string[];
+  retrieved_urls: string[];
+  /** Pages it opened, for the quote check. Never saved. Absent: none. */
+  opened_pages?: OpenedPage[];
+  model: string;
+  effort?: ResearchEffort;
+}
+
+/**
+ * The voter's issues and the office's verified facts, for marking each issue
+ * inside or outside the office's say. No web tools: the marks can rest only
+ * on the facts sent.
+ */
+export interface ScopeRequest {
+  place: string;
+  office: string;
+  facts: { id: string; statement: string }[];
+  issues: { id: string; issue: string }[];
+}
+
+/** One issue's mark as the model gave it, before checks. */
+export interface RawIssueScope {
+  id: string;
+  scope: string;
+  basis: string;
+  fact_ids: string[];
+}
+
+/**
+ * Looks up what an office decides, its budget, seats, and term (one capped
+ * call per office, reused across runs in the same place), and marks the
+ * voter's issues against it. src/office.ts checks everything that comes back.
+ */
+export interface OfficeResearcher {
+  findOfficePowers(request: OfficeRequest): Promise<RawOfficePowers>;
+  markIssueScopes(request: ScopeRequest): Promise<RawIssueScope[]>;
+}
+
+/**
+ * Whether one of the voter's issues is something the office has a say in.
+ * "partly" when it shares the say with other bodies or decides only part of
+ * it; "unclear" when the verified facts on the office don't settle it.
+ */
+export const ISSUE_SCOPES = ["inside", "partly", "outside", "unclear"] as const;
+export type IssueScopeValue = typeof ISSUE_SCOPES[number];
+
+/** Where in the office's sections a fact is: what a scope mark cites. */
+export interface OfficeFactRef {
+  section: OfficeSectionId;
+  index: number;
+}
+
+export interface IssueScope {
+  issue: string;
+  scope: IssueScopeValue;
+  /** One sentence on what the mark rests on, in the model's words, or why it is unclear. */
+  basis: string | null;
+  /** The verified facts it cites. Empty for "unclear". */
+  rests_on: OfficeFactRef[];
+}
+
+/**
+ * The office-powers step's result for one race: the same for every candidate.
+ * Absent on runs it didn't reach.
+ */
+export interface OfficeResult {
+  /** The office as looked up. */
+  office: string;
+  sections: Record<OfficeSectionId, SectionResult>;
+  unverified: Fact[];
+  gaps: string[];
+  /** One per issue the voter named for the race, in their order; [] when none. */
+  issues: IssueScope[];
+  model: string | null;
+  /** When this run's lookup ran. Absent when reused (see reused_from) or failed. */
+  looked_up?: string;
+  /** Searches and fetches the lookup made. Absent when it was reused or failed before counting. */
+  effort?: ResearchEffort;
+  /**
+   * Set when the powers came from an earlier run's lookup of the same office
+   * in the same place: that run, and when it was looked up.
+   */
+  reused_from?: { run: string; looked_up: string };
+  /** Why the lookup failed, when it did; every issue is then unclear. */
+  error?: string;
+  /** Why marking the issues failed, when only that did. */
+  scope_error?: string;
+}
+
 /**
  * The research port. Phase 0 has one adapter (Claude with server-side web
  * search); later phases add primary-record adapters behind the same shape.
@@ -676,5 +779,5 @@ export interface ResearchPort {
 
 // Re-exported here so every module agrees on section ids without importing
 // the template's prose.
-import type { MeasureSectionId, SectionId } from "./template.ts";
-export type { MeasureSectionId, SectionId };
+import type { MeasureSectionId, OfficeSectionId, SectionId } from "./template.ts";
+export type { MeasureSectionId, OfficeSectionId, SectionId };

@@ -27,7 +27,8 @@ import {
 } from "./finance.ts";
 import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
 import { publisherKey } from "./merge.ts";
-import { MEASURE_SECTIONS, SECTIONS } from "./template.ts";
+import { factAt, OFFICE_TITLE } from "./office.ts";
+import { MEASURE_SECTIONS, OFFICE_SECTION_IDS, SECTIONS } from "./template.ts";
 import type {
   CandidateDossier,
   ContextNote,
@@ -38,7 +39,10 @@ import type {
   FactCheck,
   FinanceResult,
   FinanceSubjectResult,
+  IssueScope,
+  IssueScopeValue,
   MeasureDossier,
+  OfficeResult,
   OrderBasis,
   PriorityResult,
   RaceDossier,
@@ -77,7 +81,7 @@ export function slug(s: string): string {
 }
 
 /** Ids the page uses itself; a candidate's anchor never takes one. */
-const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new"]);
+const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new", "office"]);
 
 /**
  * Like slug, but keeps letters in any script: an anchor only has to work
@@ -713,17 +717,99 @@ function prioritiesHtml(
   notes: Notes,
   anchor: string,
   section: (r: SectionResult) => SectionResult | undefined = (r) => r,
+  scopes: readonly IssueScope[] = [],
 ): string {
   if (!p?.length) return "";
   return `<section class="priorities"><h4>On what you said matters to you</h4>${
     p.map((x, i) =>
       sectionHtml(x.issue, section(x.result), notes, {
         tag: "h5",
-        between: stanceBadge(x, subject),
+        between: stanceBadge(x, subject) + scopeLine(scopes[i]),
         id: sectionAnchor(anchor, `priority_${i + 1}`),
       })
     ).join("")
   }</section>`;
+}
+
+// ---------------------------------------------------------------------------
+// The office (src/office.ts)
+// ---------------------------------------------------------------------------
+
+/** Whether the office has a say in an issue. Never a stance: no stance color, no chip. */
+export const SCOPE_LABEL: Record<IssueScopeValue, string> = {
+  inside: "Within this office's say",
+  partly: "Partly within this office's say",
+  outside: "Outside this office's say",
+  unclear: "Unclear whether this office has a say",
+};
+
+/**
+ * The office's mark on one issue, under the issue in every dossier: the same
+ * words for every candidate, linking to what it rests on.
+ */
+function scopeLine(x: IssueScope | undefined): string {
+  if (!x) return "";
+  return `<p class="scope scope-${x.scope}">${esc(SCOPE_LABEL[x.scope])}. <a href="#office">${
+    x.scope === "unclear" ? "About this office" : "What shows it"
+  }</a></p>`;
+}
+
+/**
+ * What the office can do, once per race: each of the voter's issues marked
+ * inside, partly, or outside its say with the facts that show it, then its
+ * powers, budget, seats, and term, collapsed, with the same checks as a dossier.
+ */
+function officeHtml(o: OfficeResult | undefined): string {
+  if (!o) return "";
+  const when = o.reused_from
+    ? `From an earlier lookup of this office in this place, ${
+      esc(readableDate(o.reused_from.looked_up.slice(0, 10)))
+    }, reused rather than looked up again.`
+    : o.error
+    ? ""
+    : `Looked up in this run: ${esc(effortText(o.effort))}.`;
+  const failed = o.error
+    ? `<p class="gap">Looking up this office's powers failed in this run (${esc(o.error)}).</p>`
+    : "";
+  const scopeFailed = o.scope_error
+    ? `<p class="gap">Marking your issues against it failed in this run (${
+      esc(o.scope_error)
+    }).</p>`
+    : "";
+  const issues = o.issues.length
+    ? `<ul class="scopes">${
+      o.issues.map((x) => {
+        const cited = x.rests_on.map((r) => factAt(o.sections, r))
+          .filter((f): f is Fact => f !== null);
+        return `<li><p class="scope scope-${x.scope}"><strong>${esc(x.issue)}:</strong> ${
+          esc(SCOPE_LABEL[x.scope])
+        }.${x.basis ? ` <span class="basis">${esc(x.basis)}</span>` : ""}</p>${
+          cited.length
+            ? `<p class="meta">From: ${
+              cited.map((f) => link(f.source_url, f.source_name)).join("; ")
+            }</p>`
+            : ""
+        }</li>`;
+      }).join("")
+    }</ul>`
+    : "";
+  const facts = OFFICE_SECTION_IDS.reduce((n, id) => n + (o.sections[id]?.facts.length ?? 0), 0);
+  const sections = OFFICE_SECTION_IDS.map((id) =>
+    sectionHtml(OFFICE_TITLE[id], o.sections[id], NO_NOTES)
+  ).join("");
+  return `<section class="office" id="office"><h2>What this office can do</h2>
+<p class="sub">About the office, not anyone running for it, and the same for every candidate. ${when}</p>
+${failed}${scopeFailed}${
+    o.issues.length
+      ? `<p>Whether this office decides each of your issues, from the sourced facts below. An issue outside its say may get little on record from anyone, so "not enough on record" there is not a dodge.</p>`
+      : ""
+  }${issues}
+<details class="office-facts"${
+    o.issues.length ? "" : " open"
+  }><summary>Its powers, budget, seats, and term (${
+    plural(facts, "sourced fact")
+  })</summary>${sections}${gapsAndUnverified(o.gaps, o.unverified, NO_NOTES)}</details>
+</section>`;
 }
 
 /** Facts the voter's issues show in full, so the template sections can point to them. */
@@ -1162,6 +1248,7 @@ function dossierSection(
   finance?: FinanceResult,
   money?: FinanceSubjectResult,
   person?: { ref: EntityRef; links: EntityLinks },
+  scopes: readonly IssueScope[] = [],
 ): string {
   const c = d.candidate;
   if (d.status === "pending") {
@@ -1191,7 +1278,7 @@ function dossierSection(
   ${evidenceLine(evidenceOf(candidateFacts(d), d.effort), d.status === "failed")}
   ${identity}
   ${failed.note}
-  ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section)}
+  ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section, scopes)}
   ${sections}
   ${moneyHtml(finance, money, "Contributions on file", undefined, sectionAnchor(anchor, "filed"))}
   ${gapsAndUnverified(d.gaps, d.unverified, notes)}
@@ -1255,30 +1342,40 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
       ? `<td class="none">…</td>`
       : null;
   // Money is looked up for a failed candidate too, so only pending hides it.
-  const row = (label: string, cell: (d: CandidateDossier) => string, evenIfFailed = false) =>
-    `<tr><th scope="row">${esc(label)}</th>${
+  const row = (
+    label: string,
+    cell: (d: CandidateDossier) => string,
+    evenIfFailed = false,
+    mark = "",
+  ) =>
+    `<tr><th scope="row">${esc(label)}${mark}</th>${
       ds.map((d) => (evenIfFailed && d.status === "failed" ? null : unfinished(d)) ?? cell(d)).join(
         "",
       )
     }</tr>`;
   const issues = (r.priorities ?? []).map((issue, i) =>
-    row(issue, (d) => {
-      const x = d.priorities?.[i];
-      const id = sectionAnchor(at(d), `priority_${i + 1}`);
-      if (!x) return `<td class="none">–</td>`;
-      if (x.stance && x.stance !== "no_position") {
-        const thin = isThin(x);
-        return `<td><a class="stance-${x.stance}${thin ? " thin" : ""}" href="#${esc(id)}">${
-          STANCE_SHORT[x.stance]
-        }${thin ? ", thin" : ""}</a></td>`;
-      }
-      return glanceCell(
-        x.result.facts.length,
-        id,
-        "Nothing found",
-        `${issue}, ${d.candidate.name}`,
-      );
-    })
+    row(
+      issue,
+      (d) => {
+        const x = d.priorities?.[i];
+        const id = sectionAnchor(at(d), `priority_${i + 1}`);
+        if (!x) return `<td class="none">–</td>`;
+        if (x.stance && x.stance !== "no_position") {
+          const thin = isThin(x);
+          return `<td><a class="stance-${x.stance}${thin ? " thin" : ""}" href="#${esc(id)}">${
+            STANCE_SHORT[x.stance]
+          }${thin ? ", thin" : ""}</a></td>`;
+        }
+        return glanceCell(
+          x.result.facts.length,
+          id,
+          "Nothing found",
+          `${issue}, ${d.candidate.name}`,
+        );
+      },
+      false,
+      scopeMark(r.office?.issues[i]),
+    )
   );
   const sections = SECTIONS.map((s) =>
     row(s.title, (d) => {
@@ -1345,6 +1442,11 @@ function glanceHtml(r: RaceDossier, anchors: readonly string[]): string {
   }">The research behind each</th></tr>${evidence.join("")}</tbody></table></div></section>`;
 }
 
+/** The office's mark under an issue's name in the grid: one per row, the same for everyone. */
+function scopeMark(x: IssueScope | undefined): string {
+  return x ? `<span class="scope-mark scope-${x.scope}">${esc(SCOPE_LABEL[x.scope])}</span>` : "";
+}
+
 /** A bar that stays at the top while reading, to move between candidates in ballot order. */
 function jumpHtml(
   r: RaceDossier,
@@ -1355,6 +1457,7 @@ function jumpHtml(
   if (r.candidates.length < 2) return "";
   const links = [
     `<a href="#glance">Overview</a>`,
+    r.office ? `<a href="#office">Office</a>` : "",
     ...r.candidates.map((d, i) => `<a href="#${anchors[i]}">${esc(d.candidate.name)}</a>`),
     shared ? `<a href="#shared">Shared</a>` : "",
     mine ? `<a href="#mine">Your notes</a>` : "",
@@ -1658,6 +1761,16 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .grid td.none { color: var(--muted); font-size: .78rem; padding: 8px 4px; }
 .grid td.ev-cell { padding: 8px 4px; font-variant-numeric: tabular-nums; }
 .grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }
+/* Office scope: whether the office has a say in an issue. Plain text and a dotted rule: never a stance color, never a chip. */
+.scope { margin: 4px 0; padding: 2px 10px; border-left: 3px dotted var(--line-strong); font-size: .9rem; color: var(--fg); }
+.scope-unclear { color: var(--muted); }
+.scope .basis { color: var(--muted); }
+.scopes { list-style: none; padding: 0; margin: 8px 0; }
+.scopes li { margin: 0 0 10px; }
+.scopes .meta { padding-left: 13px; }
+.scope-mark { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+.office { margin: 28px 0 8px; }
+.office .sub { margin: 4px 0 10px; font-size: .9rem; }
 .inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
 .inc-mark.cov-fail { color: var(--bad); font-weight: 600; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1857,6 +1970,7 @@ ${inc ? `<p class="note">${esc(inc)}</p>` : ""}
 ${empty}
 <ul class="cards">${r.candidates.map((d, i) => overviewCard(d, anchors[i])).join("")}</ul>
 ${glance}
+${officeHtml(r.office)}
 ${jumpHtml(r, anchors, showShared, hasMine(extra.mine))}
 
 ${
@@ -1879,6 +1993,7 @@ ${
             links,
           }
           : undefined,
+        r.office?.issues,
       )
     ).join("")
   }

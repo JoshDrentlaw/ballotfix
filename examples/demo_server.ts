@@ -14,6 +14,7 @@ import {
   sampleContextWriter,
   sampleFinanceResearcher,
   sampleMerger,
+  sampleOfficeResearcher,
   samplePort,
 } from "./sample_data.ts";
 
@@ -23,6 +24,7 @@ const jobs = new JobRunner(store, () => samplePort(3000), {
   makeMerger: () => sampleMerger(1500),
   makeContextWriter: () => sampleContextWriter(1500),
   makeFinanceResearcher: () => sampleFinanceResearcher(1500),
+  makeOfficeResearcher: () => sampleOfficeResearcher(1500),
 });
 const ballots = new BallotJobs(ballotStore, () => sampleBallotReader(3000));
 const port = Number(Deno.env.get("PORT") ?? "8788");

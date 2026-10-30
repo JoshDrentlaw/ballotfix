@@ -212,6 +212,23 @@ show it. A found quote shows the page has those words, not that the statement re
   `contributed_to` relation with the filing's words as detail and its page in `relation_citations`;
   a measure's two sides are `side` entities its case for/against are also about;
   `KnowledgeBase.sharedBetween` answers what two entities share.
+- Office powers (roadmap item 8, `src/office.ts`): after the other steps, races only, `JobRunner`
+  looks up what the race's office can do (`OfficeResearcher.findOfficePowers`: `LOOKUP_EFFORT`,
+  `BALLOTFIX_OFFICE_MODEL` or `DEFAULT_OFFICE_MODEL`, "off" skips it; CLI `--no-powers`), with
+  searches and fetches counted across continuations (`OFFICE_MAX_SEARCHES`/`FETCHES` +
+  `OFFICE_MAX_CONTINUATIONS`). Nothing about the candidates is sent. Its fixed sections
+  (`OFFICE_SECTIONS`: what it decides, budget, seats, term) get the same provenance and quote check
+  as a dossier (`assembleSections`), without the name check (a state law rightly never names the
+  place). One lookup per office: `RunStore.knownOffice` reuses the newest verified, unfailed lookup
+  from a finished race whose `officeKey` matches (state + jurisdiction + office with any district,
+  seat, or area number left out) and whose lookup (`looked_up`) is under `OFFICE_REUSE_DAYS` old
+  (`reused_from`, said on the page). Then each of the race's issues is marked inside, partly,
+  outside, or unclear by a call without web tools that sees only the verified facts
+  (`markIssueScopes`); a mark other than unclear stands only on a cited verified fact that isn't
+  unsourced (`checkScopes`), and an issue worded as a reused lookup's keeps its mark without a call.
+  The result is `RaceDossier.office`, once per race, the same for every candidate: never a stance,
+  never combined with one. A failed lookup is recorded (`error`) and never reused; a failed marking
+  call keeps the powers (`scope_error`). The graph doesn't hold it yet.
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections
@@ -260,18 +277,21 @@ show it. A found quote shows the page has those words, not that the statement re
   half-green rule), quote check (`.chk` chips: tinted and borderless, `--chk`, with `--chk-flag` for
   a quote not found and the "page doesn't mention" flag; `seen` is plain muted text), job status
   (`--ok` neutral, `--bad` amber), notices (`.banner.info` for the page's standing explanations,
-  plain `.banner` warn colors only for something to act on). Radii are `--r`/`--r-lg`; `--sticky` is
-  the jump bar's height, for `scroll-margin-top`.
+  plain `.banner` warn colors only for something to act on), office scope (`.scope`: plain text and
+  a dotted rule, never a stance color or a chip). Radii are `--r`/`--r-lg`; `--sticky` is the jump
+  bar's height, for `scroll-margin-top`.
 - Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
 - A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
   candidates across in ballot order, each cell "Found" or "Nothing found" or a stance, linking to
   `sectionAnchor(candidateAnchor, section)`; never a fact count, which mostly measures press
-  attention), then a sticky jump bar (`jumpHtml`) over the dossiers. The grid ends with "The
-  research behind each" (`evidenceOf`): searches and pages opened (the dossier's `effort`, "Not
-  recorded" on runs saved before it), outlets cited, primary records of facts kept, and the years
-  its sources are dated. Every dossier and measure page has the same line under its name
-  (`evidenceLine`), a failed one included: research errors carry their counts (`failureEffort`).
-  Counts of effort and sources, never a score, never totaled across candidates.
+  attention), then "What this office can do" (`officeHtml`: each issue's scope mark with what it
+  cites, the office's sections collapsed; each issue row in the grid and each dossier's issue carry
+  the same mark, `scopeMark`/`scopeLine`), then a sticky jump bar (`jumpHtml`) over the dossiers.
+  The grid ends with "The research behind each" (`evidenceOf`): searches and pages opened (the
+  dossier's `effort`, "Not recorded" on runs saved before it), outlets cited, primary records of
+  facts kept, and the years its sources are dated. Every dossier and measure page has the same line
+  under its name (`evidenceLine`), a failed one included: research errors carry their counts
+  (`failureEffort`). Counts of effort and sources, never a score, never totaled across candidates.
 - Shared connections (race, measure, and ballot) say each subject keeps at most `per_subject`
   contributions, so no overlap found means little.
 - Long pages stay navigable without script: each dossier's name (`.dossier-name`) is sticky under
