@@ -5,12 +5,14 @@
 import { contextForRace } from "../src/context.ts";
 import { financeForRace } from "../src/finance.ts";
 import { mergeRace } from "../src/merge.ts";
+import { officeForRace } from "../src/office.ts";
 import { runRace } from "../src/race.ts";
 import { renderRace } from "../src/render.ts";
 import {
   sampleContextWriter,
   sampleFinanceResearcher,
   sampleMerger,
+  sampleOfficeResearcher,
   samplePort,
 } from "./sample_data.ts";
 
@@ -20,6 +22,7 @@ const race = await runRace(
 );
 const { dossier: merged } = await mergeRace(race, sampleMerger());
 const { dossier: noted } = await contextForRace(merged, sampleContextWriter());
-const { dossier } = await financeForRace(noted, sampleFinanceResearcher());
+const { dossier: funded } = await financeForRace(noted, sampleFinanceResearcher());
+const { dossier } = await officeForRace(funded, sampleOfficeResearcher());
 await Deno.writeTextFile(new URL("./sample.html", import.meta.url), renderRace(dossier));
 console.log("Wrote examples/sample.html");

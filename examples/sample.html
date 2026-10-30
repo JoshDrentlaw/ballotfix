@@ -289,6 +289,16 @@ table.grid { border-collapse: collapse; width: 100%; font-size: .88rem; line-hei
 .grid td.none { color: var(--muted); font-size: .78rem; padding: 8px 4px; }
 .grid td.ev-cell { padding: 8px 4px; font-variant-numeric: tabular-nums; }
 .grid tr.group th { background: var(--tint); text-transform: uppercase; font-size: .72rem; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 10px; }
+/* Office scope: whether the office has a say in an issue. Plain text and a dotted rule: never a stance color, never a chip. */
+.scope { margin: 4px 0; padding: 2px 10px; border-left: 3px dotted var(--line-strong); font-size: .9rem; color: var(--fg); }
+.scope-unclear { color: var(--muted); }
+.scope .basis { color: var(--muted); }
+.scopes { list-style: none; padding: 0; margin: 8px 0; }
+.scopes li { margin: 0 0 10px; }
+.scopes .meta { padding-left: 13px; }
+.scope-mark { display: block; font-size: .72rem; color: var(--muted); font-weight: 400; }
+.office { margin: 28px 0 8px; }
+.office .sub { margin: 4px 0 10px; font-size: .9rem; }
 .inc-mark { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
 .inc-mark.cov-fail { color: var(--bad); font-weight: 600; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -382,7 +392,32 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 <section class="glance" id="glance"><h2>At a glance</h2>
 <p class="sub">Whether this run found sourced facts in each section, as links into each dossier and the research behind each one. What was found mostly reflects how much has been written about someone, not whether they are good or bad.</p>
 <div class="grid-wrap"><table class="grid"><thead><tr><td></td><th scope="col"><a href="#sample-candidate-a">Sample Candidate A</a></th><th scope="col"><a href="#sample-candidate-b">Sample Candidate B</a><span class="inc-mark">Incumbent</span></th><th scope="col"><a href="#sample-candidate-c">Sample Candidate C</a><span class="inc-mark cov-fail">Research failed</span></th></tr></thead><tbody><tr><th scope="row">Who they are</th><td><a href="#sample-candidate-a--background">Found<span class="vh">: Who they are, Sample Candidate A</span></a></td><td><a href="#sample-candidate-b--background">Found<span class="vh">: Who they are, Sample Candidate B</span></a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Record in this office</th><td class="none">n/a</td><td class="none">Nothing found</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Accomplishments</th><td class="none">Nothing found</td><td class="none">Nothing found</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Criticisms and controversies</th><td><a href="#sample-candidate-a--criticisms">Found<span class="vh">: Criticisms and controversies, Sample Candidate A</span></a></td><td><a href="#sample-candidate-b--criticisms">Found<span class="vh">: Criticisms and controversies, Sample Candidate B</span></a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Money and interests</th><td class="none">Nothing found</td><td class="none">Nothing found</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Endorsements and affiliations</th><td><a href="#sample-candidate-a--endorsements">Found<span class="vh">: Endorsements and affiliations, Sample Candidate A</span></a></td><td><a href="#sample-candidate-b--endorsements">Found<span class="vh">: Endorsements and affiliations, Sample Candidate B</span></a></td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Stated platform</th><td class="none">Nothing found</td><td class="none">Nothing found</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Community impact and local coverage</th><td class="none">Nothing found</td><td class="none">Nothing found</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Contributions on file</th><td><a href="#sample-candidate-a--filed">Found<span class="vh">: contributions on file, Sample Candidate A</span></a></td><td><a href="#sample-candidate-b--filed">Found<span class="vh">: contributions on file, Sample Candidate B</span></a></td><td class="none">None found</td></tr><tr class="group"><th scope="rowgroup" colspan="4">The research behind each</th></tr><tr><th scope="row">Searches</th><td class="ev-cell">11</td><td class="ev-cell">16</td><td class="ev-cell">19</td></tr><tr><th scope="row">Pages opened</th><td class="ev-cell">4</td><td class="ev-cell">7</td><td class="ev-cell">8</td></tr><tr><th scope="row">Outlets cited</th><td class="ev-cell">3</td><td class="ev-cell">3</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Primary records</th><td class="ev-cell">1 of 4</td><td class="ev-cell">1 of 4</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr><tr><th scope="row">Sources dated</th><td class="ev-cell">2021–2026</td><td class="ev-cell">2021–2026</td><td class="none"><span aria-hidden="true">–</span><span class="vh">research failed</span></td></tr></tbody></table></div></section>
-<nav class="jump" aria-label="On this page"><a href="#glance">Overview</a><a href="#sample-candidate-a">Sample Candidate A</a><a href="#sample-candidate-b">Sample Candidate B</a><a href="#sample-candidate-c">Sample Candidate C</a><a href="#shared">Shared</a></nav>
+<section class="office" id="office"><h2>What this office can do</h2>
+<p class="sub">About the office, not anyone running for it, and the same for every candidate. Looked up in this run: 3 searches and 2 pages opened.</p>
+
+<details class="office-facts" open><summary>Its powers, budget, seats, and term (4 sourced facts)</summary><section class="sec"><h4>What the office decides</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+  <p>Placeholder: the council adopts the budget, sets land use and zoning, and appoints the city manager; Example City schools are run by a separate district board.</p>
+  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall adopt the annual budget and shall appoint the City Manager</blockquote></details>
+</li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Budget</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+  <p>Placeholder: the adopted general fund budget for fiscal year 2025-26 is $250 million.</p>
+  <p class="meta"><a href="https://example.org/budget" rel="noopener noreferrer nofollow" target="_blank">Example City Adopted Budget</a> · author not stated · 2025</p>
+  <details class="quote"><summary>Quote from the page</summary><blockquote>General Fund adopted budget for fiscal year 2025-26 totals $250 million</blockquote></details>
+</li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Seats and how they&#39;re filled</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+  <p>Placeholder: the council has five seats, four elected by district and a mayor elected at large.</p>
+  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall consist of four members elected by district and the Mayor</blockquote></details>
+</li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Term and limits</h4><ul class="facts"><li class="fact">
+  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+  <p>Placeholder: terms are four years, with a limit of three terms.</p>
+  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <details class="quote"><summary>Quote from the page</summary><blockquote>Members shall serve terms of four years and no more than three terms</blockquote></details>
+</li></ul><p class="searched">Looked at: city charter; adopted budget</p></section></details>
+</section>
+<nav class="jump" aria-label="On this page"><a href="#glance">Overview</a><a href="#office">Office</a><a href="#sample-candidate-a">Sample Candidate A</a><a href="#sample-candidate-b">Sample Candidate B</a><a href="#sample-candidate-c">Sample Candidate C</a><a href="#shared">Shared</a></nav>
 
 <article class="dossier" id="sample-candidate-a">
   <h2 class="dossier-name">Sample Candidate A</h2>

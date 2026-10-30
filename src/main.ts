@@ -11,6 +11,7 @@ import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
 import { contextForRace, raceContextFailed } from "./context.ts";
 import { financeForRace, raceFinanceFailed } from "./finance.ts";
 import { mergeRace } from "./merge.ts";
+import { officeForRace, raceOfficeFailed } from "./office.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
 import { parsePriorities } from "./dossier.ts";
@@ -21,14 +22,16 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
-                    [--no-merge] [--no-context] [--no-finance]
+                    [--no-merge] [--no-context] [--no-finance] [--no-powers]
   deno task dossier --render <saved.json> [--out out]
 
 Writes <out>/<city>-<office>-<election>.json and .html. After research, one low-effort call
 merges facts that several sources report into one (--no-merge skips it), and one more, with a
 few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
 A last capped call reads contributions off the candidates' campaign finance filings, so the page
-can show who they share as contributors and endorsers (--no-finance skips it).
+can show who they share as contributors and endorsers (--no-finance skips it). One more capped
+lookup says what the office can decide, its budget, seats, and term, and marks each of your
+issues inside or outside its say (--no-powers skips it).
 Needs ANTHROPIC_API_KEY in the environment or in .env (not needed for --render).`;
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -66,12 +69,13 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help", "merge", "context", "finance"],
-    negatable: ["merge", "context", "finance"],
+    boolean: ["help", "merge", "context", "finance", "powers"],
+    negatable: ["merge", "context", "finance", "powers"],
     default: {
       merge: true,
       context: true,
       finance: true,
+      powers: true,
       state: "CA",
       office: "Mayor",
       election: "2026-11-03",
@@ -171,6 +175,18 @@ async function main(): Promise<number> {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`Campaign finance lookup failed; the page says so for each candidate. ${msg}`);
       race = raceFinanceFailed(race, msg);
+    }
+  }
+
+  if (args.powers) {
+    try {
+      const o = await officeForRace(race, researcher);
+      race = o.dossier;
+      console.error(`Looked up the office: ${o.shown} verified fact(s).`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Office lookup failed; the page says so. ${msg}`);
+      race = raceOfficeFailed(race, msg);
     }
   }
 

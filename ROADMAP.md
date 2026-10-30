@@ -265,7 +265,38 @@ Also build the scoring half of an answer-key check (precision on a random sample
 recall against a list the owner writes for a past race). The owner supplies the key; don't invent
 one.
 
-## 8. Office powers
+## 8. Office powers — done
+
+Branch `feature/bold-babbage-ulso2g`. Decisions made in the PR:
+
+- Two calls, not one: the lookup (web tools, capped like the context call: 6 searches, 4 fetches, 3
+  continuations) is cached per office, and the voter's issues are marked by a separate call with no
+  web tools that sees only the lookup's verified facts. So a reused lookup still gets this run's
+  issues marked, and marks rest on the same facts whether the lookup is fresh or reused. An issue
+  worded as one the reused lookup already marked keeps that mark with no call.
+- "Cached" is reuse from finished runs, as context notes are (`RunStore.knownOffice`), not a new
+  table: the result lives on the race (`RaceDossier.office`), so downloads carry it. The key is the
+  state, the jurisdiction, and the office with any district, seat, trustee area, or office number
+  left out, so every council district shares one lookup. Reused only when it didn't fail, found at
+  least one verified fact, and is under a year old (`OFFICE_REUSE_DAYS`; budgets change yearly). A
+  rerun of the same race reuses it too.
+- Four marks: inside, partly (shares the say or decides part of it), outside, unclear. A mark other
+  than unclear needs a cited verified fact that isn't unsourced; anything else is unclear. The mark
+  is about the issue as a topic, never the voter's view, and is styled apart from stances (plain
+  text and a dotted rule).
+- Shown once per race ("What this office can do", after the grid), under each issue's name in the
+  grid, and under each issue in every dossier, in the same words. Races only: measures have no
+  office.
+
+Follow-ups:
+
+- Not yet run against the live API. Check that the lookup finds the charter or code rather than a
+  generic explainer, and how often marks come back unclear.
+- The knowledge graph doesn't hold office facts yet, so the office's entity page doesn't show them.
+- Retention races look up the judge's office the same way; a court's "budget" is often not on
+  record, which reads as a gap.
+
+Original plan:
 
 One cached model call per office type (keyed by state + jurisdiction + office): what the office
 decides, budget, seats, term, with sources and the provenance check. Each voter issue is marked

@@ -7,6 +7,7 @@
 
 import { notesToReuse } from "../context.ts";
 import { scopeKey } from "../knowledge.ts";
+import { type KnownOffice, officeKey, reusable } from "../office.ts";
 import { Db } from "./db.ts";
 import { KnowledgeBase } from "./kb.ts";
 import type {
@@ -217,6 +218,26 @@ export class RunStore extends RecordTable<RunRecord> {
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .flatMap((r) => notesToReuse(r.measure_result?.context ?? r.race?.context, r))
       .filter((n) => !own.has(n.reused_from!.run));
+  }
+
+  /**
+   * The newest reusable office lookup (src/office.ts `reusable`) a finished race
+   * other than `except` holds for the same office in the same place, keyed as
+   * `officeKey` compares them. Null when none is recent enough to reuse.
+   */
+  knownOffice(query: RaceQuery, except: string, now: Date): KnownOffice | null {
+    const key = officeKey(query.state, query.city, query.office);
+    const found = this.withStatus("done")
+      .filter((r) =>
+        r.id !== except && r.race?.office &&
+        officeKey(r.query.state, r.query.city, r.race.office.office) === key
+      )
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map((r) => reusable(r.race!.office, r, now))
+      .filter((k): k is KnownOffice => k !== null)
+      // Newest lookup, not newest run: a run that reused an old lookup shouldn't hide a fresher one.
+      .sort((a, b) => b.from.looked_up.localeCompare(a.from.looked_up));
+    return found[0] ?? null;
   }
 
   /**

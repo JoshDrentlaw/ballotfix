@@ -130,6 +130,41 @@ export type MeasureSectionId = typeof MEASURE_SECTIONS[number]["id"];
 export const MEASURE_SECTION_IDS: readonly MeasureSectionId[] = MEASURE_SECTIONS.map((s) => s.id);
 
 /**
+ * What the office-powers lookup reports on the office a race fills, once per
+ * office and the same for every candidate in it (src/office.ts).
+ */
+export const OFFICE_SECTIONS = [
+  {
+    id: "decides",
+    title: "What the office decides",
+    ask:
+      "What this office has the power to decide or do in this jurisdiction: the matters it votes on or acts on (budgets, land use and zoning, taxes and fees, police or other departments, contracts, appointments, rulings for a court), and anything notable it does not control that voters often assume it does (for example, school policy for a city council, or state law for a county board). Prefer the charter, municipal code, state law, or the body's own official page.",
+  },
+  {
+    id: "budget",
+    title: "Budget",
+    ask:
+      "The size of the budget the office or its body adopts or oversees, as the latest adopted budget states it, with its fiscal year. Say it as the source says it; do not compute or round.",
+  },
+  {
+    id: "seats",
+    title: "Seats and how they're filled",
+    ask:
+      "How many seats the body has, whether seats are elected at large or by district, whether the office is partisan or nonpartisan, and how a vacancy is filled.",
+  },
+  {
+    id: "term",
+    title: "Term and limits",
+    ask:
+      "The length of a term, any term limit, and whether the post is full or part time and paid, as an official source states it.",
+  },
+] as const satisfies readonly SectionSpec[];
+
+export type OfficeSectionId = typeof OFFICE_SECTIONS[number]["id"];
+
+export const OFFICE_SECTION_IDS: readonly OfficeSectionId[] = OFFICE_SECTIONS.map((s) => s.id);
+
+/**
  * Issues the voter said matter most: a topic ("housing") or a stated view
  * ("protect abortion access"). Optional, and the same list applies to every
  * candidate in a race, so no one is checked against more than another. Each

@@ -9,6 +9,7 @@ import type {
   ClaimMerger,
   ContextWriter,
   FinanceResearcher,
+  OfficeResearcher,
   RawCandidateResearch,
   RawContribution,
   RawFinanceSubject,
@@ -485,6 +486,95 @@ export function sampleFinanceResearcher(delayMs = 0): FinanceResearcher {
         retrieved_urls: [FILING_A, FILING_B, FILING_YES, FILING_NO],
         model: "layout-sample",
       };
+    },
+  };
+}
+
+const CHARTER = "https://example.org/charter";
+const BUDGET = "https://example.org/budget";
+
+function officeFact(statement: string, url: string, quote: string) {
+  return {
+    statement: `Placeholder: ${statement}`,
+    source_name: url === CHARTER ? "Example City Charter" : "Example City Adopted Budget",
+    source_url: url,
+    author: null,
+    published: "2025",
+    event_date: "",
+    evidence_type: "primary_record",
+    quote,
+  };
+}
+
+/** Placeholder office powers: two pages, both "opened", one fact per section. */
+export function sampleOfficeResearcher(delayMs = 0): OfficeResearcher {
+  const wait = () => new Promise((r) => setTimeout(r, delayMs));
+  return {
+    findOfficePowers: async () => {
+      await wait();
+      const section = (fact: ReturnType<typeof officeFact>) => ({
+        facts: [fact],
+        searched: ["city charter", "adopted budget"],
+        gap_note: null,
+      });
+      return {
+        sections: {
+          decides: section(officeFact(
+            "the council adopts the budget, sets land use and zoning, and appoints the city manager; Example City schools are run by a separate district board.",
+            CHARTER,
+            "The Council shall adopt the annual budget and shall appoint the City Manager",
+          )),
+          budget: section(officeFact(
+            "the adopted general fund budget for fiscal year 2025-26 is $250 million.",
+            BUDGET,
+            "General Fund adopted budget for fiscal year 2025-26 totals $250 million",
+          )),
+          seats: section(officeFact(
+            "the council has five seats, four elected by district and a mayor elected at large.",
+            CHARTER,
+            "The Council shall consist of four members elected by district and the Mayor",
+          )),
+          term: section(officeFact(
+            "terms are four years, with a limit of three terms.",
+            CHARTER,
+            "Members shall serve terms of four years and no more than three terms",
+          )),
+        },
+        gaps: [],
+        retrieved_urls: [CHARTER, BUDGET],
+        opened_pages: [
+          {
+            url: CHARTER,
+            text:
+              "Example City Charter. The Council shall adopt the annual budget and shall appoint the City Manager. The Council shall consist of four members elected by district and the Mayor. Members shall serve terms of four years and no more than three terms.",
+          },
+          {
+            url: BUDGET,
+            text:
+              "Example City budget. General Fund adopted budget for fiscal year 2025-26 totals $250 million.",
+          },
+        ],
+        model: "layout-sample",
+        effort: { searches: 3, fetches: 2 },
+      };
+    },
+    markIssueScopes: async ({ issues }) => {
+      await wait();
+      return issues.map((x, i) =>
+        i === 0
+          ? {
+            id: x.id,
+            scope: "inside",
+            basis: "Placeholder: the charter gives the council the budget and land use.",
+            fact_ids: ["f1"],
+          }
+          : {
+            id: x.id,
+            scope: "outside",
+            basis: "Placeholder: a separate district board runs the schools.",
+            fact_ids: ["f1"],
+          }
+      );
     },
   };
 }

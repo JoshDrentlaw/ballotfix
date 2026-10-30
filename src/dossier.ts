@@ -487,6 +487,37 @@ export function pendingCandidate(
   };
 }
 
+/**
+ * Any fixed list of sections through the same provenance and quote check as a
+ * dossier's: for the office-powers step (src/office.ts), whose facts are
+ * about an office, so the name check looks for `subject` (the place).
+ */
+export function assembleSections<Id extends string>(
+  ids: readonly Id[],
+  raw: Record<string, RawSection | undefined>,
+  urls: readonly string[],
+  pages: readonly OpenedPage[] | undefined,
+  subject: Subject,
+): { sections: Record<Id, SectionResult>; unverified: Fact[] } {
+  const seen = retrieved(urls, pages, subject);
+  const unverified: Fact[] = [];
+  const sections = {} as Record<Id, SectionResult>;
+  for (const id of ids) {
+    sections[id] = assembleSection(raw[id], seen, unverified, NOTHING_FOUND);
+  }
+  return { sections, unverified };
+}
+
+/** Every section carrying the same note: for a lookup that failed. */
+export function emptySections<Id extends string>(
+  ids: readonly Id[],
+  note: string,
+): Record<Id, SectionResult> {
+  const sections = {} as Record<Id, SectionResult>;
+  for (const id of ids) sections[id] = emptySection(note);
+  return sections;
+}
+
 /** Sections with at least one verified fact. Drives the overview's coverage line. */
 export function coveredSections(d: CandidateDossier): number {
   // Runs saved before a section existed don't have it; they count it as not covered.
