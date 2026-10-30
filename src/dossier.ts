@@ -21,6 +21,7 @@ import {
   SECTION_IDS,
   SECTIONS,
 } from "./template.ts";
+import { nameKey } from "./knowledge.ts";
 import {
   type BallotCandidate,
   type BallotListing,
@@ -46,6 +47,7 @@ import {
   type SectionResult,
   type Stance,
   STANCES,
+  type StanceStrength,
   type VoteMeanings,
 } from "./types.ts";
 
@@ -294,10 +296,48 @@ function retrievedSet(urls: readonly string[]): Set<string> {
   return new Set(urls.map(normalizeUrl).filter((u): u is string => u !== null));
 }
 
+/** What a stance on one issue rests on, counted the same way for everyone. */
+export interface StanceSupport {
+  /** Verified facts on the issue, unsourced ones aside, merged sources included. */
+  facts: number;
+  /** Of those, the ones whose quote was found on the page they cite. */
+  quoted: number;
+  /** Distinct outlets among the quoted ones. */
+  outlets: number;
+  /** Quoted primary records. */
+  primary: number;
+}
+
+/**
+ * Counts the facts under one issue toward the stance threshold. Only facts
+ * at the `quoted` level count toward `quoted`, `outlets`, and `primary`; a
+ * merged fact's other sources count as their own (src/merge.ts keeps them at
+ * one level, one per outlet), so the count reads the same before and after
+ * the merge step.
+ */
+export function stanceSupport(r: SectionResult): StanceSupport {
+  const all = r.facts.flatMap((f) => [f, ...(f.also ?? [])])
+    .filter((f) => f.evidence_type !== "unsourced");
+  const quoted = all.filter((f) => f.check?.level === "quoted");
+  return {
+    facts: all.length,
+    quoted: quoted.length,
+    outlets: new Set(quoted.map((f) => nameKey(f.source_name))).size,
+    primary: quoted.filter((f) => f.evidence_type === "primary_record").length,
+  };
+}
+
+/** A stance stands in full on one quoted primary record, or quoted facts from two outlets. */
+export function strengthOf(s: StanceSupport): StanceStrength {
+  return s.primary >= 1 || s.outlets >= 2 ? "full" : "thin";
+}
+
 /**
  * The voter's issues, each as its own section, in their order. A stance
  * other than "no_position" stands only on verified facts: with none, it is
- * "unclear", whatever the researcher said.
+ * "unclear", whatever the researcher said. "conflicts", "aligns", and
+ * "mixed" are full only past the threshold (`strengthOf`); below it they
+ * are kept as the researcher's call, marked thin.
  */
 function assemblePriorities(
   issues: readonly string[],
@@ -328,7 +368,10 @@ function assemblePriorities(
         }(Rests only on statements, endorsements, or advocacy, not records or reporting.)`;
       }
     }
-    return { issue, result, stance, stance_basis };
+    const strength = stance === "conflicts" || stance === "aligns" || stance === "mixed"
+      ? { stance_strength: strengthOf(stanceSupport(result)) }
+      : {};
+    return { issue, result, stance, stance_basis, ...strength };
   });
 }
 

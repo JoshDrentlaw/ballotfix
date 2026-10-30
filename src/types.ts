@@ -252,7 +252,16 @@ export interface PriorityResult {
   stance?: Stance;
   /** One sentence on what the stance rests on, in the researcher's words. */
   stance_basis?: string | null;
+  /**
+   * Set on every "conflicts", "aligns", or "mixed" stance: "full" when a
+   * quoted primary record or quoted facts from two outlets back it, else
+   * "thin" (`stanceSupport` in src/dossier.ts). Absent on runs saved before
+   * the threshold existed, whose stances count as full.
+   */
+  stance_strength?: StanceStrength;
 }
+
+export type StanceStrength = "full" | "thin";
 
 /** The researcher's stance call for one issue, before validation. */
 export interface RawStance {
