@@ -892,6 +892,10 @@ Deno.test("research returns the pages it opened, a PDF without text, and asks ev
   assertEquals(factSchema.properties.quote.type, "string");
   assert(factSchema.required.includes("quote"));
   assertStringIncludes(req.system, "- quote: one short passage");
+  // The event's date, apart from the page's, under the same constraint.
+  assertEquals(factSchema.properties.event_date.type, "string");
+  assert(factSchema.required.includes("event_date"));
+  assertStringIncludes(req.system, "- event_date: when what the statement describes happened");
 
   // The measure's facts and its YES / NO meanings take the same field and rule.
   const m = stubClient([{
@@ -923,7 +927,12 @@ Deno.test("research returns the pages it opened, a PDF without text, and asks ev
     };
   };
   assert(mreq.output_config.format.schema.properties.vote_means.items.required.includes("quote"));
+  // What a vote would do is not an event: no event date is asked for it.
+  assert(
+    !mreq.output_config.format.schema.properties.vote_means.items.required.includes("event_date"),
+  );
   assertStringIncludes(mreq.system, "- quote: one short passage");
+  assertStringIncludes(mreq.system, "- event_date: when what the statement describes happened");
 });
 
 Deno.test("research schemas stay within the API's 16 union-typed parameters", async () => {

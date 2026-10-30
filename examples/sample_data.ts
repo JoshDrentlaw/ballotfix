@@ -39,6 +39,7 @@ export const withFacts: RawCandidateResearch = {
         source_url: "https://example.org/mayor",
         author: null,
         published: "2024",
+        event_date: "",
         evidence_type: "primary_record",
         quote: "served on the City Council from 2006 to 2010 and was elected mayor",
       }],
@@ -53,6 +54,7 @@ export const withFacts: RawCandidateResearch = {
         source_url: "https://example.org/news/endorsements",
         author: null,
         published: "2026-09-02",
+        event_date: "2026-09-01",
         evidence_type: "opinion",
         quote: "Example Builders PAC and Local 99 announced their endorsements Tuesday",
       }],
@@ -67,6 +69,7 @@ export const withFacts: RawCandidateResearch = {
         source_url: "https://example.org/news/1",
         author: "A. Reporter",
         published: "2021-07-15",
+        event_date: "2021-07-14",
         evidence_type: "reported",
       }, {
         statement:
@@ -75,6 +78,7 @@ export const withFacts: RawCandidateResearch = {
         source_url: "https://example.org/daily/2",
         author: null,
         published: "2021-07-16",
+        event_date: "2021-07",
         evidence_type: "reported",
       }, {
         statement: "Placeholder: a claim whose cited page was never opened.",

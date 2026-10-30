@@ -627,3 +627,88 @@ Deno.test("a measure page shows the research behind it, a failed one too", async
     "Research behind this: searches and pages opened not recorded",
   );
 });
+
+Deno.test("facts in a section are ordered by when they happened, with the section's range", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const at = (n: string) => `https://news.example/${n}`;
+  const f = (statement: string, url: string, published: string | null, event_date: string) => ({
+    statement,
+    source_name: "News",
+    source_url: url,
+    author: null,
+    published,
+    event_date,
+    evidence_type: "reported",
+  });
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        record: {
+          facts: [
+            f("Older vote.", at("a"), "2026-01-10", "2021-03"),
+            f("Undated, published 2025.", at("c"), "2025", ""),
+            f("Newer vote.", at("b"), "2024-08-06", "2024-08-05"),
+            f("Undated, no date at all.", at("d"), null, "August 2024"),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: ["a", "b", "c", "d"].map(at),
+    }),
+  });
+  const r = await runRace(QUERY, port);
+  const html = renderRace(r);
+  const order = ["Newer vote.", "Older vote.", "Undated, published 2025.", "Undated, no date"];
+  const where = order.map((s) => html.indexOf(s));
+  assert(where.every((n, i) => n > 0 && (i === 0 || n > where[i - 1])), `order ${where}`);
+  assertStringIncludes(
+    html,
+    "Events Mar 2021 to Aug 5, 2024; 2 facts without an event date listed last.",
+  );
+  assertStringIncludes(html, "Happened Aug 5, 2024");
+  assert(!html.includes("before event dates were recorded"));
+
+  // A run saved before event dates is ordered by publication, and says so.
+  const old = structuredClone(r);
+  for (const fact of old.candidates[0].sections.record.facts) delete fact.event_date;
+  const before = renderRace(old);
+  assertStringIncludes(before, "before event dates were recorded");
+  assertStringIncludes(before, "Sources published Aug 6, 2024 to Jan 10, 2026.");
+  assert(!before.includes("Happened"));
+  const was = ["Older vote.", "Undated, published 2025.", "Newer vote.", "Undated, no date"]
+    .map((s) => before.indexOf(s));
+  assert(was.every((n, i) => n > 0 && (i === 0 || n > was[i - 1])), `order ${was}`);
+});
+
+Deno.test("a section's range ends with the period that ends last", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const at = (n: string) => `https://news.example/${n}`;
+  const f = (statement: string, url: string, event_date: string) => ({
+    statement,
+    source_name: "News",
+    source_url: url,
+    author: null,
+    published: null,
+    event_date,
+    evidence_type: "reported",
+  });
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        record: {
+          facts: [
+            f("A December vote.", at("a"), "2023-12"),
+            f("A March vote.", at("b"), "2024-03-01"),
+            f("A vote sometime in 2024.", at("c"), "2024"),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: ["a", "b", "c"].map(at),
+    }),
+  });
+  const html = renderRace(await runRace(QUERY, port));
+  assertStringIncludes(html, "Events Dec 2023 to 2024.");
+});

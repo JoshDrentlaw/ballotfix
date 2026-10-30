@@ -155,10 +155,10 @@ show it. A found quote shows the page has those words, not that the statement re
   `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or `DEFAULT_MERGE_MODEL`, "off" skips it) and
   saves again. The model only returns groups of ids; `merge.ts` keeps a group only if it is all
   verified facts in one section of one candidate or measure, with one evidence type and one
-  quote-check level, one fact per outlet. The earliest fact is kept in its own words and the rest go
-  on it as `also`; the page says "Reported by N sources" and the graph stores it as one claim with N
-  citations. A failed merge only logs: the run stays done, unmerged. The CLI does the same unless
-  `--no-merge`.
+  quote-check level, one fact per outlet, and event dates that agree (a year or month matches the
+  days inside it). The earliest fact is kept in its own words and the rest go on it as `also`; the
+  page says "Reported by N sources" and the graph stores it as one claim with N citations. A failed
+  merge only logs: the run stays done, unmerged. The CLI does the same unless `--no-merge`.
 - Context notes on names (step 3, `src/context.ts`): after the merge step, `JobRunner` makes one
   capped call per run (`ContextWriter.describeNames`: `LOOKUP_EFFORT` (medium),
   `BALLOTFIX_CONTEXT_MODEL` or `DEFAULT_CONTEXT_MODEL`, "off" skips it; CLI `--no-context`).
@@ -271,6 +271,10 @@ show it. A found quote shows the page has those words, not that the statement re
 - In-page ids for candidates come from `candidateAnchors` (never `slug(name)` directly): unique per
   page, readable when the name is, any script kept. `slug` stays ASCII for run ids and file names.
 - An empty section keeps its place in the template and says so, drawn compact (`.sec.empty`).
+- Facts in a section are ordered by when they happened (`byWhen`): newest event date first, facts
+  with none last, then by publication date. Never by importance. Each fact with an event date says
+  "Happened ..." before its source; a section of two or more says its range (`whenRange`). Runs
+  saved before event dates are ordered by publication date and the page says so.
 - A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
   words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are

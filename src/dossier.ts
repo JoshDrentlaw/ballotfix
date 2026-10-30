@@ -106,6 +106,23 @@ function cleanOrNull(s: unknown): string | null {
   return v ? v : null;
 }
 
+/** An ISO day, month, or year: the forms dates sort in as text. */
+export const ISO_DATE = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
+
+/**
+ * The event date as the research gave it, when it is an ISO day, month, or
+ * year, and not after today; anything else can't be ordered as something
+ * that happened, so it reads as unknown (null). A
+ * fact built now always has the field, so the page can tell a run with
+ * event dates from one saved before them.
+ */
+function eventDate(s: unknown): string | null {
+  const v = clean(s);
+  if (!ISO_DATE.test(v)) return null;
+  // A date after today is something scheduled, not something that happened.
+  return v > new Date().toISOString().slice(0, v.length) ? null : v;
+}
+
 /** Longest quote kept. The prompt asks for under 300 characters; a longer one is not kept, never cut. */
 export const MAX_QUOTE_LENGTH = 600;
 
@@ -120,6 +137,7 @@ function toFact(raw: RawFact): Fact | null {
     source_url,
     author: cleanOrNull(raw.author),
     published: cleanOrNull(raw.published),
+    event_date: eventDate(raw.event_date),
     evidence_type: toEvidenceType(clean(raw.evidence_type)),
     ...(quote && quote.length <= MAX_QUOTE_LENGTH ? { quote } : {}),
   };
@@ -484,7 +502,9 @@ function assembleVoteMeans(
   retrieved: Retrieved,
   unverified: Fact[],
 ): VoteMeanings {
-  const one = (rf: RawFact | undefined) => rf ? checkFact(rf, retrieved, unverified) : null;
+  // What a vote would do is not an event, so it never carries an event date.
+  const one = (rf: RawFact | undefined) =>
+    rf ? checkFact({ ...rf, event_date: null }, retrieved, unverified) : null;
   return { yes: one(raw?.yes), no: one(raw?.no) };
 }
 

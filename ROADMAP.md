@@ -185,7 +185,35 @@ Original plan:
 - "mixed" follows the same rule.
 - Update invariant 6 in CLAUDE.md (approved).
 
-## 6. Event dates
+## 6. Event dates — done
+
+Branch `feature/sweet-feynman-rq1q5m`. Decisions made in the PR:
+
+- `event_date` is a plain string in `FACT_SCHEMA` ("" when unknown; the union count is unchanged and
+  the test still counts). The prompt says it is when what the statement describes happened, not the
+  page's date, and to leave it empty for something ongoing. Only an ISO day, month, or year is kept
+  (anything else can't be ordered, so it reads as unknown). Facts built now always have the field
+  (null when unknown); absent means the run predates event dates.
+- Order is newest first: by event date, then facts without one by publication date, then as the
+  research gave them. Partial dates sort as text, so a day comes before the month it is in. The same
+  rule for every candidate and measure, and for the voter's issues; vote meanings aren't sorted.
+- Each fact with an event date says "Happened ..." before its source. A section with two or more
+  facts says "Events <from> to <to>" and how many have no event date; one fact's date is already on
+  it. A range inside one year or month is said once.
+- Older runs: ordered by publication date, each section says "Sources published ...", and the page's
+  banner says once that the run predates event dates.
+- Merge step: a group's known event dates must agree (a year or month matches the days inside it;
+  the date most of the group shares wins, so one outlier doesn't block the rest), so a merged fact
+  is one event. A merged fact without its own event date uses its other sources' most specific one.
+
+Follow-ups:
+
+- The knowledge graph doesn't store event dates yet, so entity pages still order by run. Add a
+  column (and bump `KNOWLEDGE_VERSION`) when entity pages need a timeline.
+- Not yet run against the live API: watch how often the model gives the publication date as the
+  event date.
+
+Original plan:
 
 `published` is the page's date, not the event's.
 
