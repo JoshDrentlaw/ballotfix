@@ -160,8 +160,58 @@ Deno.test("a committee is a candidate's only by first and last name, never again
   assert(!filerMatches(f("Yes on Measure W"), no, 2026));
   assert(!filerMatches(f("Yes on Measure WW"), yes, 2026));
   assert(!filerMatches(f("Yes on V, No on Measure W"), yes, 2026), "both sides");
-  assert(!filerMatches(f("Yes on V, No on Measure W"), no, 2026), "both sides");
+  assert(filerMatches(f("Yes on V, No on Measure W"), no, 2026), "said outright");
   assert(filerMatches(f("Yes on Prop. 50"), subject("Proposition 50", "support"), 2026));
+  // An outright "No on" decides, whatever other words the name holds.
+  assert(filerMatches(f("Taxpayers for Accountability, No on Measure W"), no, 2026));
+  assert(!filerMatches(f("Taxpayers for Accountability, No on Measure W"), yes, 2026));
+
+  // Another office in the name: a same-named person elsewhere on the ballot.
+  const council = "Member, City Council, District 2";
+  assert(!filerMatches(f("Jane Smith for School Board 2026"), jane, 2026, council));
+  assert(filerMatches(f("Jane Smith for Council 2026"), jane, 2026, council));
+  assert(filerMatches(f("Jane Smith 2026"), jane, 2026, council));
+  assert(filerMatches(f("Jane Smith for Supervisor"), jane, 2026, "Board of Supervisors"));
+  assert(!filerMatches(f("Jane Smith for District 4 Supervisor"), jane, 2026, council));
+
+  // A committee whose reports state another election is that election's.
+  const old = { id: "1", name: "Yes on Measure W", type: "BMC", elections: [2024] };
+  assert(!filerMatches(old, yes, 2026));
+  assert(filerMatches({ ...old, elections: [2024, 2026] }, yes, 2026));
+});
+
+Deno.test("an amended report's rows are kept once; a committee with none still counts", async () => {
+  const source = fakeSource({
+    2026: [
+      row({ tranid: "A1", filingid: "100" }),
+      row({ tranid: "A1", filingid: "300", tranamt1: 275 }),
+      row({ tranid: "A2", filingid: "100", trannamf: "Bo" }),
+    ],
+  });
+  const withFilers: NetFileSource = {
+    agencies: source.agencies,
+    transactions: async (a, y) => ({
+      ...await source.transactions(a, y),
+      filers: [
+        { id: "1001", name: "Jane Smith for Mayor 2026", type: "CTL", elections: [2026] },
+        { id: "2002", name: "Pat Lee for Mayor", type: "CTL", elections: [] },
+      ],
+    }),
+  };
+  const { dossier } = await financeForRace(
+    await race(),
+    new NetFileResearcher({ source: withFilers }),
+  );
+  const [jane, , pat] = dossier.finance!.subjects;
+  assertEquals(
+    jane.contributions.map((c) => [c.contributor, c.amount, c.filing]),
+    [
+      ["Ann Donor", "275", "Form 460, Schedule A, filing 300"],
+      ["Bo Donor", "250", "Form 460, Schedule A, filing 100"],
+    ],
+  );
+  assertEquals(pat.committees, ["Pat Lee for Mayor"]);
+  assertStringIncludes(pat.gap_note!, "list no itemized contributions");
 });
 
 Deno.test("rows come from the export as it states them, the larger share for everyone", async () => {

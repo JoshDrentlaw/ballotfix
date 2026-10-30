@@ -24,7 +24,7 @@
  *   was retrieved) and the filing (its id, and its image on NetFile).
  *   src/finance.ts checks every row as it does a model's.
  *
- * Calls only netfile.com (or BALLOTFIX_NETFILE_BASE). Nothing about the
+ * Calls only netfile.com (or a client's own base). Nothing about the
  * candidates is sent: the export is the agency's whole year.
  */
 
@@ -45,6 +45,8 @@ export const NETFILE_BASE = "https://netfile.com/Connect2/api";
 export const NETFILE_PAGE_SIZE = 1000;
 export const NETFILE_MAX_PAGES = 40;
 const TIMEOUT_MS = 60_000;
+/** How long one agency's year export is reused by a client before it is read again. */
+export const EXPORT_CACHE_MS = 60 * 60_000;
 
 export interface NetFileAgency {
   /** NetFile's agency id ("shortcut"), e.g. "COAK". */
@@ -60,6 +62,11 @@ export interface ExportYear {
   /** The export's URL for the year: the row's source, and what counts as retrieved. */
   url: string;
   rows: ExportRow[];
+  /**
+   * Every committee with a row of any kind that year, so one that filed but
+   * listed no contributions is still found. Absent: the rows' filers.
+   */
+  filers?: Filer[];
   /** Pages stopped at NETFILE_MAX_PAGES before the export ended. */
   truncated: boolean;
 }
@@ -104,6 +111,8 @@ export class NetFileClient implements NetFileSource {
   readonly #fetch: Fetch;
   readonly #base: string;
   #agencies: Promise<NetFileAgency[]> | null = null;
+  /** Per agency and year, so a ballot's items in one place read its export once. */
+  readonly #years = new Map<string, { at: number; got: Promise<ExportYear> }>();
 
   constructor(opts: { fetch?: Fetch; base?: string } = {}) {
     this.#fetch = opts.fetch ?? ((u, i) => fetch(u, i));
@@ -139,11 +148,24 @@ export class NetFileClient implements NetFileSource {
     return this.#agencies;
   }
 
-  async transactions(agency: string, year: number): Promise<ExportYear> {
+  transactions(agency: string, year: number): Promise<ExportYear> {
+    const key = `${agency}|${year}`;
+    const hit = this.#years.get(key);
+    if (hit && Date.now() - hit.at < EXPORT_CACHE_MS) return hit.got;
+    const got = this.#readYear(agency, year).catch((err) => {
+      this.#years.delete(key); // a failed read is tried again next time
+      throw err;
+    });
+    this.#years.set(key, { at: Date.now(), got });
+    return got;
+  }
+
+  async #readYear(agency: string, year: number): Promise<ExportYear> {
     const url = `${this.#base}/public/campaign/export/cal201/transaction/year?${new URLSearchParams(
       { Year: String(year), AID: agency, Format: "json" },
     )}`;
     const rows: ExportRow[] = [];
+    const filers = new Map<string, Filer>();
     for (let page = 0; page < NETFILE_MAX_PAGES; page++) {
       const json = await this.#json(
         `${url}&${new URLSearchParams({
@@ -153,13 +175,14 @@ export class NetFileClient implements NetFileSource {
       );
       const batch = arrayIn(json).map(normalizeRow).filter((r): r is ExportRow => r !== null);
       rows.push(...batch.filter(isContribution));
+      for (const r of batch) addFiler(filers, r);
       const pages = Number((json as Record<string, unknown> | null)?.totalMatchingPages);
       const last = Number.isFinite(pages) && pages > 0
         ? page + 1 >= pages
         : batch.length < NETFILE_PAGE_SIZE;
-      if (last) return { year, url, rows, truncated: false };
+      if (last) return { year, url, rows, filers: [...filers.values()], truncated: false };
     }
-    return { year, url, rows, truncated: true };
+    return { year, url, rows, filers: [...filers.values()], truncated: true };
   }
 }
 
@@ -183,7 +206,7 @@ function splitPlace(place: string): { jurisdiction: string; state: string } {
 export function agencyKey(name: string): string {
   const k = nameKey(name)
     .replace(/ (ethics commission|city clerk|clerk|elections( office| department)?)$/, "");
-  const flipped = k.match(/^(.+) (city (and )?county|city|town|county) of$/);
+  const flipped = k.match(/^(.+?) (city (and )?county|city|town|county) of$/);
   return jurisdictionKey(flipped ? `${flipped[2]} of ${flipped[1]}` : k);
 }
 
@@ -243,18 +266,72 @@ function isContribution(r: ExportRow): boolean {
   return formOf(r) in FORMS;
 }
 
-interface Filer {
+export interface Filer {
   id: string;
   name: string;
   type: string;
+  /** Years of the election dates its reports state; empty when none is stated. */
+  elections?: number[];
 }
 
-const filerOf = (r: ExportRow): Filer => ({
-  id: get(r, "filerid", "filerlocalid", "filerfppcid", "filerstateid") ||
-    nameKey(get(r, "filernaml", "filername")),
-  name: get(r, "filernaml", "filername"),
-  type: get(r, "committeetype", "cmtetype").toUpperCase(),
-});
+const filerId = (r: ExportRow) =>
+  get(r, "filerid", "filerlocalid", "filerfppcid", "filerstateid") ||
+  nameKey(get(r, "filernaml", "filername"));
+
+/** Adds a row's committee, gathering the election years its reports state. */
+function addFiler(filers: Map<string, Filer>, r: ExportRow): void {
+  const id = filerId(r);
+  const f = filers.get(id) ?? {
+    id,
+    name: get(r, "filernaml", "filername"),
+    type: get(r, "committeetype", "cmtetype").toUpperCase(),
+    elections: [],
+  };
+  const y = Number(get(r, "electdate", "electiondate").slice(0, 4));
+  if (Number.isInteger(y) && y > 1900 && !f.elections!.includes(y)) f.elections!.push(y);
+  filers.set(id, f);
+}
+
+/**
+ * Words naming an office. A committee's name that holds some must share one
+ * with the race's office, so a same-named person running for another office
+ * in the same place is never matched.
+ */
+const OFFICE_WORDS = [
+  "mayor",
+  "council",
+  "councilmember",
+  "supervisor",
+  "board",
+  "school",
+  "education",
+  "trustee",
+  "auditor",
+  "attorney",
+  "treasurer",
+  "clerk",
+  "assessor",
+  "sheriff",
+  "controller",
+  "judge",
+  "assembly",
+  "senate",
+  "college",
+  "water",
+  "district",
+];
+
+function officeFits(filerName: string, contest: string | undefined): boolean {
+  if (!contest) return true;
+  const said = OFFICE_WORDS.filter((w) => filerName.includes(` ${w} `));
+  if (!said.length) return true;
+  const office = words(contest);
+  // "District" alone says too little: it must come with another word the office shares.
+  const telling = said.filter((w) => w !== "district");
+  return (telling.length ? telling : said).some((w) =>
+    office.includes(` ${w} `) || office.includes(` ${w}s `)
+  );
+}
 
 const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "md", "phd", "esq"]);
 /** Never a candidate's own committee, whatever names it holds. */
@@ -273,18 +350,30 @@ const words = (s: string) => ` ${nameKey(s)} `;
 const labelWords = (s: string) => words(s).replace(/ proposition /g, " prop ");
 
 /** Whether a committee's name ties it to this subject, by the rules above. */
-export function filerMatches(f: Filer, s: FinanceSubject, year: number): boolean {
+export function filerMatches(
+  f: Filer,
+  s: FinanceSubject,
+  year: number,
+  contest?: string,
+): boolean {
   if (!f.name || otherYear(f.name, year)) return false;
+  // A committee whose reports state another election is that election's (measure letters repeat).
+  if (f.elections?.length && !f.elections.includes(year)) return false;
   const name = words(f.name);
   if (s.role === "candidate") {
     if (f.type && f.type !== "CTL") return false;
     if (AGAINST.test(name)) return false;
+    if (!officeFits(name, contest)) return false;
     const parts = nameKey(s.name).split(" ").filter((w) => w.length > 1 && !SUFFIXES.has(w));
     if (parts.length < 2) return false;
     return name.includes(` ${parts[0]} `) && name.includes(` ${parts.at(-1)} `);
   }
   const label = labelWords(s.name).trim();
-  if (!label || !labelWords(f.name).includes(` ${label} `)) return false;
+  const named = labelWords(f.name);
+  if (!label || !named.includes(` ${label} `)) return false;
+  // "Yes on Measure A" or "No on Measure A" says the side outright, whatever else the name holds.
+  const yesOn = named.includes(` yes on ${label} `), noOn = named.includes(` no on ${label} `);
+  if (yesOn !== noOn) return s.role === "support" ? yesOn : noOn;
   const yes = SUPPORT.test(name), no = OPPOSE.test(name);
   return s.role === "support" ? yes && !no : no && !yes;
 }
@@ -340,6 +429,28 @@ function toRaw(r: ExportRow, y: ExportYear, agency: NetFileAgency, base: string)
  * same filer, contributor, amount, and date there means one gift, kept once,
  * as the 460 has it.
  */
+/**
+ * An amended report lists its transactions again under its own filing: one
+ * transaction (the same committee and transaction id) is kept once, from the
+ * latest filing.
+ */
+function latestOnly(rows: readonly ExportRow[]): ExportRow[] {
+  const latest = new Map<string, ExportRow>();
+  const kept: ExportRow[] = [];
+  const filing = (r: ExportRow) => Number(get(r, "filingid", "netfilefilingid")) || 0;
+  for (const r of rows) {
+    const tran = get(r, "tranid", "transactionid");
+    if (!tran) {
+      kept.push(r);
+      continue;
+    }
+    const k = JSON.stringify([filerId(r), formOf(r), tran]);
+    const had = latest.get(k);
+    if (!had || filing(r) > filing(had)) latest.set(k, r);
+  }
+  return [...kept, ...latest.values()];
+}
+
 function withoutRepeats(rows: readonly RawContribution[]): RawContribution[] {
   const key = (c: RawContribution) =>
     JSON.stringify([c.filer, nameKey(c.contributor), c.amount, c.date]);
@@ -441,11 +552,21 @@ export class NetFileResearcher implements FinanceResearcher {
 
     const base = this.#o.base ?? NETFILE_BASE;
     const filers = new Map<string, Filer>();
-    for (const y of years) for (const r of y.rows) filers.set(filerOf(r).id, filerOf(r));
+    for (const y of years) {
+      if (y.filers) {
+        for (const f of y.filers) {
+          const had = filers.get(f.id);
+          filers.set(f.id, {
+            ...f,
+            elections: [...new Set([...had?.elections ?? [], ...f.elections ?? []])],
+          });
+        }
+      } else for (const r of y.rows) if (!filers.has(filerId(r))) addFiler(filers, r);
+    }
     // A committee that two subjects' names both fit is neither's.
     const owners = new Map<string, FinanceSubject[]>();
     for (const f of filers.values()) {
-      owners.set(f.id, request.subjects.filter((s) => filerMatches(f, s, year)));
+      owners.set(f.id, request.subjects.filter((s) => filerMatches(f, s, year, request.contest)));
     }
     const mine = (s: FinanceSubject) =>
       [...filers.values()].filter((f) =>
@@ -464,22 +585,24 @@ export class NetFileResearcher implements FinanceResearcher {
     }
 
     const searched = years.map((y) => `${agency.name} NetFile export, ${y.year}`);
+    // Only the years actually read: a failed one is a portal gap, not searched.
+    const span = years.map((y) => y.year).join("–");
     const subjects: RawFinanceSubject[] = request.subjects.map((s) => {
       const committees = mine(s);
       const ids = new Set(committees.map((f) => f.id));
       const rows = withoutRepeats(
         years.flatMap((y) =>
-          y.rows.filter((r) => ids.has(filerOf(r).id)).map((r) => toRaw(r, y, agency, base))
+          latestOnly(y.rows.filter((r) => ids.has(filerId(r)))).map((r) =>
+            toRaw(r, y, agency, base)
+          )
         ),
       ).sort(byAmount);
       const both = shared(s);
       const gap_note = !committees.length
         ? [
-          `No committee in ${agency.name}'s NetFile filings for ${
-            year - 1
-          }–${year} has a name this check ties to ${
+          `No committee in ${agency.name}'s NetFile filings for ${span} has a name this check ties to ${
             s.role === "candidate"
-              ? `${s.name} (it needs their first and last name)`
+              ? `${s.name} (it needs their first and last name, and no other office named)`
               : `the ${
                 s.role === "support" ? "yes" : "no"
               } side of ${s.name} (it needs the label and words of that side only)`
@@ -493,9 +616,9 @@ export class NetFileResearcher implements FinanceResearcher {
         ].filter(Boolean).join(" ")
         : rows.length
         ? ""
-        : `The NetFile filings of ${committees.map((f) => f.name).join("; ")} for ${
-          year - 1
-        }–${year} list no itemized contributions received.`;
+        : `The NetFile filings of ${
+          committees.map((f) => f.name).join("; ")
+        } for ${span} list no itemized contributions received.`;
       return {
         id: s.id,
         committees: committees.map((f) => f.name),
