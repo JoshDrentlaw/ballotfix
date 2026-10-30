@@ -11,6 +11,7 @@ import { AnthropicResearcher, DEFAULT_MODEL } from "./research/anthropic.ts";
 import { contextForRace, raceContextFailed } from "./context.ts";
 import { financeForRace, raceFinanceFailed } from "./finance.ts";
 import { mergeRace } from "./merge.ts";
+import { NetFileClient, NetFileResearcher, parseAgencyMap } from "./netfile.ts";
 import { officeForRace, raceOfficeFailed } from "./office.ts";
 import { runRace } from "./race.ts";
 import { renderRace, slug } from "./render.ts";
@@ -22,7 +23,8 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
-                    [--no-shared] [--no-merge] [--no-context] [--no-finance] [--no-powers]
+                    [--no-shared] [--no-merge] [--no-context] [--no-finance] [--no-netfile]
+                    [--no-powers]
   deno task dossier --render <saved.json> [--out out]
 
 Writes <out>/<city>-<office>-<election>.json and .html. Before the candidates, one capped call
@@ -31,7 +33,10 @@ and puts them first in every candidate's research (--no-shared skips it). After 
 merges facts that several sources report into one (--no-merge skips it), and one more, with a
 few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
 A last capped call reads contributions off the candidates' campaign finance filings, so the page
-can show who they share as contributors and endorsers (--no-finance skips it). One more capped
+can show who they share as contributors and endorsers (--no-finance skips it). Where the city's
+filings are on NetFile, the contributions come straight from its public export instead, with no
+model reading them (--no-netfile always uses the model; BALLOTFIX_NETFILE_AGENCIES="Oakland=COAK"
+sets a place's agency by hand). One more capped
 lookup says what the office can decide, its budget, seats, and term, and marks each of your
 issues inside or outside its say (--no-powers skips it).
 Needs ANTHROPIC_API_KEY in the environment or in .env (not needed for --render).`;
@@ -71,13 +76,14 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help", "shared", "merge", "context", "finance", "powers"],
-    negatable: ["shared", "merge", "context", "finance", "powers"],
+    boolean: ["help", "shared", "merge", "context", "finance", "netfile", "powers"],
+    negatable: ["shared", "merge", "context", "finance", "netfile", "powers"],
     default: {
       shared: true,
       merge: true,
       context: true,
       finance: true,
+      netfile: true,
       powers: true,
       state: "CA",
       office: "Mayor",
@@ -169,7 +175,15 @@ async function main(): Promise<number> {
 
   if (args.finance) {
     try {
-      const f = await financeForRace(race, researcher);
+      const money = args.netfile
+        ? new NetFileResearcher({
+          source: new NetFileClient(),
+          fallback: researcher,
+          agencies: parseAgencyMap(Deno.env.get("BALLOTFIX_NETFILE_AGENCIES")),
+          log: (m) => console.error(m),
+        })
+        : researcher;
+      const f = await financeForRace(race, money);
       race = f.dossier;
       if (f.sent) console.error(`Kept ${f.shown} contribution(s) from campaign finance filings.`);
       if (f.left_out) {

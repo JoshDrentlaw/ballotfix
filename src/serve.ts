@@ -21,6 +21,11 @@
  *   BALLOTFIX_FINANCE_MODEL  model for the one low-effort call per finished run that reads
  *                        contributions off campaign finance filings, with capped web searches
  *                        and fetches (default: claude-sonnet-5-5); "off" skips it
+ *   BALLOTFIX_NETFILE   "off" always uses the model for campaign finance; otherwise, where
+ *                        a California place's filings are on NetFile, contributions come
+ *                        straight from its public export (netfile.com), the model elsewhere
+ *   BALLOTFIX_NETFILE_AGENCIES  places whose NetFile agency is set by hand, e.g.
+ *                        "Oakland=COAK; San Francisco=SFO"; others are found in NetFile's list
  *   BALLOTFIX_OFFICE_MODEL  model for the one capped lookup of what a race's office can do
  *                        (reused by later runs for the same office and place) and the call
  *                        marking the voter's issues against it (default: claude-sonnet-5-5);
@@ -35,6 +40,7 @@
  * Every model call logs one "[usage]" line: tokens, searches, and an estimated cost.
  */
 
+import { NetFileClient, NetFileResearcher, parseAgencyMap } from "./netfile.ts";
 import { AnthropicResearcher } from "./research/anthropic.ts";
 import { BallotJobs, JobRunner } from "./web/jobs.ts";
 import { createApp } from "./web/server.ts";
@@ -92,13 +98,25 @@ const contextWriter = () =>
     log,
   });
 const financeModel = env("BALLOTFIX_FINANCE_MODEL");
-const financeResearcher = () =>
+const modelFinance = () =>
   new AnthropicResearcher({
     model: env("BALLOTFIX_MODEL"),
     financeModel,
     effort: effort as Effort,
     log,
   });
+// One client, so NetFile's agency list is read once while the app runs.
+const netfile = env("BALLOTFIX_NETFILE") === "off" ? null : new NetFileClient();
+const netfileAgencies = parseAgencyMap(env("BALLOTFIX_NETFILE_AGENCIES"));
+const financeResearcher = () =>
+  netfile
+    ? new NetFileResearcher({
+      source: netfile,
+      fallback: modelFinance(),
+      agencies: netfileAgencies,
+      log,
+    })
+    : modelFinance();
 const officeModel = env("BALLOTFIX_OFFICE_MODEL");
 const officeResearcher = () =>
   new AnthropicResearcher({

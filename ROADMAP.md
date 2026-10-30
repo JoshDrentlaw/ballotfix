@@ -353,7 +353,51 @@ Original plan:
   step does it, and two readings of one filing can disagree. Keep independent expenditures and
   Form 700. Runs saved before keep what they have.
 
-## 10. NetFile adapter
+## 10. NetFile adapter — done
+
+Branch `feature/upbeat-turing-mvu6yc`. Decisions made in the PR:
+
+- `src/netfile.ts` is a `FinanceResearcher` wrapping the model lookup as its fallback, so the
+  finance step, its checks (`checkFinance`), the page, and the graph are unchanged in shape. The
+  rows are field-mapped from NetFile's public CAL transaction export (Form 460 Schedules A and C,
+  Form 497 Part 1) for the election year and the year before; nothing about the race is sent.
+- The place's agency comes from `BALLOTFIX_NETFILE_AGENCIES` (by hand) or NetFile's agency list by
+  name, California only, and never a guess between two agencies of one name.
+- Committees are matched locally and conservatively: a candidate's by first and last name (a
+  surname-only committee is not matched, and the gap note says so), never a recall, opposing, or
+  other-year committee; a measure side's by its label plus words of that side only. A committee two
+  subjects fit is neither's. From review: a committee naming another office is not matched (a
+  same-named person running elsewhere), an outright "Yes on"/"No on" decides a measure side, a
+  committee whose reports state another election's date is not matched, and an amended report's rows
+  are kept once, from the latest filing.
+- One source per run: off NetFile, with no subject matched, or with the export unreadable, the model
+  looks up every subject. A subject unmatched in a NetFile run gets a gap note rather than a model
+  lookup of its own, so no run mixes transcribed and exported rows.
+- The per-subject cap becomes a page bound (`MAX_EXPORT_PER_SUBJECT`, 1,000, the same for everyone),
+  granted only to a result that names its export source.
+- Provenance: `source_url` is the year's export URL; the filing id is in `filing`, and its image on
+  NetFile is linked (`filing_url`, new and optional on `Contribution`).
+
+Follow-ups:
+
+- Not yet run against the live API (this environment couldn't reach netfile.com). The export's
+  endpoint, parameters, and field names are from NetFile's public Connect2 API as documented by
+  open-data users; the parser accepts the CAL field names in either `Tran_NamL` or `tranNamL` form,
+  but a first live run should confirm the agency list's shape and paging.
+- Form 460 summary totals aren't read yet (another export); rows only.
+- Amended filings: the export is assumed to carry only current filings. Check whether superseded
+  reports appear.
+- Big agencies (San Francisco) may exceed the page bound (40 pages of 1,000 rows a year); the page
+  says so as a portal gap. A per-filer query would avoid reading the whole year.
+- `BALLOTFIX_FINANCE_MODEL=off` turns the whole finance step off, NetFile included: running NetFile
+  alone would leave places off NetFile with a failed step rather than a skipped one. Revisit if
+  NetFile-only is wanted.
+- Office words in committee names (`officeFits`) are a fixed list; a committee naming an office in
+  other words is matched on the person's name alone.
+- Surname-only committee names ("Re-elect Kaplan") fall back to a gap note, not the model; watch how
+  often that happens.
+
+Original plan:
 
 A deterministic primary-record adapter behind `ResearchPort`/`FinanceResearcher` for NetFile's
 public transaction exports, removing the transcription risk and the per-subject row cap where a city

@@ -3,12 +3,12 @@
 The permission flags on `deno task dossier` in `deno.jsonc` are this app's policy in executable
 form. Phase 0 is deliberately narrow, unlike Parallax Fix:
 
-| Grant                           | Why                                                       |
-| ------------------------------- | --------------------------------------------------------- |
-| `--allow-net=api.anthropic.com` | The only host it talks to. Web research runs server-side. |
-| `--allow-env`                   | `ANTHROPIC_API_KEY`, proxy variables, `DENO_CERT`.        |
-| `--allow-read`                  | `.env`, and saved JSON for `--render`.                    |
-| `--allow-write=out`             | The output directory only.                                |
+| Grant                                       | Why                                                                                                                                                      |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--allow-net=api.anthropic.com,netfile.com` | Anthropic's API (web research runs server-side), and NetFile's public campaign finance export (GET only, no credentials; `--no-netfile` never calls it). |
+| `--allow-env`                               | `ANTHROPIC_API_KEY`, `BALLOTFIX_NETFILE_AGENCIES`, proxy variables, `DENO_CERT`.                                                                         |
+| `--allow-read`                              | `.env`, and saved JSON for `--render`.                                                                                                                   |
+| `--allow-write=out`                         | The output directory only.                                                                                                                               |
 
 The web app (`deno task serve`) adds:
 
@@ -29,6 +29,8 @@ Starting research spends money on the operator's API key, so the app:
   running one;
 - only saves or looks up records whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`, and passes every
   value to SQLite as a bound parameter, never as SQL text;
+- sends NetFile nothing about the race: it reads an agency's whole year of transactions and matches
+  committees locally. What comes back is untrusted input, checked and escaped like research;
 - for ballot uploads, stops reading the body past 23 MB, decides each file's type from its bytes
   (JPEG, PNG, WebP, PDF only), caps files at 8 and 7 MB each, reads at most two ballots at once, and
   never writes the images to disk. Only the contests read from them are saved.
