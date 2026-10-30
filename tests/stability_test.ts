@@ -12,6 +12,7 @@ import {
   raceOf,
   similarity,
   TYPICAL_CANDIDATE_USAGE,
+  TYPICAL_SHARED_USAGE,
 } from "../src/stability.ts";
 import {
   type AnswerKey,
@@ -21,7 +22,7 @@ import {
   scorePrecision,
   scoreRecall,
 } from "../src/answer_key.ts";
-import { estimateCost } from "../src/research/anthropic.ts";
+import { DEFAULT_SHARED_MODEL, estimateCost } from "../src/research/anthropic.ts";
 import { runRace } from "../src/race.ts";
 import type { BallotCandidate, Fact, RaceDossier, RawFact } from "../src/types.ts";
 import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
@@ -129,15 +130,18 @@ Deno.test("raceOf reads a dossier or the app's run record", async () => {
   assertThrows(() => raceOf({ id: "x", race: null }));
 });
 
-Deno.test("estimate prices every run's candidates, plus the ballot lookup when none are given", () => {
+Deno.test("estimate prices every run's candidates, the shared pass once, and the ballot lookup when none are given", () => {
   const each = estimateCost("claude-opus-5-5", TYPICAL_CANDIDATE_USAGE)!;
+  const shared = estimateCost(DEFAULT_SHARED_MODEL, TYPICAL_SHARED_USAGE)!;
   const given = estimate("claude-opus-5-5", 3, 2);
-  assertEquals(given.calls, 6);
-  assertEquals(given.dollars, 6 * each);
+  assertEquals(given.calls, 7);
+  assertEquals(given.dollars, 6 * each + shared);
   const found = estimate("claude-opus-5-5", 3, null);
-  assertEquals(found.calls, 13);
-  assert(found.dollars! > 12 * each);
-  assertEquals(estimate("claude-opus-5-5", 2, 2, 0.5).dollars, 2);
+  assertEquals(found.calls, 14);
+  assert(found.dollars! > 12 * each + shared);
+  assertEquals(estimate("claude-opus-5-5", 2, 2, 0.5).dollars, 2 + shared);
+  // A field of one gets no shared pass.
+  assertEquals(estimate("claude-opus-5-5", 2, 1).calls, 2);
   assertEquals(estimate("some-unpriced-model", 2, 2).dollars, null);
 });
 

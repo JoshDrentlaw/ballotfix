@@ -79,17 +79,36 @@ show it. A found quote shows the page has those words, not that the statement re
   `web_fetch`, JSON-schema output, `pause_turn` resumption, `fallbacks: "default"`. Searches run on
   Anthropic's side, so the process only needs `api.anthropic.com`. Research defaults to
   `claude-opus-5-5`; merge to `claude-haiku-5-5` (no server-side fallback, so none is sent), context
-  notes and finance to `claude-sonnet-5-5`. Calls with web tools use top-level prompt caching
-  (continuations resend the turn) and cap fetched text at `FETCH_MAX_CONTENT_TOKENS`; tool-less
-  calls don't cache. Every call with web tools counts its search and fetch caps across `pause_turn`
-  continuations (`remaining`): the API counts `max_uses` per request, and a fresh budget per pause
-  would give a well-covered candidate more searches. A capped tool still allows one use per
-  continuation, so a call makes at most its cap plus its continuation limit. Candidate and measure
-  research save what they used as `effort` on the dossier, so effort parity can be checked; a failed
-  call's error carries the same counts, and the failed dossier saves them. Every call logs one
-  `[usage]` line (tokens, searches, an estimate at list prices via `PRICES`). It also implements
-  `BallotReader` (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed
-  order out, with no web tools.
+  notes, finance, office powers, and the shared pass to `claude-sonnet-5-5`. Calls with web tools
+  use top-level prompt caching (continuations resend the turn) and cap fetched text at
+  `FETCH_MAX_CONTENT_TOKENS`; tool-less calls don't cache. Every call with web tools counts its
+  search and fetch caps across `pause_turn` continuations (`remaining`): the API counts `max_uses`
+  per request, and a fresh budget per pause would give a well-covered candidate more searches. A
+  capped tool still allows one use per continuation, so a call makes at most its cap plus its
+  continuation limit. Candidate and measure research save what they used as `effort` on the dossier,
+  so effort parity can be checked; a failed call's error carries the same counts, and the failed
+  dossier saves them. Every call logs one `[usage]` line (tokens, searches, an estimate at list
+  prices via `PRICES`). It also implements `BallotReader` (`readBallot`): the voter's uploaded
+  ballot photos/PDFs in, contests in printed order out, with no web tools.
+- Shared race-level pass (roadmap item 9, `src/shared.ts`): once per race, after the candidate list
+  and before any candidate, `runRace` makes one capped call (`SharedSourceFinder.findSharedSources`:
+  `LOOKUP_EFFORT`, `BALLOTFIX_SHARED_MODEL` or `DEFAULT_SHARED_MODEL`, "off" skips it; CLI
+  `--no-shared`; searches and fetches counted across continuations, `SHARED_MAX_*`) for pages that
+  cover every candidate: the voter guide's statements, a questionnaire, forum write-ups, Voter's
+  Edge. Only the race and the candidates' names are sent. A page is kept only if the call opened it,
+  its text was readable, and that text, cut at `SHARED_PAGE_MAX_CHARS` as the candidates get it,
+  names every candidate's surname (`assembleShared`); at most `MAX_SHARED_PAGES`. Everything else is
+  saved as `left_out` with its reason. Kept pages go first in every candidate's prompt as one
+  identical block with its own cache breakpoint (`sharedPrefix`), so the system prompt, tools, and
+  that block are one cached prefix. They count as retrieved by each candidate's session, their whole
+  text going to the quote check (`withShared`); search results the pass only saw are not added. The
+  race saves `shared` (pages, left out, gaps, effort; never page text), shown collapsed after "At a
+  glance" (`startedFromHtml`). A failed pass is recorded and every candidate starts without shared
+  pages; a field of one gets no pass. The stability run finds it once and gives it to every run
+  (`sharedPass`). Runs saved before have no `shared` and the page says nothing of it. The candidate
+  `money` section no longer asks for contributions, contributors, or fundraising totals (the finance
+  step reads those off the filings); it keeps independent expenditures and Form 700, and a race the
+  finance step hasn't run for says so under each candidate's "Contributions on file".
 - Ballot upload: images are held in memory for the one read call and never written to disk; only the
   `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user

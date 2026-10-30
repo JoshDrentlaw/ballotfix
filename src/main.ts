@@ -22,10 +22,12 @@ const USAGE = `Usage:
                     [--candidates "Name A;Name B"] [--incumbent "Name A"]
                     [--priorities "housing costs;public safety"]
                     [--model ${DEFAULT_MODEL}] [--effort high] [--concurrency 3] [--out out]
-                    [--no-merge] [--no-context] [--no-finance] [--no-powers]
+                    [--no-shared] [--no-merge] [--no-context] [--no-finance] [--no-powers]
   deno task dossier --render <saved.json> [--out out]
 
-Writes <out>/<city>-<office>-<election>.json and .html. After research, one low-effort call
+Writes <out>/<city>-<office>-<election>.json and .html. Before the candidates, one capped call
+looks for pages that cover every candidate (the voter guide, a questionnaire, forum write-ups)
+and puts them first in every candidate's research (--no-shared skips it). After research, one low-effort call
 merges facts that several sources report into one (--no-merge skips it), and one more, with a
 few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
 A last capped call reads contributions off the candidates' campaign finance filings, so the page
@@ -69,9 +71,10 @@ async function main(): Promise<number> {
       "out",
       "render",
     ],
-    boolean: ["help", "merge", "context", "finance", "powers"],
-    negatable: ["merge", "context", "finance", "powers"],
+    boolean: ["help", "shared", "merge", "context", "finance", "powers"],
+    negatable: ["shared", "merge", "context", "finance", "powers"],
     default: {
+      shared: true,
       merge: true,
       context: true,
       finance: true,
@@ -137,6 +140,7 @@ async function main(): Promise<number> {
     candidates: args.candidates ? parseCandidates(args.candidates, args.incumbent) : undefined,
     priorities,
     concurrency,
+    shared: args.shared ? researcher : undefined,
     onProgress: (m) => console.error(m),
   });
 

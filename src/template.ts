@@ -43,7 +43,7 @@ export const SECTIONS = [
     id: "money",
     title: "Money and interests",
     ask:
-      "Campaign fundraising and major contributors (California Form 460 or local equivalent), independent expenditures supporting or opposing them, and disclosed economic interests (Form 700 or equivalent).",
+      "Independent expenditures supporting or opposing them, and disclosed economic interests (Form 700 or equivalent). Leave out contributions to their own campaign, its contributors, and its fundraising totals: a separate step reads those off the filings.",
   },
   {
     id: "endorsements",

@@ -219,19 +219,20 @@ cheaper `BALLOTFIX_MODEL`, or turn a follow-up step off (below).
 
 ### Settings
 
-| Variable                  | Default             | What it does                                            |
-| ------------------------- | ------------------- | ------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`       | (none)              | Required to research; saved races still open without it |
-| `HOST`, `PORT`            | `127.0.0.1`, `8787` | Listen address                                          |
-| `BALLOTFIX_PASSWORD`      | (none)              | Require this password (HTTP Basic, any username)        |
-| `BASE_PATH`               | (none)              | Mount prefix, e.g. `/ballotfix` behind a reverse proxy  |
-| `BALLOTFIX_DATA_DIR`      | `data`              | Where `ballotfix.db` lives                              |
-| `BALLOTFIX_MODEL`         | `claude-opus-5-5`   | Research model                                          |
-| `BALLOTFIX_EFFORT`        | `high`              | `low`, `medium`, `high`, `xhigh`, or `max`              |
-| `BALLOTFIX_MERGE_MODEL`   | `claude-haiku-5-5`  | Model for merging duplicates; `off` skips the step      |
-| `BALLOTFIX_CONTEXT_MODEL` | `claude-sonnet-5-5` | Model for notes on names; `off` skips the step          |
-| `BALLOTFIX_FINANCE_MODEL` | `claude-sonnet-5-5` | Model for campaign finance; `off` skips the step        |
-| `BALLOTFIX_OFFICE_MODEL`  | `claude-sonnet-5-5` | Model for what the office can do; `off` skips the step  |
+| Variable                  | Default             | What it does                                             |
+| ------------------------- | ------------------- | -------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`       | (none)              | Required to research; saved races still open without it  |
+| `HOST`, `PORT`            | `127.0.0.1`, `8787` | Listen address                                           |
+| `BALLOTFIX_PASSWORD`      | (none)              | Require this password (HTTP Basic, any username)         |
+| `BASE_PATH`               | (none)              | Mount prefix, e.g. `/ballotfix` behind a reverse proxy   |
+| `BALLOTFIX_DATA_DIR`      | `data`              | Where `ballotfix.db` lives                               |
+| `BALLOTFIX_MODEL`         | `claude-opus-5-5`   | Research model                                           |
+| `BALLOTFIX_EFFORT`        | `high`              | `low`, `medium`, `high`, `xhigh`, or `max`               |
+| `BALLOTFIX_MERGE_MODEL`   | `claude-haiku-5-5`  | Model for merging duplicates; `off` skips the step       |
+| `BALLOTFIX_CONTEXT_MODEL` | `claude-sonnet-5-5` | Model for notes on names; `off` skips the step           |
+| `BALLOTFIX_FINANCE_MODEL` | `claude-sonnet-5-5` | Model for campaign finance; `off` skips the step         |
+| `BALLOTFIX_OFFICE_MODEL`  | `claude-sonnet-5-5` | Model for what the office can do; `off` skips the step   |
+| `BALLOTFIX_SHARED_MODEL`  | `claude-sonnet-5-5` | Model for pages covering every candidate; `off` skips it |
 
 Everything (races, ballot readings, your notes and picks, and the knowledge graph) is kept in one
 SQLite file, `<BALLOTFIX_DATA_DIR>/ballotfix.db`. JSON files written by older versions are imported
@@ -275,9 +276,10 @@ deno task dossier --city Fontana --office Mayor \
 ```
 
 Options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`,
-`--concurrency` (default 3), `--out` (default `out`), and `--no-merge`, `--no-context`,
-`--no-finance`, `--no-powers` to skip follow-up steps. It writes
-`<out>/<city>-<office>-<election>.json` and `.html`. Re-render a saved run without calling the API:
+`--concurrency` (default 3), `--out` (default `out`), `--no-shared` to skip the shared pass for
+pages covering every candidate, and `--no-merge`, `--no-context`, `--no-finance`, `--no-powers` to
+skip follow-up steps. It writes `<out>/<city>-<office>-<election>.json` and `.html`. Re-render a
+saved run without calling the API:
 
 ```sh
 deno task dossier --render out/<file>.json

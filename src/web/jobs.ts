@@ -35,6 +35,7 @@ import type {
   RaceDossier,
   RaceQuery,
   ResearchPort,
+  SharedSourceFinder,
 } from "../types.ts";
 import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
 
@@ -69,6 +70,11 @@ export interface JobRunnerOptions {
    * it: after the finance step, races only. Omit to skip.
    */
   makeOfficeResearcher?: () => OfficeResearcher;
+  /**
+   * Finds pages covering every candidate in a race, once, before any
+   * candidate's research, and puts them first in each one's. Omit to skip.
+   */
+  makeSharedFinder?: () => SharedSourceFinder;
 }
 
 /** What one finished run needs for the steps after it, race or measure. */
@@ -151,6 +157,7 @@ export class JobRunner {
   readonly #makeContextWriter: (() => ContextWriter) | undefined;
   readonly #makeFinanceResearcher: (() => FinanceResearcher) | undefined;
   readonly #makeOfficeResearcher: (() => OfficeResearcher) | undefined;
+  readonly #makeSharedFinder: (() => SharedSourceFinder) | undefined;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
   #post = new Set<Promise<void>>();
@@ -166,6 +173,7 @@ export class JobRunner {
     this.#makeContextWriter = opts.makeContextWriter;
     this.#makeFinanceResearcher = opts.makeFinanceResearcher;
     this.#makeOfficeResearcher = opts.makeOfficeResearcher;
+    this.#makeSharedFinder = opts.makeSharedFinder;
   }
 
   /**
@@ -462,6 +470,7 @@ export class JobRunner {
         candidateSource: run.candidate_source ?? undefined,
         priorities: run.priorities,
         concurrency: this.#concurrency,
+        shared: this.#makeSharedFinder?.(),
         onProgress: (m) => this.#log(`[${run.id}] ${m}`),
         onUpdate: (partial) => save({ race: partial }),
       });

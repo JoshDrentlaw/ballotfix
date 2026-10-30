@@ -25,6 +25,10 @@
  *                        (reused by later runs for the same office and place) and the call
  *                        marking the voter's issues against it (default: claude-sonnet-5-5);
  *                        "off" skips it
+ *   BALLOTFIX_SHARED_MODEL  model for the one capped call per race, before any candidate,
+ *                        that finds pages covering every candidate (voter guide, questionnaires,
+ *                        forums) to put first in each one's research (default: claude-sonnet-5-5);
+ *                        "off" skips it
  *   BALLOTFIX_MAX_QUEUED  races allowed to wait behind the running one (default 30); waiting
  *                        races are saved and put back in line after a restart
  *
@@ -103,6 +107,14 @@ const officeResearcher = () =>
     effort: effort as Effort,
     log,
   });
+const sharedModel = env("BALLOTFIX_SHARED_MODEL");
+const sharedFinder = () =>
+  new AnthropicResearcher({
+    model: env("BALLOTFIX_MODEL"),
+    sharedModel,
+    effort: effort as Effort,
+    log,
+  });
 const maxQueued = env("BALLOTFIX_MAX_QUEUED");
 if (maxQueued !== undefined && !/^\d+$/.test(maxQueued)) {
   throw new Error("BALLOTFIX_MAX_QUEUED must be a whole number");
@@ -114,6 +126,7 @@ const jobs = new JobRunner(store, researcher, {
   makeContextWriter: contextModel === "off" ? undefined : contextWriter,
   makeFinanceResearcher: financeModel === "off" ? undefined : financeResearcher,
   makeOfficeResearcher: officeModel === "off" ? undefined : officeResearcher,
+  makeSharedFinder: sharedModel === "off" ? undefined : sharedFinder,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 // Runs that were waiting when the server stopped never started: back in line, in order,

@@ -400,7 +400,8 @@ Deno.test("a run without the step still compares endorsements, and says money wa
     page,
     "weren&#39;t looked up in this run, so only endorsements are compared",
   );
-  assert(!page.includes("Contributions on file"));
+  // The money section leaves contributions to this step, so each dossier says it hasn't run.
+  assertStringIncludes(page, "Contributions to the campaign come from a separate step");
 });
 
 Deno.test("names from filings are escaped and only http(s) sources become links", async () => {

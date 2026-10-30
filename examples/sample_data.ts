@@ -15,6 +15,7 @@ import type {
   RawFinanceSubject,
   RawMeasureResearch,
   ResearchPort,
+  SharedSourceFinder,
 } from "../src/types.ts";
 
 export const listing: BallotListing = {
@@ -575,6 +576,50 @@ export function sampleOfficeResearcher(delayMs = 0): OfficeResearcher {
             fact_ids: ["f1"],
           }
       );
+    },
+  };
+}
+
+const GUIDE = "https://example.org/voter-guide/mayor";
+const FORUM = "https://example.org/news/mayoral-forum";
+
+/** One page kept for every candidate, one left out for missing a name, one never opened. */
+export function sampleSharedFinder(delayMs = 0): SharedSourceFinder {
+  const wait = () => new Promise((r) => setTimeout(r, delayMs));
+  return {
+    findSharedSources: async ({ candidates }) => {
+      await wait();
+      return {
+        pages: [
+          {
+            url: GUIDE,
+            source_name: "Example County Registrar (placeholder)",
+            title: "Candidate statements: Mayor",
+            kind: "voter_guide",
+          },
+          {
+            url: FORUM,
+            source_name: "Example Daily (placeholder)",
+            title: "Mayoral forum",
+            kind: "forum",
+          },
+          {
+            url: "https://example.org/questionnaire",
+            source_name: "Example Weekly (placeholder)",
+            title: "",
+            kind: "questionnaire",
+          },
+        ],
+        gaps: ["Placeholder: the League of Women Voters forum video has no transcript."],
+        retrieved_urls: [GUIDE, FORUM, "https://example.org/questionnaire"],
+        opened_pages: [
+          { url: GUIDE, text: `PLACEHOLDER candidate statements. ${candidates.join(". ")}.` },
+          // Names only the first candidate, so it is left out.
+          { url: FORUM, text: `PLACEHOLDER forum write-up. ${candidates[0] ?? ""} spoke.` },
+        ],
+        model: "placeholder",
+        effort: { searches: 5, fetches: 3 },
+      };
     },
   };
 }

@@ -11,15 +11,22 @@
  *
  * Only the research step reruns: the merge, context, and finance steps don't
  * change which pages a run kept. The candidate list is found once (or given)
- * and reused, so every run researches the same people in the same order.
+ * and reused, so every run researches the same people in the same order, and
+ * so is the shared pass (src/shared.ts): every run starts from the same pages.
  * The report compares research with research; it says nothing about any
  * candidate, and nothing in it is shown to voters.
  */
 
 import { parseArgs } from "@std/cli/parse-args";
-import { AnthropicResearcher, DEFAULT_MODEL, estimateCost } from "./research/anthropic.ts";
+import {
+  AnthropicResearcher,
+  DEFAULT_MODEL,
+  DEFAULT_SHARED_MODEL,
+  estimateCost,
+} from "./research/anthropic.ts";
 import { normalizeUrl, parsePriorities, plainText } from "./dossier.ts";
 import { runRace } from "./race.ts";
+import { findShared } from "./shared.ts";
 import { slug } from "./render.ts";
 import { SECTIONS } from "./template.ts";
 import type { CandidateDossier, CandidateSource, Fact, RaceDossier, RaceQuery } from "./types.ts";
@@ -319,6 +326,17 @@ export const TYPICAL_BALLOT_USAGE = {
   fetches: 4,
 };
 
+/** The shared pass, found once for every run: capped at 6 searches and 6 fetches. */
+export const TYPICAL_SHARED_USAGE = {
+  requests: 2,
+  input: 20_000,
+  output: 4_000,
+  cacheRead: 100_000,
+  cacheWrite: 40_000,
+  searches: 6,
+  fetches: 6,
+};
+
 export interface Estimate {
   calls: number;
   /** Null for a model with no list price in the adapter. */
@@ -337,9 +355,13 @@ export function estimate(
   const ballot = candidates === null ? estimateCost(model, TYPICAL_BALLOT_USAGE) : 0;
   // Unknown candidate count: price a field of four, and say so.
   const n = candidates ?? 4;
+  // The shared pass runs once, on its own model, and not for a field of one.
+  const shared = n > 1 ? estimateCost(DEFAULT_SHARED_MODEL, TYPICAL_SHARED_USAGE) : 0;
   return {
-    calls: runs * n + (candidates === null ? 1 : 0),
-    dollars: each === null || ballot === null ? null : runs * n * each + ballot,
+    calls: runs * n + (candidates === null ? 1 : 0) + (n > 1 ? 1 : 0),
+    dollars: each === null || ballot === null || shared === null
+      ? null
+      : runs * n * each + ballot + shared,
     per_candidate: each,
   };
 }
@@ -491,6 +513,11 @@ async function main(): Promise<number> {
     }
   }
 
+  const shared = await findShared(query, candidates, researcher, new Date());
+  if (shared.result.error) {
+    console.error(`Shared pass failed; every run starts without it. ${shared.result.error}`);
+  }
+
   await Deno.mkdir(args.out, { recursive: true });
   const base = slug(`${query.city}-${query.office}-${query.electionDate}`);
   const races: RaceDossier[] = [];
@@ -499,6 +526,7 @@ async function main(): Promise<number> {
     const race = await runRace(query, researcher, {
       candidates,
       candidateSource: source,
+      sharedPass: shared,
       priorities: parsed.issues,
       onProgress: (m) => console.error(m),
     });

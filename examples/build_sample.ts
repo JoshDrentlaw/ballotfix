@@ -14,11 +14,13 @@ import {
   sampleMerger,
   sampleOfficeResearcher,
   samplePort,
+  sampleSharedFinder,
 } from "./sample_data.ts";
 
 const race = await runRace(
   { city: "Example City", state: "CA", office: "Mayor", electionDate: "2026-11-03" },
   samplePort(),
+  { shared: sampleSharedFinder() },
 );
 const { dossier: merged } = await mergeRace(race, sampleMerger());
 const { dossier: noted } = await contextForRace(merged, sampleContextWriter());
