@@ -61,9 +61,10 @@ From top to bottom:
    affiliations; Stated platform; Community impact and local coverage. A section with nothing found
    stays in its place and says so. Each dossier ends with its own gaps and:
    - **Contributions on file**: itemized contributions read off campaign finance filings (Form
-     460/497 on the city's or county's portal, Cal-Access for state committees). One table per
-     filing, so filer, period, form, and source are said once; rows are alphabetical by contributor
-     and stay exactly as the record states them. The app never sums them.
+     460/497 on the city's or county's portal, Cal-Access or its replacement CARS for state
+     committees). One table per filing, so filer, period, form, and source are said once; rows are
+     alphabetical by contributor and stay exactly as the record states them. The app never sums
+     them.
 6. **Campaign finance this run couldn't read**: portals that couldn't be opened.
 7. **Shared connections** (collapsed): for every pair of candidates, contributors they share and
    endorsers they share. Names that might be the same but aren't proven to be ("Smith Development"

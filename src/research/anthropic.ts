@@ -666,7 +666,19 @@ export function stateFilings(today: string): string {
 - Filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Outside California, the state's equivalent.`;
   }
   return `- CARS, the Secretary of State's CAL-ACCESS Replacement System, for state committees, and for any committee that also files with the Secretary of State. It replaces Cal-Access in November 2026 and takes over Cal-Access's older filings. Find it from sos.ca.gov; never guess its address. If CARS isn't open yet, use Cal-Access (cal-access.sos.ca.gov).
-- Local filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Filings made in CARS may name their forms differently; copy the form name the record itself shows. Outside California, the state's equivalent.`;
+- Local and Cal-Access filings are California Form 460 (Schedule A lists contributions received), Form 497 (late contribution reports), and Form 410 (committee statement of organization). Filings made in CARS may name their forms differently; copy the form name the record itself shows. Outside California, the state's equivalent.`;
+}
+
+/** The calendar day (YYYY-MM-DD) in California, where CARS_CUTOVER is set. */
+export function californiaDate(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /**
@@ -1244,7 +1256,7 @@ export class AnthropicResearcher
       "",
       "Return one entry per id.",
     ].join("\n");
-    const today = this.#now().toISOString().slice(0, 10);
+    const today = californiaDate(this.#now());
     const { json, urls } = await this.#run(financeSystem(today), prompt, FINANCE_SCHEMA, {
       searches: FINANCE_MAX_SEARCHES,
       fetches: FINANCE_MAX_FETCHES,

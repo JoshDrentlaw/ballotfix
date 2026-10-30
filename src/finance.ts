@@ -1,8 +1,9 @@
 /**
  * Campaign finance: itemized contributions read off the filings (California
  * Form 460 and 497 on a city's or county's portal, Cal-Access or its
- * replacement CARS for state committees), and the people and organizations two candidates, or the two
- * sides of a measure, share through money or support.
+ * replacement CARS for state committees), and the people and organizations
+ * two candidates, or the two sides of a measure, share through money or
+ * support.
  *
  * One capped model call per run (FinanceResearcher), after the context step.
  * Everything that comes back is checked here:
