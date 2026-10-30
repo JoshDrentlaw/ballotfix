@@ -22,7 +22,7 @@ import { normalizeUrl, parsePriorities, plainText } from "./dossier.ts";
 import { runRace } from "./race.ts";
 import { slug } from "./render.ts";
 import { SECTIONS } from "./template.ts";
-import type { CandidateDossier, Fact, RaceDossier, RaceQuery } from "./types.ts";
+import type { CandidateDossier, CandidateSource, Fact, RaceDossier, RaceQuery } from "./types.ts";
 import { parseCandidates } from "./main.ts";
 
 /** One section of one dossier, as the stability and answer-key reports compare it. */
@@ -194,6 +194,11 @@ function factOverlap(lists: Fact[][]): Overlap {
 export function compareRuns(races: readonly RaceDossier[]): StabilityReport {
   if (races.length < 2) throw new Error("comparing needs at least two runs");
   const key = (n: string) => n.trim().toLowerCase();
+  const raceKey = (q: RaceQuery) =>
+    [q.city, q.state, q.office, q.electionDate].map((x) => key(String(x ?? ""))).join("|");
+  if (races.some((r) => raceKey(r.query) !== raceKey(races[0].query))) {
+    throw new Error("these runs are not all of one race (city, state, office, or election differ)");
+  }
   const names = new Map<string, string>();
   for (const r of races) {
     for (const d of r.candidates) {
@@ -328,6 +333,7 @@ export function estimate(
   perCandidate?: number,
 ): Estimate {
   const each = perCandidate ?? estimateCost(model, TYPICAL_CANDIDATE_USAGE);
+  // The ballot lookup is priced at the model's list price even with --per-candidate.
   const ballot = candidates === null ? estimateCost(model, TYPICAL_BALLOT_USAGE) : 0;
   // Unknown candidate count: price a field of four, and say so.
   const n = candidates ?? 4;
@@ -337,6 +343,8 @@ export function estimate(
     per_candidate: each,
   };
 }
+
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 const USAGE = `Usage:
   deno task stability --city <city> --office <office> [--state CA] [--election 2026-11-03]
@@ -416,6 +424,10 @@ async function main(): Promise<number> {
     console.error(`--priorities: ${parsed.error}`);
     return 2;
   }
+  if (!(EFFORTS as readonly string[]).includes(args.effort)) {
+    console.error(`--effort must be one of ${EFFORTS.join(", ")}`);
+    return 2;
+  }
   const model = args.model ?? DEFAULT_MODEL;
   const given = args.candidates ? parseCandidates(args.candidates, args.incumbent) : null;
   const est = estimate(model, runs, given?.length ?? null, perCandidate);
@@ -423,7 +435,9 @@ async function main(): Promise<number> {
   console.log(
     `${runs} runs of ${field}: ${est.calls} research call(s), ${
       est.dollars === null
-        ? `no list price for ${model}; pass --per-candidate`
+        ? perCandidate === undefined
+          ? `no list price for ${model}; pass --per-candidate`
+          : `no list price for ${model} to price the ballot lookup; pass --candidates`
         : `roughly $${est.dollars.toFixed(2)} at list prices (about $${
           est.per_candidate!.toFixed(2)
         } a candidate, an assumption, not a quote)`
@@ -446,15 +460,36 @@ async function main(): Promise<number> {
   };
   const researcher = new AnthropicResearcher({
     model,
-    effort: args.effort as "low" | "medium" | "high" | "xhigh" | "max",
+    effort: args.effort as typeof EFFORTS[number],
     log: (m) => console.error(m),
   });
   // One list for every run, so a run differs only in its research.
   const listing = given ? null : await researcher.findBallot(query);
   const candidates = given ?? listing!.candidates;
-  const source = listing
-    ? { source_name: listing.source_name, order_basis: listing.order_basis, notes: listing.notes }
+  // runRace looks the ballot up again when handed no candidates, so an empty
+  // list would give every run its own lookup: stop instead.
+  if (!candidates.length) {
+    console.error("The ballot lookup found no candidates; pass --candidates.");
+    return 1;
+  }
+  const source: CandidateSource | undefined = listing
+    ? {
+      source_name: listing.source_name,
+      order_basis: listing.order_basis,
+      notes: listing.notes,
+      ...(listing.contest_kind ? { contest_kind: listing.contest_kind } : {}),
+    }
     : undefined;
+  if (!given) {
+    const found = estimate(model, runs, candidates.length, perCandidate);
+    if (found.dollars !== null) {
+      console.error(
+        `Found ${candidates.length} candidate(s): ${found.calls} research call(s), roughly $${
+          found.dollars.toFixed(2)
+        } at list prices.`,
+      );
+    }
+  }
 
   await Deno.mkdir(args.out, { recursive: true });
   const base = slug(`${query.city}-${query.office}-${query.electionDate}`);

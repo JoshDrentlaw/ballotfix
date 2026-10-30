@@ -244,7 +244,8 @@ show it. A found quote shows the page has those words, not that the statement re
   sheet a person judges (supported / not_supported / wrong_person / unsure), `precision` scores it
   (unsure left out, a Wilson 95% interval, by quote-check level), and `recall` matches a key the
   owner writes for a past race (by a page it names, then by wording, within a section if given),
-  listing each match to check. The code never judges a fact and no key ships with it.
+  listing each match to check; items naming a missing candidate or section, or a failed one, are
+  left out of the rate. The code never judges a fact and no key ships with it.
 - Icons: `static/icon.svg` is the source; `render.ts` embeds the same SVG (`ICON_SVG`, a test keeps
   them equal) as the favicon. `static/apple-touch-icon.png` is generated from it with
   `node examples/build_touch_icon.cjs` (rerun after changing the SVG) and served at

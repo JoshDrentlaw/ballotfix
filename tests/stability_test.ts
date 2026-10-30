@@ -238,10 +238,24 @@ Deno.test("recall matches the owner's key by page, then by wording, within a sec
   assert(rep.results[4].problem!.includes("failed"));
   assert(rep.results[5].problem!.includes("no candidate"));
   assertEquals(rep.recall.hits, 2);
-  assertEquals(rep.recall.of, 6);
+  // A key typo or a failed candidate isn't a miss: left out of the rate.
+  assertEquals(rep.recall.of, 3);
   assertEquals(rep.by_candidate.map((c) => c.name), ["Ana Reyes", "Bo Smith", "Cy Nobody"]);
-  assertEquals(rep.by_candidate[0].recall.of, 4);
+  assertEquals(rep.by_candidate[0].recall.of, 3);
+  assertEquals(rep.by_candidate[1].recall.of, 0);
   const other = scoreRecall(r, { query: { city: "Rialto" }, items: [] });
   assert(other.mismatch!.includes("city"));
   assertThrows(() => scoreRecall(r, { items: [{ candidate: 1 }] } as unknown as AnswerKey));
+});
+
+Deno.test("review fixes: runs of different races don't compare, and a fact answers one key item", async () => {
+  const r = await run({ record: [fact(VOTE, "https://herald.example/vote")] }, {});
+  assertThrows(() => compareRuns([r, { ...r, query: { ...r.query, city: "Rialto" } }]));
+  const rep = scoreRecall(r, {
+    items: [
+      { candidate: "Ana Reyes", statement: "One vote", urls: ["https://herald.example/vote"] },
+      { candidate: "Ana Reyes", statement: "Another vote", urls: ["https://herald.example/vote"] },
+    ],
+  });
+  assertEquals(rep.results.map((x) => x.found), ["url", null]);
 });

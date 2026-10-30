@@ -227,7 +227,11 @@ export interface KeyResult {
   found: "url" | "wording" | null;
   /** The fact it matched, for a person to check the match. */
   fact: { section: string; statement: string; source_url: string } | null;
-  /** Set when the key names a candidate or section the run doesn't have. */
+  /**
+   * Set when the item can't be scored: the key names a candidate or section
+   * the run doesn't have, or that candidate's research failed. Such items are
+   * left out of recall, as a failed run is left out of the stability overlap.
+   */
   problem: string | null;
 }
 
@@ -262,6 +266,8 @@ export function scoreRecall(race: RaceDossier, key: AnswerKey): RecallReport {
   const differs = (["city", "state", "office", "electionDate"] as const).filter((f) =>
     kq[f] !== undefined && norm(String(kq[f])) !== norm(q[f])
   );
+  // Each fact answers one key item at most, so two items can't both count one finding.
+  const used = new Set<Fact>();
   const results = key.items.map((item): KeyResult => {
     const d = race.candidates.find((c) => norm(c.candidate.name) === norm(item.candidate));
     const none = (problem: string | null): KeyResult => ({
@@ -280,7 +286,9 @@ export function scoreRecall(race: RaceDossier, key: AnswerKey): RecallReport {
       );
       if (!sections.length) return none(`no section "${item.section}"`);
     }
-    const facts = sections.flatMap((s) => s.facts.map((f) => ({ s, f })));
+    const facts = sections.flatMap((s) =>
+      s.facts.filter((f) => !used.has(f)).map((f) => ({ s, f }))
+    );
     const pages = new Set(
       (item.urls ?? []).map((u) => normalizeUrl(u)).filter((u): u is string => !!u),
     );
@@ -291,6 +299,7 @@ export function scoreRecall(race: RaceDossier, key: AnswerKey): RecallReport {
       .sort((a, b) => b.sim - a.sim)[0];
     const hit = byUrl ?? best;
     if (!hit) return none(null);
+    used.add(hit.f);
     return {
       item,
       found: byUrl ? "url" : "wording",
@@ -306,7 +315,10 @@ export function scoreRecall(race: RaceDossier, key: AnswerKey): RecallReport {
       names.set(norm(i.candidate), run?.candidate.name ?? i.candidate);
     }
   }
-  const rateOf = (rs: KeyResult[]) => rate(rs.filter((r) => r.found).length, rs.length);
+  const rateOf = (rs: KeyResult[]) => {
+    const scored = rs.filter((r) => !r.problem);
+    return rate(scored.filter((r) => r.found).length, scored.length);
+  };
   return {
     query: q,
     mismatch: differs.length
@@ -354,7 +366,8 @@ export function formatRecall(r: RecallReport): string {
     }: ${x.item.statement}`;
     if (x.found) {
       out.push(`  found (${x.found}): ${head}`, `      ${x.fact!.section}: ${x.fact!.statement}`);
-    } else out.push(`  missed: ${head}${x.problem ? ` (${x.problem})` : ""}`);
+    } else if (x.problem) out.push(`  not scored: ${head} (${x.problem})`);
+    else out.push(`  missed: ${head}`);
   }
   return out.join("\n");
 }
