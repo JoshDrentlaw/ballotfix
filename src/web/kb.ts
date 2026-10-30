@@ -17,7 +17,7 @@ import {
   type Relation,
   SUPPORT_SECTIONS,
 } from "../knowledge.ts";
-import type { EvidenceType } from "../types.ts";
+import type { CheckLevel, EvidenceType } from "../types.ts";
 import type { Db, Row } from "./db.ts";
 import type { RunRecord } from "./store.ts";
 
@@ -72,6 +72,8 @@ export interface StoredClaim {
   statement: string;
   evidence_type: EvidenceType;
   verified: boolean;
+  /** The quote check's level; null when unverified or indexed from a run before quote checks. */
+  check_level: CheckLevel | null;
   /** "subject": the claim is about this entity; "named": its statement names it. */
   role: string;
   citations: StoredCitation[];
@@ -247,8 +249,9 @@ export class KnowledgeBase {
     for (const c of p.claims) {
       const claim = Number(
         this.db.get(
-          `INSERT INTO claims (run_id, section, issue, position, statement, evidence_type, verified)
-           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+          `INSERT INTO claims
+             (run_id, section, issue, position, statement, evidence_type, verified, check_level)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           runId,
           c.section,
           c.issue,
@@ -256,6 +259,7 @@ export class KnowledgeBase {
           c.statement,
           c.evidence_type,
           c.verified ? 1 : 0,
+          c.check_level,
         )!.id,
       );
       this.db.run(
@@ -539,7 +543,7 @@ export class KnowledgeBase {
   claimsAbout(entityId: number): StoredClaim[] {
     const rows = this.db.all(
       `SELECT c.id, c.run_id, c.section, c.issue, c.statement, c.evidence_type, c.verified,
-              ce.role, s.url, ci.source_name, ci.author, ci.published
+              c.check_level, ce.role, s.url, ci.source_name, ci.author, ci.published
        FROM claim_entities ce
        JOIN claims c ON c.id = ce.claim_id
        JOIN runs r ON r.id = c.run_id
@@ -562,6 +566,7 @@ export class KnowledgeBase {
           statement: String(r.statement),
           evidence_type: r.evidence_type as EvidenceType,
           verified: Number(r.verified) === 1,
+          check_level: strOrNull(r.check_level) as CheckLevel | null,
           role: String(r.role),
           citations: [],
         };

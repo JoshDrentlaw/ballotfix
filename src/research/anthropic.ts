@@ -8,6 +8,8 @@
  * Every call returns JSON constrained by a schema, plus the list of URLs the
  * session actually retrieved (search results, fetched pages, citations).
  * dossier.ts uses that list to separate verified facts from unverified ones.
+ * Research calls also return the text of the pages they opened, which
+ * dossier.ts checks each fact's quote against; it is never saved.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -26,6 +28,7 @@ import {
   type FinanceResearcher,
   type MeasureQuery,
   type MergeBlock,
+  type OpenedPage,
   ORDER_BASES,
   type RaceQuery,
   type RawCandidateResearch,
@@ -327,6 +330,12 @@ function stancesById(raw: unknown): Record<string, RawStance | undefined> {
 
 const SECTION_GUIDE = SECTIONS.map((s) => `- ${s.id} (${s.title}): ${s.ask}`).join("\n");
 
+// The same for every fact, candidate, and measure. dossier.ts checks the quote
+// against the page the session opened; a paraphrase or an ellipsis-joined
+// quote reads as "quote not found", so the rule asks for one exact passage.
+const QUOTE_RULE =
+  `- quote: one short passage (a sentence or less, under 300 characters) copied exactly from the page at source_url that supports the statement: the page's own words, unchanged, with no ellipsis and nothing added. Leave it empty if you only saw the page in search results or can't copy a passage. It is checked against the page.`;
+
 const candidateSystem = (priorities: readonly string[]) =>
   `You research one candidate in a local election and fill a fixed template. Every candidate in the race gets this exact template and these exact instructions.
 
@@ -342,6 +351,7 @@ How to research:
 How to report each fact:
 - One checkable statement, in neutral language, supported by the page at source_url.
 - source_url must be a page you actually retrieved in this session via search results or fetch. Never construct or guess a URL. If you can't cite a retrieved page, leave the fact out.
+${QUOTE_RULE}
 - source_name is the publisher or agency, author is the named author if the page gives one (else leave empty), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else leave empty).
 - evidence_type: "primary_record" for government or official documents and filings; "reported" for journalism describing events; "opinion" for editorials, endorsements, candidate statements, and advocacy; "unsourced" for anything asserted without support.
 
@@ -372,8 +382,18 @@ const FACT_SCHEMA = {
     author: { type: "string" },
     published: { type: "string" },
     evidence_type: { type: "string", enum: ["primary_record", "reported", "opinion", "unsourced"] },
+    // Plain string for the same reason as author: "" means no quote.
+    quote: { type: "string" },
   },
-  required: ["statement", "source_name", "source_url", "author", "published", "evidence_type"],
+  required: [
+    "statement",
+    "source_name",
+    "source_url",
+    "author",
+    "published",
+    "evidence_type",
+    "quote",
+  ],
 } as const;
 
 // `id` is a discriminant, not a nested duplicate: this schema is reused once per
@@ -451,6 +471,7 @@ How to research:
 How to report each fact:
 - One checkable statement, in neutral language, supported by the page at source_url.
 - source_url must be a page you actually retrieved in this session via search results or fetch. Never construct or guess a URL. If you can't cite a retrieved page, leave the fact out.
+${QUOTE_RULE}
 - source_name is the publisher or agency, author is the named author if the page gives one (else leave empty), and published is the page's publication date as ISO (YYYY-MM-DD, or YYYY-MM or YYYY if that is all it gives; else leave empty).
 - evidence_type: "primary_record" for government or official documents and filings; "reported" for journalism describing events; "opinion" for editorials, endorsements, ballot arguments, and advocacy; "unsourced" for anything asserted without support.
 
@@ -876,6 +897,22 @@ export function retrievedUrls(blocks: readonly Block[]): string[] {
   return [...urls];
 }
 
+/**
+ * Every page the session opened with web fetch, with its text when it came
+ * as text (a PDF comes as base64 and isn't read yet). Kept in memory for the
+ * quote check only; the caller never saves it.
+ */
+export function openedPages(blocks: readonly Block[]): OpenedPage[] {
+  const pages: OpenedPage[] = [];
+  for (const b of blocks) {
+    if (b.type === "web_fetch_tool_result" && b.content.type === "web_fetch_result") {
+      const src = b.content.content?.source;
+      pages.push({ url: b.content.url, text: src?.type === "text" ? src.data : null });
+    }
+  }
+  return pages;
+}
+
 /** The schema-constrained JSON is the LAST text block; earlier ones are search narration. */
 export function lastText(blocks: readonly Block[]): string {
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -1109,7 +1146,7 @@ export class AnthropicResearcher
       "Research this candidate and fill every section of the template.",
     ].filter((l) => l !== "").join("\n");
 
-    const { json, urls, effort } = await this.#run(
+    const { json, urls, pages, effort } = await this.#run(
       candidateSystem(priorities),
       prompt,
       candidateSchema(priorities),
@@ -1123,6 +1160,7 @@ export class AnthropicResearcher
       identity_note: typeof o.identity_note === "string" ? o.identity_note : null,
       gaps: stringList(o.gaps),
       retrieved_urls: urls,
+      opened_pages: pages,
       model: this.#model,
       effort,
     };
@@ -1142,7 +1180,7 @@ export class AnthropicResearcher
       "Research this measure and fill every section of the template.",
     ].filter((l) => l !== "").join("\n");
 
-    const { json, urls, effort } = await this.#run(
+    const { json, urls, pages, effort } = await this.#run(
       measureSystem(priorities),
       prompt,
       measureSchema(priorities),
@@ -1158,6 +1196,7 @@ export class AnthropicResearcher
       identity_note: stringOrNull(o.identity_note),
       gaps: stringList(o.gaps),
       retrieved_urls: urls,
+      opened_pages: pages,
       model: this.#model,
       effort,
     };
@@ -1293,7 +1332,7 @@ export class AnthropicResearcher
       maxTokens?: number;
       maxContinuations?: number;
     } = {},
-  ): Promise<{ json: unknown; urls: string[]; effort: ResearchEffort }> {
+  ): Promise<{ json: unknown; urls: string[]; pages: OpenedPage[]; effort: ResearchEffort }> {
     const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
       { role: "user", content: prompt },
     ];
@@ -1329,7 +1368,7 @@ export class AnthropicResearcher
     },
     model: string,
     usage: CallUsage,
-  ): Promise<{ json: unknown; urls: string[]; effort: ResearchEffort }> {
+  ): Promise<{ json: unknown; urls: string[]; pages: OpenedPage[]; effort: ResearchEffort }> {
     const maxContinuations = call.maxContinuations ?? MAX_CONTINUATIONS;
     for (let i = 0; i <= maxContinuations; i++) {
       // Caps are always counted across continuations; see remaining().
@@ -1399,6 +1438,7 @@ export class AnthropicResearcher
             return {
               json: JSON.parse(text),
               urls: retrievedUrls(seen),
+              pages: openedPages(seen),
               effort: toolUses(seen),
             };
           } catch {

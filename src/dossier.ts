@@ -6,6 +6,9 @@
  * - A fact is shown as verified only if its URL is one the research session
  *   actually retrieved. Everything else goes to `unverified`, never dropped
  *   silently and never mixed in.
+ * - Each verified fact's quote is checked against the page the session
+ *   opened, and the fact gets a level (quoted, not_found, seen) and, when the
+ *   page doesn't name its subject, a flag. Neither ever drops a fact.
  * - Unknown evidence types collapse to "unsourced", the least trusted tag.
  */
 
@@ -27,9 +30,11 @@ import {
   EVIDENCE_TYPES,
   type EvidenceType,
   type Fact,
+  type FactCheck,
   type MeasureDossier,
   type MeasureQuery,
   type MeasureSectionId,
+  type OpenedPage,
   type PriorityResult,
   type RawCandidateResearch,
   type RawFact,
@@ -94,10 +99,14 @@ function cleanOrNull(s: unknown): string | null {
   return v ? v : null;
 }
 
+/** Longest quote kept. The prompt asks for under 300 characters; a longer one is not kept, never cut. */
+export const MAX_QUOTE_LENGTH = 600;
+
 function toFact(raw: RawFact): Fact | null {
   const statement = clean(raw.statement);
   const source_url = clean(raw.source_url);
   if (!statement || normalizeUrl(source_url) === null) return null;
+  const quote = clean(raw.quote);
   return {
     statement,
     source_name: clean(raw.source_name) || "source name not given",
@@ -105,6 +114,119 @@ function toFact(raw: RawFact): Fact | null {
     author: cleanOrNull(raw.author),
     published: cleanOrNull(raw.published),
     evidence_type: toEvidenceType(clean(raw.evidence_type)),
+    ...(quote && quote.length <= MAX_QUOTE_LENGTH ? { quote } : {}),
+  };
+}
+
+/**
+ * Text as the quote check compares it: lowercase, with every run of
+ * punctuation, quote marks, dashes, and whitespace made one space, so curly
+ * quotes, a markdown link, or a line break don't hide a match. Markdown link
+ * targets are dropped, since a fetched page's text can carry them.
+ */
+export function plainText(s: string): string {
+  return ` ${
+    s.normalize("NFKC").replace(/\]\([^)\s]*\)/g, " ").toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+  } `;
+}
+
+/** Fewer words than this can't show a page backs a statement; such a quote isn't checked. */
+export const MIN_QUOTE_WORDS = 5;
+
+/**
+ * Whether a quote is on a page: each piece, if the model joined pieces with
+ * an ellipsis anyway, appears whole-word and in order. null when the quote
+ * is too short to say.
+ */
+export function quoteOnPage(quote: string, page: string): boolean | null {
+  return quoteIn(quote, plainText(page));
+}
+
+/** quoteOnPage, against a page's text already made plain. */
+function quoteIn(quote: string, hay: string): boolean | null {
+  const parts = quote.split(/\.\.\.|\u2026/).map(plainText).filter((p) => p.trim());
+  const words = (p: string) => p.trim().split(" ").length;
+  if (!parts.length || parts.some((p) => words(p) < MIN_QUOTE_WORDS)) return null;
+  let at = 0;
+  for (const p of parts) {
+    const i = hay.indexOf(p, at);
+    if (i < 0) return false;
+    // The next piece may start at this one's closing space.
+    at = i + p.length - 1;
+  }
+  return true;
+}
+
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "phd", "md", "esq"]);
+
+/** A candidate's surname as written, for the name check: the last word that isn't a suffix. */
+export function surname(name: string): string {
+  const words = name.split(/[\s,]+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+  while (words.length > 1 && NAME_SUFFIXES.has(plainText(words.at(-1)!).trim())) words.pop();
+  return words.at(-1) ?? "";
+}
+
+/**
+ * Who the facts are about, for the name check: the name shown in the flag,
+ * and every way a page may write it (a measure's "Prop. 50", its official title).
+ */
+export interface Subject {
+  shown: string;
+  terms: string[];
+}
+
+export function candidateSubject(c: BallotCandidate): Subject {
+  const s = surname(c.name);
+  return { shown: s, terms: s ? [s] : [] };
+}
+
+export function measureSubject(label: string, officialTitle: string | null): Subject {
+  const terms = [label];
+  const prop = label.trim().match(/^prop(?:osition)?\.?\s*(\S+)$/i);
+  if (prop) terms.push(`Prop ${prop[1]}`, `Proposition ${prop[1]}`);
+  if (officialTitle) terms.push(officialTitle);
+  return { shown: label.trim(), terms: terms.filter((t) => plainText(t).trim()) };
+}
+
+/** What the session retrieved: every URL, and the text of the pages it opened. */
+interface Retrieved {
+  urls: ReadonlySet<string>;
+  /** Normalized URL to the page's plainText; null for a page opened but not readable (a PDF). */
+  opened: ReadonlyMap<string, string | null>;
+  subject: Subject;
+}
+
+function retrieved(
+  urls: readonly string[],
+  pages: readonly OpenedPage[] | undefined,
+  subject: Subject,
+): Retrieved {
+  const opened = new Map<string, string | null>();
+  for (const p of pages ?? []) {
+    const key = normalizeUrl(p.url);
+    // A page fetched twice keeps the copy whose text can be read.
+    if (key && (opened.get(key) ?? null) === null) {
+      opened.set(key, p.text === null ? null : plainText(p.text));
+    }
+  }
+  return { urls: retrievedSet(urls), opened, subject };
+}
+
+/** The quote and name check for a fact whose page the session retrieved. */
+function checkQuote(f: Fact, key: string, r: Retrieved): FactCheck {
+  const opened = r.opened.has(key);
+  const hay = r.opened.get(key) ?? null;
+  if (hay === null) return { level: "seen", opened, read: false };
+  const found = f.quote ? quoteIn(f.quote, hay) : null;
+  const named = !r.subject.terms.length ||
+    r.subject.terms.some((t) => hay.includes(plainText(t)));
+  return {
+    level: found === null ? "seen" : found ? "quoted" : "not_found",
+    opened,
+    read: true,
+    ...(named ? {} : { missing_name: r.subject.shown }),
   };
 }
 
@@ -115,18 +237,19 @@ function emptySection(gap: string): SectionResult {
 export const NOTHING_FOUND = "This run found nothing it could source for this section.";
 
 /**
- * The provenance check for one fact: it comes back only if the session
- * retrieved its page; otherwise it goes to `unverified`. Invalid facts are
- * dropped.
+ * The provenance check for one fact: it comes back, with its quote check,
+ * only if the session retrieved its page; otherwise it goes to `unverified`.
+ * Invalid facts are dropped.
  */
 function checkFact(
   rf: RawFact,
-  retrieved: ReadonlySet<string>,
+  retrieved: Retrieved,
   unverified: Fact[],
 ): Fact | null {
   const f = toFact(rf);
   if (!f) return null;
-  if (retrieved.has(normalizeUrl(f.source_url)!)) return f;
+  const key = normalizeUrl(f.source_url)!;
+  if (retrieved.urls.has(key)) return { ...f, check: checkQuote(f, key, retrieved) };
   unverified.push(f);
   return null;
 }
@@ -137,7 +260,7 @@ function checkFact(
  */
 function assembleSection(
   rs: RawSection | undefined,
-  retrieved: ReadonlySet<string>,
+  retrieved: Retrieved,
   unverified: Fact[],
   emptyNote: string,
 ): SectionResult {
@@ -166,7 +289,7 @@ function assemblePriorities(
     sections: Record<string, RawSection | undefined>;
     stances?: Record<string, RawStance | undefined>;
   },
-  retrieved: ReadonlySet<string>,
+  retrieved: Retrieved,
   unverified: Fact[],
 ): PriorityResult[] {
   return issues.map((issue, i) => {
@@ -203,14 +326,14 @@ export function assembleCandidate(
   raw: RawCandidateResearch,
   priorities: readonly string[] = [],
 ): CandidateDossier {
-  const retrieved = retrievedSet(raw.retrieved_urls);
+  const seen = retrieved(raw.retrieved_urls, raw.opened_pages, candidateSubject(candidate));
   const unverified: Fact[] = [];
   const sections = {} as Record<SectionId, SectionResult>;
 
   for (const spec of SECTIONS) {
     sections[spec.id] = assembleSection(
       raw.sections[spec.id],
-      retrieved,
+      seen,
       unverified,
       "incumbentOnly" in spec && spec.incumbentOnly && !candidate.incumbent
         ? "Not the incumbent in this office, so there is no record in it to report."
@@ -224,7 +347,7 @@ export function assembleCandidate(
     sections,
     unverified,
     identity_note: cleanOrNull(raw.identity_note),
-    priorities: assemblePriorities(priorities, raw, retrieved, unverified),
+    priorities: assemblePriorities(priorities, raw, seen, unverified),
     gaps: raw.gaps.map(clean).filter(Boolean),
     model: raw.model,
     ...effortOf(raw.effort),
@@ -286,7 +409,7 @@ export function coveredSections(d: CandidateDossier): number {
  */
 function assembleVoteMeans(
   raw: RawMeasureResearch["vote_means"],
-  retrieved: ReadonlySet<string>,
+  retrieved: Retrieved,
   unverified: Fact[],
 ): VoteMeanings {
   const one = (rf: RawFact | undefined) => rf ? checkFact(rf, retrieved, unverified) : null;
@@ -299,24 +422,24 @@ export function assembleMeasure(
   priorities: readonly string[],
   now: Date,
 ): MeasureDossier {
-  const retrieved = retrievedSet(raw.retrieved_urls);
+  const official_title = cleanOrNull(raw.official_title);
+  const seen = retrieved(
+    raw.retrieved_urls,
+    raw.opened_pages,
+    measureSubject(query.label, official_title),
+  );
   const unverified: Fact[] = [];
   const sections = {} as Record<MeasureSectionId, SectionResult>;
   for (const spec of MEASURE_SECTIONS) {
-    sections[spec.id] = assembleSection(
-      raw.sections[spec.id],
-      retrieved,
-      unverified,
-      NOTHING_FOUND,
-    );
+    sections[spec.id] = assembleSection(raw.sections[spec.id], seen, unverified, NOTHING_FOUND);
   }
   return {
     query,
     status: "ok",
-    official_title: cleanOrNull(raw.official_title),
-    vote_means: assembleVoteMeans(raw.vote_means, retrieved, unverified),
+    official_title,
+    vote_means: assembleVoteMeans(raw.vote_means, seen, unverified),
     sections,
-    priorities: assemblePriorities(priorities, raw, retrieved, unverified),
+    priorities: assemblePriorities(priorities, raw, seen, unverified),
     priority_issues: [...priorities],
     unverified,
     identity_note: cleanOrNull(raw.identity_note),

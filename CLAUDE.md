@@ -52,6 +52,21 @@ A fact is shown as verified only if its URL is one the research session actually
 search result, a fetched page, or a citation). Anything else goes to a separate, collapsed
 "unverified" list. This is the main defense against invented citations; don't weaken it.
 
+On top of that, every verified fact (and a measure's YES/NO meanings) gets a quote check
+(`checkFact` in `src/dossier.ts`). The research gives a short verbatim `quote` per fact (a plain
+string in `FACT_SCHEMA`, never nullable: the schema is near the API's 16-union limit, and a test
+counts). The adapter returns the text of every page the session opened (`opened_pages`, from
+`web_fetch_tool_result` blocks), held in memory for the check and never saved. The quote is looked
+for whole-word and in order after `plainText` (case, punctuation, quotes, dashes, whitespace,
+markdown link targets), and the fact's `check` records a level: `quoted` (on a page it opened),
+`not_found` (opened and read, not there: its own level, never folded into either neighbor), or
+`seen` (search result only, a PDF not read yet, or no quote of `MIN_QUOTE_WORDS`+). The same check
+flags (`missing_name`), never drops, a fact whose opened page lacks the candidate's surname or the
+measure's label (or "Prop N", or its official title). The page shows the level as a chip and the
+quote collapsed; runs saved before say "checked before quote checks existed". The graph stores the
+level per claim (`check_level`), the merge step only groups facts at one level, and entity pages
+show it. A found quote shows the page has those words, not that the statement reads them fairly.
+
 ## Architecture
 
 - `src/types.ts`: core types and `ResearchPort`. No vendor imports.
@@ -133,10 +148,11 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   one capped call per run (`ClaimMerger.groupDuplicates`: no web tools, low effort, at most
   `MAX_MERGE_FACTS` facts, `BALLOTFIX_MERGE_MODEL` or `DEFAULT_MERGE_MODEL`, "off" skips it) and
   saves again. The model only returns groups of ids; `merge.ts` keeps a group only if it is all
-  verified facts in one section of one candidate or measure, with one evidence type, one fact per
-  outlet. The earliest fact is kept in its own words and the rest go on it as `also`; the page says
-  "Reported by N sources" and the graph stores it as one claim with N citations. A failed merge only
-  logs: the run stays done, unmerged. The CLI does the same unless `--no-merge`.
+  verified facts in one section of one candidate or measure, with one evidence type and one
+  quote-check level, one fact per outlet. The earliest fact is kept in its own words and the rest go
+  on it as `also`; the page says "Reported by N sources" and the graph stores it as one claim with N
+  citations. A failed merge only logs: the run stays done, unmerged. The CLI does the same unless
+  `--no-merge`.
 - Context notes on names (step 3, `src/context.ts`): after the merge step, `JobRunner` makes one
   capped call per run (`ContextWriter.describeNames`: `LOOKUP_EFFORT` (medium),
   `BALLOTFIX_CONTEXT_MODEL` or `DEFAULT_CONTEXT_MODEL`, "off" skips it; CLI `--no-context`).
@@ -220,9 +236,11 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
 - Tokens by meaning, never reused across meanings: evidence type (`.ev` chips: filled for primary
   record, outlined for reported/opinion, dashed for unsourced; blues, purple, grey only), stance
   (`--stance-*`: red and green belong to stance alone; mixed is body text with a half-red,
-  half-green rule), job status (`--ok` neutral, `--bad` amber), notices (`.banner.info` for the
-  page's standing explanations, plain `.banner` warn colors only for something to act on). Radii are
-  `--r`/`--r-lg`; `--sticky` is the jump bar's height, for `scroll-margin-top`.
+  half-green rule), quote check (`.chk` chips: tinted and borderless, `--chk`, with `--chk-flag` for
+  a quote not found and the "page doesn't mention" flag; `seen` is plain muted text), job status
+  (`--ok` neutral, `--bad` amber), notices (`.banner.info` for the page's standing explanations,
+  plain `.banner` warn colors only for something to act on). Radii are `--r`/`--r-lg`; `--sticky` is
+  the jump bar's height, for `scroll-margin-top`.
 - Links: navigation in the accent, citations quiet (`.meta a`), entity pages dotted (`a.ent`).
 - A race page reads overview first: cards, then "At a glance" (`glanceHtml`: the template down,
   candidates across in ballot order, each cell a fact count or stance linking to

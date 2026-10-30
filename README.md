@@ -79,8 +79,12 @@ source kept.
 
 Each fact carries its source, author, date, and URL, and an evidence tag: **primary record**,
 **reported**, **opinion**, or **unsourced**. A fact is shown as verified only if its URL is one the
-research actually opened. Anything else goes to a collapsed "unverified" list, as a lead rather than
-a finding.
+research actually retrieved. Anything else goes to a collapsed "unverified" list, as a lead rather
+than a finding. Each verified fact also says how far it was checked against its page: **quote found
+on page** (the research opened the page and the passage it quoted is there), **quote not found on
+page**, or, when the page was only a search result or couldn't be read (PDFs, for now), just that.
+The quote sits collapsed under the fact. A fact whose opened page doesn't mention the candidate's
+surname or the measure's label is flagged, not dropped.
 
 Buttons at the top: **Download page** (one self-contained HTML file to share) and **Research
 again**.
@@ -172,7 +176,9 @@ Without the finance step, a page's Shared connections compares endorsements only
    (up to 15) and page fetch (up to 10; at most 25,000 tokens of text per page, while PDFs come in
    whole). Output is JSON constrained to the fixed template.
 3. **Provenance check.** Facts count as verified only if their URL was actually retrieved in that
-   session.
+   session. Then each fact's quote is checked against the text of the page, when the session opened
+   it, and each fact gets a level (quote found, quote not found, or only seen) and, if the page
+   doesn't name its subject, a flag. Page text is used for the check only and never saved.
 4. **After the run is done**, three capped follow-up calls, each saved as it finishes and each
    allowed to fail without undoing the run:
    - **Merge**: groups duplicate verified facts (Claude Haiku 5.5, no web tools, low effort, up to
