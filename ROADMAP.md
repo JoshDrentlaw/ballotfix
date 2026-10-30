@@ -366,7 +366,10 @@ Branch `feature/upbeat-turing-mvu6yc`. Decisions made in the PR:
 - Committees are matched locally and conservatively: a candidate's by first and last name (a
   surname-only committee is not matched, and the gap note says so), never a recall, opposing, or
   other-year committee; a measure side's by its label plus words of that side only. A committee two
-  subjects fit is neither's.
+  subjects fit is neither's. From review: a committee naming another office is not matched (a
+  same-named person running elsewhere), an outright "Yes on"/"No on" decides a measure side, a
+  committee whose reports state another election's date is not matched, and an amended report's rows
+  are kept once, from the latest filing.
 - One source per run: off NetFile, with no subject matched, or with the export unreadable, the model
   looks up every subject. A subject unmatched in a NetFile run gets a gap note rather than a model
   lookup of its own, so no run mixes transcribed and exported rows.
@@ -386,6 +389,11 @@ Follow-ups:
   reports appear.
 - Big agencies (San Francisco) may exceed the page bound (40 pages of 1,000 rows a year); the page
   says so as a portal gap. A per-filer query would avoid reading the whole year.
+- `BALLOTFIX_FINANCE_MODEL=off` turns the whole finance step off, NetFile included: running NetFile
+  alone would leave places off NetFile with a failed step rather than a skipped one. Revisit if
+  NetFile-only is wanted.
+- Office words in committee names (`officeFits`) are a fixed list; a committee naming an office in
+  other words is matched on the person's name alone.
 - Surname-only committee names ("Re-elect Kaplan") fall back to a gap note, not the model; watch how
   often that happens.
 

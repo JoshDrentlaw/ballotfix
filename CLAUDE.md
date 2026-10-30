@@ -240,16 +240,19 @@ show it. A found quote shows the page has those words, not that the statement re
   for the election year and the year before (Form 460 Schedules A and C, Form 497 Part 1; a 497 row
   repeated on a 460 is kept once) and maps fields with no model in between. Nothing about the race
   is sent. Committees are matched locally (`filerMatches`): a candidate's by first and last name,
-  candidate-controlled when the type is stated, never a recall or opposing committee or one named
-  for another year; a measure side's by the label plus words of that side only. A committee fitting
-  two subjects goes to neither. Each unmatched subject gets a gap note saying how it was looked for.
-  The place not on NetFile, no subject matched, or the export unreadable: the model looks up every
-  subject (a portal gap says why when it was on NetFile), never a mix in one run. Rows keep the
-  export's fields; `source_url` is the year's export URL (what counts as retrieved) and `filing_url`
-  the filing's image. The result names its `source`, and only then `checkFinance` takes its larger
-  share (`MAX_EXPORT_PER_SUBJECT`, the same for every subject). `BALLOTFIX_NETFILE=off` or CLI
-  `--no-netfile` always uses the model; with the finance model off, the step is off. The page says
-  which source the rows came from (`financeSource`).
+  candidate-controlled when the type is stated, never a recall or opposing committee, one naming
+  another office (`officeFits`), or one named for another year; a measure side's by the label plus
+  "Yes on"/"No on" it, else words of that side only. A committee whose reports state another
+  election's date is never matched, and an amended report's transactions are kept once, from the
+  latest filing (`latestOnly`). A committee fitting two subjects goes to neither. Each unmatched
+  subject gets a gap note saying how it was looked for. The place not on NetFile, no subject
+  matched, or the export unreadable: the model looks up every subject (a portal gap says why when it
+  was on NetFile), never a mix in one run. Rows keep the export's fields; `source_url` is the year's
+  export URL (what counts as retrieved) and `filing_url` the filing's image. The result names its
+  `source`, and only then `checkFinance` takes its larger share (`MAX_EXPORT_PER_SUBJECT`, the same
+  for every subject). `BALLOTFIX_NETFILE=off` or CLI `--no-netfile` always uses the model; with the
+  finance model off, the step is off. The page says which source the rows came from
+  (`financeSource`).
 - Office powers (roadmap item 8, `src/office.ts`): after the other steps, races only, `JobRunner`
   looks up what the race's office can do (`OfficeResearcher.findOfficePowers`: `LOOKUP_EFFORT`,
   `BALLOTFIX_OFFICE_MODEL` or `DEFAULT_OFFICE_MODEL`, "off" skips it; CLI `--no-powers`), with
