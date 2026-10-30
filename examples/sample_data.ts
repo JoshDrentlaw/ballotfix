@@ -40,6 +40,7 @@ export const withFacts: RawCandidateResearch = {
         author: null,
         published: "2024",
         evidence_type: "primary_record",
+        quote: "served on the City Council from 2006 to 2010 and was elected mayor",
       }],
       searched: ["city website biography", "county registrar"],
       gap_note: null,
@@ -53,6 +54,7 @@ export const withFacts: RawCandidateResearch = {
         author: null,
         published: "2026-09-02",
         evidence_type: "opinion",
+        quote: "Example Builders PAC and Local 99 announced their endorsements Tuesday",
       }],
       searched: ["local news endorsements"],
       gap_note: null,
@@ -93,6 +95,19 @@ export const withFacts: RawCandidateResearch = {
     "https://example.org/news/endorsements",
     "https://example.org/news/1",
     "https://example.org/daily/2",
+  ],
+  // Pages "opened" for the quote check: news/1 was only a search result.
+  opened_pages: [
+    {
+      url: "https://example.org/mayor",
+      text:
+        "Placeholder biography. Sample Candidate B served on the City Council from 2006 to 2010 and was elected mayor in 2010.",
+    },
+    {
+      url: "https://example.org/news/endorsements",
+      text: "Placeholder story. Two groups said they back Sample Candidate B for mayor.",
+    },
+    { url: "https://example.org/daily/2", text: "Placeholder story about a lawsuit." },
   ],
   model: "layout-sample",
 };
@@ -246,6 +261,11 @@ export const measureFacts: RawMeasureResearch = {
     "https://example.org/measure-x/analysis.pdf",
     "https://example.org/measure-x/arguments.pdf",
     "https://example.org/minutes/2026-07-08",
+  ],
+  // The voter guide PDFs were opened but, as PDFs, not read for the quote check.
+  opened_pages: [
+    { url: "https://example.org/measure-x/analysis.pdf", text: null },
+    { url: "https://example.org/measure-x/arguments.pdf", text: null },
   ],
   model: "layout-sample",
 };

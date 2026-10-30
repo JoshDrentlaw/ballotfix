@@ -65,7 +65,34 @@ Updates"); this wasn't verified when the roadmap was written.
   equivalent" rather than dropping the local form numbers, which local filers keep using.
 - Update the finance paragraph in CLAUDE.md.
 
-## 3. Quote check and three verification levels
+## 3. Quote check and three verification levels — done
+
+Branch `feature/focused-feynman-f4fej8`. Decisions made in the PR:
+
+- "Opened, quote not found" is its own level, `not_found`, so the levels are `quoted`, `not_found`,
+  and `seen` (plus unverified, unchanged). Folding it into `seen` would hide a mismatch the voter
+  should look at. `seen` covers search-result-only pages, PDFs (opened, not read yet), and quotes
+  that are empty or under `MIN_QUOTE_WORDS` (5) words; the chip says which (`checkLabel`).
+- Normalizing is broader than planned: every run of non-letters/digits is one space (so quotes,
+  dashes, punctuation, and markdown emphasis all compare equal), and markdown link targets are
+  dropped. Matching is whole-word. An ellipsis-joined quote must have every piece, in order.
+- A quote over `MAX_QUOTE_LENGTH` (600) isn't kept (never cut); the fact is then `seen`.
+- The name check keeps `missing_name` on the fact; the graph stores only the level.
+- Older runs: one note in the page's banner ("checked before quote checks existed"), not a chip per
+  fact. `KNOWLEDGE_VERSION` 8 and a migration add `claims.check_level`.
+
+Follow-ups:
+
+- Not yet run against the live API. The schema gained one plain string per fact (no new unions; a
+  test counts them), but the API has also rejected this schema for "compiled grammar too large"
+  before. Run one real race and one measure before relying on it, and watch how often quotes come
+  back `not_found` (if often, look at the fetched text's format before blaming the model).
+- PDF text extraction, so PDFs can reach `quoted`.
+- Context notes and finance rows have no quote check yet.
+- The name check is a heuristic: a one-letter or very common surname passes easily, and a measure
+  page that uses only a nickname ("the parks tax") is flagged.
+
+Original plan:
 
 Today a fact is "verified" if its URL appears anywhere the session retrieved, including every
 search-result URL (`retrievedUrls`, `src/research/anthropic.ts` ~line 825), where the model saw only

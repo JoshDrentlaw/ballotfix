@@ -826,3 +826,117 @@ Deno.test("the finance call stops after its own continuation limit", async () =>
   );
   assertEquals(requests.length, FINANCE_MAX_CONTINUATIONS + 1);
 });
+
+Deno.test("research returns the pages it opened, a PDF without text, and asks every fact for a quote", async () => {
+  const page = (url: string, source: unknown) => ({
+    type: "web_fetch_tool_result",
+    tool_use_id: url,
+    content: {
+      type: "web_fetch_result",
+      url,
+      retrieved_at: null,
+      content: { type: "document", source, title: null, citations: null },
+    },
+  });
+  const text = { type: "text", media_type: "text/plain", data: "Council minutes, June 2025." };
+  const pdf = { type: "base64", media_type: "application/pdf", data: "JVBERi0=" };
+  const final = JSON.stringify({ sections: emptySections, identity_note: "", gaps: [] });
+  const { client, requests } = stubClient([{
+    stop_reason: "end_turn",
+    content: [
+      search,
+      page("https://www.fontanaca.gov/minutes", text),
+      page("https://www.fontanaca.gov/budget.pdf", pdf),
+      fetchError,
+      { type: "text", text: final },
+    ],
+  }]);
+  const r = await new AnthropicResearcher({ client }).researchCandidate(
+    QUERY,
+    cand,
+    listing([cand]),
+  );
+  // Search results are retrieved, never opened.
+  assertEquals(r.opened_pages, [
+    { url: "https://www.fontanaca.gov/minutes", text: "Council minutes, June 2025." },
+    { url: "https://www.fontanaca.gov/budget.pdf", text: null },
+  ]);
+  const req = requests[0] as unknown as {
+    system: string;
+    output_config: {
+      format: {
+        schema: {
+          properties: { sections: { items: { properties: { facts: { items: unknown } } } } };
+        };
+      };
+    };
+  };
+  const factSchema = req.output_config.format.schema.properties.sections.items.properties.facts
+    .items as { properties: Record<string, { type: unknown }>; required: string[] };
+  // A plain string, never a null union: the schema is near the API's union limit.
+  assertEquals(factSchema.properties.quote.type, "string");
+  assert(factSchema.required.includes("quote"));
+  assertStringIncludes(req.system, "- quote: one short passage");
+
+  // The measure's facts and its YES / NO meanings take the same field and rule.
+  const m = stubClient([{
+    stop_reason: "end_turn",
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        official_title: "",
+        sections: [],
+        identity_note: "",
+        vote_means: [],
+        gaps: [],
+      }),
+    }],
+  }]);
+  await new AnthropicResearcher({ client: m.client }).researchMeasure({
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  });
+  const mreq = m.requests[0] as unknown as {
+    system: string;
+    output_config: {
+      format: {
+        schema: { properties: { vote_means: { items: { required: string[] } } } };
+      };
+    };
+  };
+  assert(mreq.output_config.format.schema.properties.vote_means.items.required.includes("quote"));
+  assertStringIncludes(mreq.system, "- quote: one short passage");
+});
+
+Deno.test("research schemas stay within the API's 16 union-typed parameters", async () => {
+  const unions = (n: unknown): number => {
+    if (!n || typeof n !== "object") return 0;
+    const o = n as Record<string, unknown>;
+    const here = Array.isArray(o.type) || Array.isArray(o.anyOf) ? 1 : 0;
+    return here + Object.values(o).reduce((sum: number, v) => sum + unions(v), 0);
+  };
+  const eight = Array.from({ length: 8 }, (_, i) => `issue ${i + 1}`);
+  const done = (text: string) => [{ stop_reason: "end_turn", content: [{ type: "text", text }] }];
+  const c = stubClient(done(JSON.stringify({ sections: [], identity_note: "", gaps: [] })));
+  await new AnthropicResearcher({ client: c.client }).researchCandidate(
+    QUERY,
+    cand,
+    listing([cand]),
+    eight,
+  );
+  const m = stubClient(done(JSON.stringify({ sections: [], vote_means: [], gaps: [] })));
+  await new AnthropicResearcher({ client: m.client }).researchMeasure({
+    label: "Measure X",
+    jurisdiction: "",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  }, eight);
+  for (const req of [c.requests[0], m.requests[0]]) {
+    const schema = (req.output_config as { format: { schema: unknown } }).format.schema;
+    assert(unions(schema) <= 16, `${unions(schema)} union-typed parameters`);
+  }
+});

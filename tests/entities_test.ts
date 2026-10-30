@@ -376,6 +376,8 @@ Deno.test("an entity page groups facts, shows every citation and run, and never 
   );
   assertStringIncludes(text, "Nothing in finished research for:");
   assertStringIncludes(text, "Listed as the incumbent in");
+  // Each fact keeps its quote-check level from the graph (these fake runs open no pages).
+  assertStringIncludes(text, `<span class="chk chk-seen">Quote not checked</span>`);
   // Everything here is from one run, so it is named once rather than under each fact.
   // Its shared connections come from the council and measure runs, and say so.
   assertStringIncludes(

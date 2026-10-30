@@ -146,6 +146,12 @@ const MIGRATIONS = [
   CREATE INDEX runs_by_choice
     ON runs (coalesce(CASE WHEN json_valid(body) THEN json_extract(body, '$.choice_id') END, id), created_at);
   `,
+  `
+  -- How far a verified claim was checked against its page (quoted, not_found, seen):
+  -- NULL for unverified claims and runs saved before quote checks. Filled by the
+  -- rebuild KNOWLEDGE_VERSION 8 starts.
+  ALTER TABLE claims ADD COLUMN check_level TEXT;
+  `,
 ];
 
 export type Row = Record<string, unknown>;

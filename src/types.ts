@@ -138,6 +138,18 @@ export interface RawFact {
   /** ISO date (or partial date) the source was published, when known. */
   published: string | null;
   evidence_type: string;
+  /** A short passage copied from the page that supports the statement; "" or absent when none. */
+  quote?: string;
+}
+
+/**
+ * A page the research session opened with web fetch, held in memory for the
+ * quote check and never saved. `text` is null when the page's text can't be
+ * checked yet (a PDF arrives as base64).
+ */
+export interface OpenedPage {
+  url: string;
+  text: string | null;
 }
 
 export interface RawSection {
@@ -163,9 +175,35 @@ export interface RawCandidateResearch {
   identity_note: string | null;
   gaps: string[];
   retrieved_urls: string[];
+  /** Pages it opened, for the quote check. Never saved. Absent: none. */
+  opened_pages?: OpenedPage[];
   model: string;
   /** Absent from adapters that don't count it. */
   effort?: ResearchEffort;
+}
+
+/**
+ * How far a verified fact was checked against its page (src/dossier.ts):
+ * - quoted: the session opened the page and the fact's quote is on it;
+ * - not_found: the session opened and read the page, and the quote isn't on it;
+ * - seen: the page was only in search results, or was opened but there was no
+ *   quote to check or its text couldn't be read (a PDF, for now).
+ * A fact whose URL was never retrieved has no level: it is unverified.
+ */
+export const CHECK_LEVELS = ["quoted", "not_found", "seen"] as const;
+export type CheckLevel = typeof CHECK_LEVELS[number];
+
+export interface FactCheck {
+  level: CheckLevel;
+  /** The session opened the page, not only saw it in search results. */
+  opened: boolean;
+  /** The opened page's text was read for the check (false for a PDF). */
+  read: boolean;
+  /**
+   * Set when the page was read and doesn't contain the subject's surname (or
+   * a measure's label): the name as looked for. Shown as a flag, never dropped.
+   */
+  missing_name?: string;
 }
 
 export interface Fact {
@@ -175,6 +213,13 @@ export interface Fact {
   author: string | null;
   published: string | null;
   evidence_type: EvidenceType;
+  /** The quote the research gave from the page, when it gave one. Absent on older runs. */
+  quote?: string;
+  /**
+   * The quote check, on verified facts only. Absent on unverified facts and on
+   * runs saved before quote checks existed.
+   */
+  check?: FactCheck;
   /**
    * Other verified facts in the same section that state the same thing, each
    * with its own provenance, folded in by the merge step (src/merge.ts). Each
@@ -274,6 +319,8 @@ export interface RawMeasureResearch {
   vote_means?: { yes?: RawFact; no?: RawFact };
   gaps: string[];
   retrieved_urls: string[];
+  /** Pages it opened, for the quote check. Never saved. Absent: none. */
+  opened_pages?: OpenedPage[];
   model: string;
   /** Absent from adapters that don't count it. */
   effort?: ResearchEffort;

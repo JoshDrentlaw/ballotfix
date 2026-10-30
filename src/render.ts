@@ -24,6 +24,7 @@ import type {
   Contribution,
   EvidenceType,
   Fact,
+  FactCheck,
   FinanceResult,
   FinanceSubjectResult,
   MeasureDossier,
@@ -123,9 +124,102 @@ export function publishedDate(s: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? readableDate(s) : s;
 }
 
+/** Source, author, date, and, when the opened page doesn't name the subject, that flag. */
 function factMeta(f: Fact): string {
-  return sourceMeta({ ...f, url: f.source_url });
+  const flag = f.check?.missing_name
+    ? ` · <span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
+    : "";
+  return sourceMeta({ ...f, url: f.source_url }) + flag;
 }
+
+/** What a quote-check level says on the page. */
+export function checkLabel(c: FactCheck): string {
+  switch (c.level) {
+    case "quoted":
+      return "Quote found on page";
+    case "not_found":
+      return "Quote not found on page";
+    case "seen":
+      return !c.opened
+        ? "Search result only"
+        : c.read
+        ? "Page opened, no quote long enough to check"
+        : "Page opened, quote not checked";
+  }
+}
+
+/** The quote-check chip: its own style, never an evidence-type or stance color. */
+function checkTag(f: Fact): string {
+  return f.check ? ` ${chip(f.check)}` : "";
+}
+
+/**
+ * The chip for a level alone, where the details aren't kept (entity pages
+ * read the graph, which stores the level only).
+ */
+export function levelChip(level: FactCheck["level"]): string {
+  return chipOf(
+    level,
+    level === "seen" ? "Quote not checked" : checkLabel({ level, opened: true, read: true }),
+  );
+}
+
+function chip(c: FactCheck): string {
+  return chipOf(c.level, checkLabel(c));
+}
+
+function chipOf(level: FactCheck["level"], label: string): string {
+  return `<span class="chk chk-${level}">${esc(label)}</span>`;
+}
+
+/** The verified facts a subject shows: its sections, its voter's issues, and a measure's YES and NO. */
+function shownFacts(
+  sections: Readonly<Record<string, SectionResult | undefined>>,
+  priorities: readonly PriorityResult[] | undefined,
+  votes?: VoteMeanings,
+): Fact[] {
+  return [
+    ...Object.values(sections).flatMap((r) => r?.facts ?? []),
+    ...(priorities ?? []).flatMap((p) => p.result.facts),
+    ...[votes?.yes, votes?.no].filter((f): f is Fact => !!f),
+  ];
+}
+
+/** The quotes the research gave, collapsed under the fact: one per source that gave one. */
+function quotesHtml(facts: readonly Fact[]): string {
+  const quoted = facts.filter((f) => f.quote);
+  if (!quoted.length) return "";
+  const missed = quoted.every((f) => f.check?.level === "not_found");
+  // A quote that wasn't checked (unverified, search result only, too short, page
+  // unread) isn't said to be from the page.
+  const unchecked = quoted.every((f) => !f.check || f.check.level === "seen");
+  const summary = quoted.length > 1
+    ? `${unchecked ? "Quotes given, not checked" : "Quotes from the pages"} (${quoted.length})`
+    : missed
+    ? "The quote given, not found on the page"
+    : unchecked
+    ? "The quote given, not checked against the page"
+    : "Quote from the page";
+  const body = quoted.length > 1
+    ? `<ul>${
+      quoted.map((f) =>
+        `<li><span class="src">${esc(f.source_name)}:</span> <q>${esc(f.quote!)}</q></li>`
+      ).join("")
+    }</ul>`
+    : `<blockquote>${esc(quoted[0].quote!)}</blockquote>`;
+  return `<details class="quote"><summary>${summary}</summary>${body}</details>`;
+}
+
+/**
+ * Whether any verified fact here was checked before quote checks existed:
+ * the page then says its facts were verified by URL alone.
+ */
+export function predatesQuoteChecks(facts: readonly Fact[]): boolean {
+  return facts.some((f) => !f.check);
+}
+
+const BEFORE_QUOTE_CHECKS =
+  `<p class="note">This run was checked before quote checks existed: its facts count as verified because their pages were among those the research retrieved, but their words weren't checked against those pages.</p>`;
 
 /**
  * Links from a page the app serves into its entity pages. `href` answers
@@ -218,18 +312,21 @@ function namedText(text: string, n: ContextNote, notes: Notes): string {
  */
 function factItem(f: Fact, notes: Notes = NO_NOTES): string {
   const also = f.also ?? [];
-  const tag = evTag(f.evidence_type);
+  // A merge keeps one check per group (src/merge.ts), so the first fact's speaks for all.
+  const tag = evTag(f.evidence_type) + checkTag(f);
   if (!also.length) {
     return `<li class="fact">
   ${tag}
   ${statementHtml(f.statement, notes)}
   <p class="meta">${factMeta(f)}</p>
+  ${quotesHtml([f])}
 </li>`;
   }
   return `<li class="fact merged">
   ${tag} <span class="nsrc">Reported by ${also.length + 1} sources</span>
   ${statementHtml(f.statement, notes)}
   <ul class="meta srcs">${[f, ...also].map((x) => `<li>${factMeta(x)}</li>`).join("")}</ul>
+  ${quotesHtml([f, ...also])}
   <details class="wording"><summary>How each source put it</summary><ul>${
     [f, ...also].map((x) =>
       `<li><span class="src">${esc(x.source_name)}:</span> ${esc(x.statement)}</li>`
@@ -263,9 +360,10 @@ function refItem(f: Fact, at: { id: string; label: string }, notes: Notes): stri
     }</ul><p class="meta">${jump}</p>`
     : `<p class="meta">${factMeta(f)} · ${jump}</p>`;
   return `<li class="fact ref">
-  ${evTag(f.evidence_type)}
+  ${evTag(f.evidence_type)}${checkTag(f)}
   ${statementHtml(f.statement, notes)}
   ${sources}
+  ${quotesHtml([f, ...also])}
 </li>`;
 }
 
@@ -365,7 +463,9 @@ function voteMeansHtml(v: VoteMeanings | undefined, notes: Notes): string {
     f
       ? `<div class="vote"><p class="vote-label">${label}</p>${
         statementHtml(f.statement, notes)
-      }<p class="meta">${evTag(f.evidence_type)} ${factMeta(f)}</p></div>`
+      }<p class="meta">${evTag(f.evidence_type)}${checkTag(f)} ${factMeta(f)}</p>${
+        quotesHtml([f])
+      }</div>`
       : `<div class="vote"><p class="vote-label">${label}</p><p class="gap">No page this run opened says this in plain terms. See the facts below.</p></div>`;
   return `<div class="votes">${one("YES", v.yes)}${one("NO", v.no)}</div>`;
 }
@@ -1033,6 +1133,8 @@ export const STYLES = `
   --info-bg:#edf2f5; --warn-bg:#fff4e0; --warn-fg:#6b4300;
   /* Evidence type: what kind of source backs a fact. Blues, purple, and grey only: red and green mean stance. */
   --ev-opinion:#6b4592;
+  /* Quote check: how far a fact was checked against its page; flag marks a mismatch to look into. */
+  --chk:#33322e; --chk-flag:#7a4a12;
   /* Stance on a voter's issue. */
   --stance-conflicts:#a3302a; --stance-aligns:#1f6f43;
   /* Job status: done is the normal state, so it stays neutral; a failure is amber, something to act on. */
@@ -1041,7 +1143,7 @@ export const STYLES = `
   --r:10px; --r-lg:12px; --sticky:60px; --name:48px; --dock:64px; }
 @media (prefers-color-scheme: dark) { :root { --bg:#161614; --fg:#ecebe6; --muted:#a8a69e;
   --line:#34332f; --line-strong:#4a4843; --card:#1f1f1c; --tint:#262622; --accent:#8cc0dc; --accent-fg:#10202a;
-  --info-bg:#1d272d; --warn-bg:#3a2c12; --warn-fg:#f3d39b; --ev-opinion:#c9a3e6;
+  --info-bg:#1d272d; --warn-bg:#3a2c12; --warn-fg:#f3d39b; --ev-opinion:#c9a3e6; --chk:#dcdad3; --chk-flag:#e8b77a;
   --stance-conflicts:#f0a090; --stance-aligns:#7fd3a3; --ok:#cfcdc6; --bad:#f3c26b; } }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -1077,6 +1179,16 @@ p, li { overflow-wrap: anywhere; }
 .ev-primary_record { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .ev-reported { color: var(--accent); } .ev-opinion { color: var(--ev-opinion); }
 .ev-unsourced { color: var(--muted); border-style: dashed; }
+/* Quote-check chips: tinted, borderless, so they never read as an evidence chip. */
+.chk { display: inline-block; font-size: .78rem; font-weight: 600; line-height: 1.45; padding: 0 7px; border-radius: 4px; background: var(--tint); color: var(--chk); }
+.chk-not_found { color: var(--chk-flag); }
+.chk-seen { background: transparent; color: var(--muted); font-weight: 400; padding: 0 2px; }
+.flag { color: var(--chk-flag); font-weight: 600; }
+details.quote { font-size: .9rem; margin-top: 4px; }
+details.quote > summary { font-size: .85rem; padding: 2px 0; }
+details.quote blockquote { margin: 4px 0 0; padding: 2px 10px; border-left: 3px solid var(--line-strong); }
+details.quote ul { margin: 4px 0 0; padding-left: 20px; }
+details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
 .srcs { list-style: none; padding: 0; margin: 2px 0 0; }
 .srcs li { margin: 2px 0; }
@@ -1268,6 +1380,9 @@ nav.jump ~ .dossier .dossier-name { top: calc(var(--sticky) - 8px); }
 .banner.info summary { color: var(--muted); }
 .legend { display: grid; grid-template-columns: max-content 1fr; gap: 6px 10px; align-items: baseline; margin: 8px 0; }
 .legend dt, .legend dd { margin: 0; }
+/* The quote-check labels are long: each sits above what it means. */
+.legend.stacked { grid-template-columns: 1fr; gap: 2px; }
+.legend.stacked dd { margin-bottom: 8px; }
 .note details summary { padding: 4px 0 0; font-size: .9rem; }
 .note > p { margin: 0; }
 /* At a glance: candidates across, the template down. Scrolls inside its box, never the page. */
@@ -1455,6 +1570,13 @@ ${extra.status ?? ""}
 ${extra.actions ?? ""}
 
 <div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions.</p>
+${
+    predatesQuoteChecks(
+        r.candidates.flatMap((d) => d.status === "ok" ? shownFacts(d.sections, d.priorities) : []),
+      )
+      ? BEFORE_QUOTE_CHECKS
+      : ""
+  }
 ${cantSee(r.standing_gaps)}
 ${readingGuide("candidates' own statements")}</div>
 
@@ -1537,6 +1659,25 @@ export function readingGuide(ownStatements: string): string {
 <dt>${evTag("opinion")}</dt><dd>Endorsements, editorials, and ${esc(ownStatements)}.</dd>
 <dt>${evTag("unsourced")}</dt><dd>Asserted without support.</dd>
 </dl>
+<p>Every fact shown cites a page this run retrieved; facts citing any other page are kept apart, collapsed, as unverified. A second label says how far the fact was checked against its page (facts from runs before quote checks existed have none):</p>
+<dl class="legend stacked">
+<dt>${
+    chip({ level: "quoted", opened: true, read: true })
+  }</dt><dd>The research opened the page and the passage it quoted is on it.</dd>
+<dt>${
+    chip({ level: "not_found", opened: true, read: true })
+  }</dt><dd>The research opened the page, but the passage it quoted isn't on it. The page may say it in other words, or not at all: check it.</dd>
+<dt>${
+    chip({ level: "seen", opened: true, read: false })
+  }</dt><dd>The page was opened but couldn't be read for the check (a PDF, for now).</dd>
+<dt>${
+    chip({ level: "seen", opened: true, read: true })
+  }</dt><dd>The page was opened, but the research gave no passage long enough to check.</dd>
+<dt>${
+    chip({ level: "seen", opened: false, read: false })
+  }</dt><dd>The research saw the page only as a search result: a title and a snippet.</dd>
+</dl>
+<p>A found quote shows the page has those words, not that the statement is a fair reading of them. "Page doesn't mention" means the opened page doesn't contain the candidate's surname (or the measure's label), so it may be about someone or something else.</p>
 <p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
 <p>In the app, a name with a dotted underline opens everything the research holds on it. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on it.</p>
 </details>`;
@@ -1630,6 +1771,11 @@ ${extra.status ?? ""}
 ${extra.actions ?? ""}
 
 <div class="banner info"><p><strong>This page does not recommend a yes or no vote.</strong> Every measure gets the same sections, and the case for and the case against are researched with the same instructions.</p>
+${
+    d.status === "ok" && predatesQuoteChecks(shownFacts(d.sections, d.priorities, d.vote_means))
+      ? BEFORE_QUOTE_CHECKS
+      : ""
+  }
 ${cantSee(d.standing_gaps)}
 ${readingGuide("ballot arguments, and campaigns' own statements")}</div>
 ${

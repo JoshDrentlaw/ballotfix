@@ -35,6 +35,7 @@ import { attachNotes } from "./context.ts";
 import { normalizeUrl } from "./dossier.ts";
 import { MEASURE_SECTION_IDS, priorityId, SECTION_IDS } from "./template.ts";
 import type {
+  CheckLevel,
   ContextNote,
   ContextResult,
   Contribution,
@@ -49,7 +50,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 7;
+export const KNOWLEDGE_VERSION = 8;
 
 /** "side": the supporters or the opponents of one measure, so the two can be compared. */
 export const ENTITY_KINDS = ["person", "office", "measure", "organization", "side"] as const;
@@ -109,6 +110,11 @@ export interface ClaimDraft {
   statement: string;
   evidence_type: EvidenceType;
   verified: boolean;
+  /**
+   * The quote check's level (src/dossier.ts). A merged claim's citations share
+   * one (src/merge.ts). null when unverified or saved before quote checks.
+   */
+  check_level: CheckLevel | null;
   citations: Citation[];
   /** Entity keys of the people and organizations the statement names (role "named"). */
   named: string[];
@@ -416,6 +422,7 @@ function claimsFrom(
       statement: f.statement,
       evidence_type: f.evidence_type,
       verified,
+      check_level: verified ? f.check?.level ?? null : null,
       citations: [c, ...also],
       named: named(f.statement),
     });
@@ -465,6 +472,8 @@ function namedEntities(
       // Who someone is, from a page about them: closest to a report, and never a primary record.
       evidence_type: "reported",
       verified: true,
+      // Notes have no quote check; their own provenance check is in src/context.ts.
+      check_level: null,
       citations: [c],
       named: [],
     }];

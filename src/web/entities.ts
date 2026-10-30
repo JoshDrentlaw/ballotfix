@@ -28,6 +28,7 @@ import {
 import {
   esc,
   EVIDENCE_LABEL,
+  levelChip,
   link,
   page,
   pairCount,
@@ -224,8 +225,8 @@ function claimItem(
   const n = c.citations.length;
   return `<li class="fact">
   <span class="ev ev-${c.evidence_type}">${EVIDENCE_LABEL[c.evidence_type]}</span>${
-    n > 1 ? ` <span class="nsrc">Reported by ${n} sources</span>` : ""
-  }
+    c.check_level ? ` ${levelChip(c.check_level)}` : ""
+  }${n > 1 ? ` <span class="nsrc">Reported by ${n} sources</span>` : ""}
   ${about}<p>${esc(c.statement)}</p>
   ${citationsHtml(c.citations)}
   ${fromLine(c.run_id, v, base)}
