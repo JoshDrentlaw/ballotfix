@@ -121,12 +121,15 @@ function toFact(raw: RawFact): Fact | null {
 /**
  * Text as the quote check compares it: lowercase, with every run of
  * punctuation, quote marks, dashes, and whitespace made one space, so curly
- * quotes, a markdown link, or a line break don't hide a match. Markdown link
- * targets are dropped, since a fetched page's text can carry them.
+ * quotes, a markdown link, or a line break don't hide a match. Accents are
+ * dropped as `nameKey` (src/knowledge.ts) drops them, so "García" and
+ * "Garcia" compare equal. Markdown link targets (and their titles) are
+ * dropped, since a fetched page's text can carry them.
  */
 export function plainText(s: string): string {
   return ` ${
-    s.normalize("NFKC").replace(/\]\([^)\s]*\)/g, " ").toLowerCase()
+    s.normalize("NFKD").replace(/\p{M}/gu, "")
+      .replace(/\]\([^)\s]*(?:\s+"[^"]*")?\)/g, " ").toLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, " ").trim()
   } `;
 }
@@ -146,8 +149,10 @@ export function quoteOnPage(quote: string, page: string): boolean | null {
 /** quoteOnPage, against a page's text already made plain. */
 function quoteIn(quote: string, hay: string): boolean | null {
   const parts = quote.split(/\.\.\.|\u2026/).map(plainText).filter((p) => p.trim());
-  const words = (p: string) => p.trim().split(" ").length;
-  if (!parts.length || parts.some((p) => words(p) < MIN_QUOTE_WORDS)) return null;
+  // The minimum is for the whole quote: a short piece still has to be on the page,
+  // so a made-up ending after an ellipsis reads as not found.
+  const words = parts.reduce((n, p) => n + p.trim().split(" ").length, 0);
+  if (words < MIN_QUOTE_WORDS) return null;
   let at = 0;
   for (const p of parts) {
     const i = hay.indexOf(p, at);
@@ -196,6 +201,8 @@ interface Retrieved {
   /** Normalized URL to the page's plainText; null for a page opened but not readable (a PDF). */
   opened: ReadonlyMap<string, string | null>;
   subject: Subject;
+  /** Per opened page, whether it names the subject: computed once, not per fact. */
+  named: Map<string, boolean>;
 }
 
 function retrieved(
@@ -211,7 +218,7 @@ function retrieved(
       opened.set(key, p.text === null ? null : plainText(p.text));
     }
   }
-  return { urls: retrievedSet(urls), opened, subject };
+  return { urls: retrievedSet(urls), opened, subject, named: new Map() };
 }
 
 /** The quote and name check for a fact whose page the session retrieved. */
@@ -220,8 +227,12 @@ function checkQuote(f: Fact, key: string, r: Retrieved): FactCheck {
   const hay = r.opened.get(key) ?? null;
   if (hay === null) return { level: "seen", opened, read: false };
   const found = f.quote ? quoteIn(f.quote, hay) : null;
-  const named = !r.subject.terms.length ||
-    r.subject.terms.some((t) => hay.includes(plainText(t)));
+  let named = r.named.get(key);
+  if (named === undefined) {
+    named = !r.subject.terms.length ||
+      r.subject.terms.some((t) => hay.includes(plainText(t)));
+    r.named.set(key, named);
+  }
   return {
     level: found === null ? "seen" : found ? "quoted" : "not_found",
     opened,

@@ -143,7 +143,7 @@ export function checkLabel(c: FactCheck): string {
       return !c.opened
         ? "Search result only"
         : c.read
-        ? "Page opened, no quote to check"
+        ? "Page opened, no quote long enough to check"
         : "Page opened, quote not checked";
   }
 }
@@ -158,14 +158,18 @@ function checkTag(f: Fact): string {
  * read the graph, which stores the level only).
  */
 export function levelChip(level: FactCheck["level"]): string {
-  const label = level === "seen"
-    ? "Quote not checked"
-    : checkLabel({ level, opened: true, read: true });
-  return `<span class="chk chk-${level}">${esc(label)}</span>`;
+  return chipOf(
+    level,
+    level === "seen" ? "Quote not checked" : checkLabel({ level, opened: true, read: true }),
+  );
 }
 
 function chip(c: FactCheck): string {
-  return `<span class="chk chk-${c.level}">${esc(checkLabel(c))}</span>`;
+  return chipOf(c.level, checkLabel(c));
+}
+
+function chipOf(level: FactCheck["level"], label: string): string {
+  return `<span class="chk chk-${level}">${esc(label)}</span>`;
 }
 
 /** The verified facts a subject shows: its sections, its voter's issues, and a measure's YES and NO. */
@@ -186,10 +190,15 @@ function quotesHtml(facts: readonly Fact[]): string {
   const quoted = facts.filter((f) => f.quote);
   if (!quoted.length) return "";
   const missed = quoted.every((f) => f.check?.level === "not_found");
+  // A quote that wasn't checked (unverified, search result only, too short, page
+  // unread) isn't said to be from the page.
+  const unchecked = quoted.every((f) => !f.check || f.check.level === "seen");
   const summary = quoted.length > 1
-    ? `Quotes from the pages (${quoted.length})`
+    ? `${unchecked ? "Quotes given, not checked" : "Quotes from the pages"} (${quoted.length})`
     : missed
     ? "The quote given, not found on the page"
+    : unchecked
+    ? "The quote given, not checked against the page"
     : "Quote from the page";
   const body = quoted.length > 1
     ? `<ul>${
@@ -303,7 +312,7 @@ function namedText(text: string, n: ContextNote, notes: Notes): string {
  */
 function factItem(f: Fact, notes: Notes = NO_NOTES): string {
   const also = f.also ?? [];
-  // A merge keeps one level per group (src/merge.ts), so the first fact's speaks for all.
+  // A merge keeps one check per group (src/merge.ts), so the first fact's speaks for all.
   const tag = evTag(f.evidence_type) + checkTag(f);
   if (!also.length) {
     return `<li class="fact">

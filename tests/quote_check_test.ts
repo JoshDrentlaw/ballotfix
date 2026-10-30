@@ -77,6 +77,11 @@ Deno.test("a quote matches across case, curly quotes, dashes, line breaks, and m
 });
 
 Deno.test("an ellipsis-joined quote must have every piece, in order; a short one isn't checked", () => {
+  // The minimum is for the whole quote, so a short invented piece still fails.
+  assertEquals(
+    quoteOnPage("will not raise taxes this year ... and invented twelve", HERALD_TEXT),
+    false,
+  );
   assert(
     quoteOnPage("will not raise taxes this year ... before the council voted 4-1", HERALD_TEXT),
   );
@@ -85,7 +90,8 @@ Deno.test("an ellipsis-joined quote must have every piece, in order; a short one
     false,
   );
   assertEquals(quoteOnPage("raise taxes", HERALD_TEXT), null);
-  assertEquals(quoteOnPage("will not raise taxes this year … voted", HERALD_TEXT), null);
+  assert(quoteOnPage("will not raise taxes this year … voted", HERALD_TEXT));
+  assertEquals(quoteOnPage("raise ... taxes", HERALD_TEXT), null);
 });
 
 Deno.test("each verified fact gets a level; an unverified one gets none", () => {
@@ -203,7 +209,7 @@ const groupAll: ClaimMerger = {
   groupDuplicates: (blocks) => Promise.resolve(blocks.map((b) => b.facts.map((f) => f.id))),
 };
 
-Deno.test("the merge step only groups facts at the same level", async () => {
+Deno.test("the merge step only groups facts with the same check", async () => {
   const port = new FakeResearch(listing([WARREN]), {
     [WARREN.name]: raw({
       sections: {
@@ -212,9 +218,10 @@ Deno.test("the merge step only groups facts at the same level", async () => {
           fact(PE, "Warren said she would not raise taxes", { source_name: "Press-Enterprise" }),
           fact(SNIPPET, "", { source_name: "KVCR" }),
           fact(PDF, "", { source_name: "City of Fontana" }),
+          fact(`${SNIPPET}-2`, "", { source_name: "Inland Daily" }),
         ),
       },
-      retrieved_urls: [HERALD, PE, PDF, SNIPPET],
+      retrieved_urls: [HERALD, PE, PDF, SNIPPET, `${SNIPPET}-2`],
       opened_pages: [{ url: HERALD, text: HERALD_TEXT }, { url: PE, text: PE_TEXT }, {
         url: PDF,
         text: null,
@@ -223,13 +230,15 @@ Deno.test("the merge step only groups facts at the same level", async () => {
   });
   const r = await runRace(QUERY, port);
   const { dossier, groups } = await mergeRace(r, groupAll);
-  // Quoted (Herald) and not_found (PE) stay apart; the two "seen" facts merge.
+  // Quoted (Herald) and not_found (PE) stay apart. Of the three "seen" facts, the two
+  // search results merge; the opened PDF says something else on its chip, so it stays apart.
   assertEquals(groups, 1);
   const facts = dossier.candidates[0].sections.record.facts;
-  assertEquals(facts.map((f) => [f.check?.level, f.also?.length ?? 0]), [
-    ["quoted", 0],
-    ["not_found", 0],
-    ["seen", 1],
+  assertEquals(facts.map((f) => [f.check?.level, f.check?.opened, f.also?.length ?? 0]), [
+    ["quoted", true, 0],
+    ["not_found", true, 0],
+    ["seen", false, 1],
+    ["seen", true, 0],
   ]);
 });
 

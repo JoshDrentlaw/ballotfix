@@ -168,11 +168,13 @@ function checkGroups(raw: unknown, slots: ReadonlyMap<string, Slot>): Group[] {
     if (members.length < 2) continue;
     const { subject, part } = members[0];
     if (members.some((m) => m.subject !== subject || m.part !== part)) continue;
-    // Facts from runs before quote checks have no level; they group among themselves.
-    const byType = Map.groupBy(
-      members,
-      (m) => `${m.fact.evidence_type} ${m.fact.check?.level ?? ""}`,
-    );
+    // The merged fact shows one chip for all (render.ts), so its facts must share
+    // everything the chip says: level, and whether the page was opened and read.
+    // Facts from runs before quote checks have none; they group among themselves.
+    const byType = Map.groupBy(members, (m) => {
+      const c = m.fact.check;
+      return `${m.fact.evidence_type} ${c ? `${c.level} ${c.opened} ${c.read}` : ""}`;
+    });
     for (const same of byType.values()) {
       same.sort((a, b) => a.index - b.index);
       const outlets = new Set<string>(), pages = new Set<string>();
