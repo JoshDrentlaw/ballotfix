@@ -165,12 +165,15 @@ Deno.test("the page marks thin stances, lists them after full ones, and notes ol
   assertStringIncludes(html, "is from one outlet and isn&#39;t a primary record");
   assertStringIncludes(html, ">Conflicts, thin</a>");
   assert(!html.includes("before that threshold existed"));
+  assert(!html.includes("possibly thin"));
 
   // A run saved before the threshold reads as it did, with a note.
   const old = structuredClone(race);
   for (const p of old.candidates[0].priorities!) delete p.stance_strength;
   const before = renderRace(old);
   assertStringIncludes(before, "before that threshold existed");
+  // The cards, which the ballot's Researched tab shares, say so too.
+  assertStringIncludes(before, "possibly thin.</p>");
   assert(!before.includes(", thin"));
 });
 

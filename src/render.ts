@@ -697,7 +697,10 @@ export function stanceSummary(p: readonly PriorityResult[] | undefined, subject:
       }</p>`;
     })
   );
-  return lines.join("");
+  const before = lines.some(Boolean) && predatesStanceThreshold(p ?? [])
+    ? `<p class="stance-old">Marked before stances needed two outlets or a primary record: possibly thin.</p>`
+    : "";
+  return lines.join("") + before;
 }
 
 /**
@@ -1507,6 +1510,7 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 .stance-mixed { color: var(--fg); }
 .stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
 .stance.thin { border-left-style: dashed; }
+.stance-old { font-size: .8rem; color: var(--muted); margin: 2px 0; }
 /* The mixed rule is an image, which a border style can't dash: dash the image instead. */
 .stance.stance-mixed.thin { border-image: repeating-linear-gradient(var(--stance-conflicts) 0 5px, transparent 5px 8px, var(--stance-aligns) 8px 13px, transparent 13px 16px) 1; }
 .measure-q { white-space: pre-line; }
