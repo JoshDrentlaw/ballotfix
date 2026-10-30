@@ -203,9 +203,8 @@ Branch `feature/sweet-feynman-rq1q5m`. Decisions made in the PR:
 - Older runs: ordered by publication date, each section says "Sources published ...", and the page's
   banner says once that the run predates event dates.
 - Merge step: a group's known event dates must agree (a year or month matches the days inside it;
-  the date most of the group shares wins, so one outlier doesn't block the rest),
-  so a merged fact is one event. A merged fact without its own event date uses its other sources'
-  most specific one.
+  the date most of the group shares wins, so one outlier doesn't block the rest), so a merged fact
+  is one event. A merged fact without its own event date uses its other sources' most specific one.
 
 Follow-ups:
 
