@@ -30,6 +30,7 @@ import {
   EVIDENCE_LABEL,
   link,
   page,
+  pairCount,
   publishedDate,
   readableDate,
   readingGuide,
@@ -445,9 +446,9 @@ function sharedHtml(v: EntityView, base: string): string {
         m.a.map(esc).join(" / ")
       } (${esc(self.name)}) and ${m.b.map(esc).join(" / ")} (${esc(p.entity.name)}).</p>`
     ).join("");
-    return `<section class="pair"><h5>${entityLink(p.entity, base)} <span class="desig">${
+    return `<details class="pair"><summary><h5>${entityLink(p.entity, base)} <span class="desig">${
       peerLabel(p)
-    }</span></h5>${shared}${possible}</section>`;
+    }</span>${pairCount(p.pair)}</h5></summary>${shared}${possible}</details>`;
   }).join("");
   const body = peers.length
     ? blocks

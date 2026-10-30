@@ -119,6 +119,8 @@ export interface HomeOptions {
   ballotError?: string;
   /** Mount prefix (e.g. "/ballotfix") for generated links. Empty when served at root. */
   base?: string;
+  /** Came from a "New race" link: show the one-race form open. */
+  openNew?: boolean;
 }
 
 export function homePage(o: HomeOptions): string {
@@ -171,9 +173,12 @@ ${ballotError}
     }"></label>
   <button type="submit"${disabled}>Read my ballot</button>
   <p class="sub">Reading takes about a minute and costs a few cents. Then you choose which contests and measures to research. The images are sent to Anthropic to be read and are not saved here; only the list of contests is kept. Leave out the return envelope, which has your signature. Marks on a filled-in ballot are ignored and never recorded.</p>
-</form>
-<h2>Or name one race</h2>`
+</form>`
     : "";
+  // Once there is saved work, the one-race form folds so the lists below are a short scroll
+  // away. It opens for an error, a "New race" link, or a page with nothing saved yet.
+  const fold = o.canUpload && (o.runs.length > 0 || (o.ballots?.length ?? 0) > 0);
+  const open = !fold || Boolean(o.values || o.error || o.openNew);
 
   const body = `<h1>Who's on your ballot?</h1>
 <p class="sub">${
@@ -185,6 +190,15 @@ ${ballotError}
   } It never ranks or recommends anyone.</p>
 ${setup}
 ${upload}
+${
+    !o.canUpload
+      ? ""
+      : fold
+      ? `<details class="fold-race"${
+        open ? " open" : ""
+      }><summary><h2>Or name one race</h2></summary>`
+      : `<h2>Or name one race</h2>`
+  }
 ${error}
 <form class="stack" id="new" method="post" action="${base}/races">
   <div class="row">
@@ -213,6 +227,7 @@ ${error}
   <button type="submit"${disabled}>Research this race</button>
   <p class="sub">Takes several minutes. Each candidate costs roughly one to two dollars of API use. You can leave this page and come back.</p>
 </form>
+${fold ? "</details>" : ""}
 ${ballots}
 <h2>Races</h2>
 ${runs}
@@ -811,6 +826,25 @@ function choicePanel(
   }</section>`;
 }
 
+/**
+ * The voter's pick and the ballot walk, held at the bottom of the screen
+ * while reading. It sits in the page just above the pick card, so it comes to
+ * rest there instead of covering it.
+ */
+function dockNav(choice: ChoiceRecord | null, w: BallotWalk | undefined): string {
+  const side = (s: WalkStep | null | undefined, arrow: string, rel: string) =>
+    s
+      ? `<a href="${esc(s.href)}" rel="${rel}" aria-label="${
+        rel === "prev" ? "Previous" : "Next"
+      }: ${esc(s.label)}">${arrow}</a>`
+      : `<span></span>`;
+  return `<nav class="dock" aria-label="Your pick">${
+    side(w?.prev, "←", "prev")
+  }<a class="dock-pick" href="#mine"><span class="label">Your pick</span> <span>${
+    pickText(choice?.picks)
+  }</span></a>${side(w?.next, "→", "next")}</nav>`;
+}
+
 /** A neighbor in the walk through a ballot's researched items. */
 export interface WalkStep {
   href: string;
@@ -872,7 +906,8 @@ export function runPage(
     ? `<a class="button secondary" href="${base}/races/${esc(run.id)}/download">Download page</a>`
     : "";
   const walk = opts.walk ? walkNav(opts.walk) : "";
-  const mine = `${
+  const dock = opts.choices && !active ? dockNav(opts.choice ?? null, opts.walk) : "";
+  const mine = `${dock}${
     opts.choices ? choicePanel(run, opts.choice ?? null, active, base, opts.saved ?? false) : ""
   }${walk}`;
   const jump = opts.choices ? `<a class="button" href="#mine">Your pick and notes</a>` : "";

@@ -410,6 +410,40 @@ Deno.test("contributions are tables, one per filing, alphabetical, in the record
   assertStringIncludes(html, `<td class="num">$1,000.00</td><td class="date">09/14/2026</td>`);
   assertStringIncludes(html, `<span class="desig">Retired</span>`);
   assert(!html.includes("<b>Z"));
+  // Folded the same way for everyone, the count in view.
+  assertStringIncludes(
+    html,
+    `<details class="fold"><summary>3 contributions from 2 filings</summary>`,
+  );
+});
+
+Deno.test("a failed candidate says why once, and every section keeps its place, compact", async () => {
+  const a = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const b = { name: "Sal Casillas", ballot_designation: null, incumbent: false };
+  const port = new FakeResearch(listing([a, b]), { "Sal Casillas": new Error("rate limited") });
+  const html = renderRace(await runRace(QUERY, port, { priorities: ["renters", "parks"] }));
+  const failed = html.slice(html.indexOf(`<article class="dossier" id="sal-casillas"`));
+  const dossier = failed.slice(0, failed.indexOf("</article>"));
+  assertEquals(dossier.split("Research for this candidate failed in this run").length - 1, 1);
+  assertStringIncludes(
+    dossier,
+    `<section class="sec empty" id="sal-casillas--accomplishments"><h4>Accomplishments</h4><p class="gap">Not checked.</p>`,
+  );
+});
+
+Deno.test("every page has a way back to the top; a dossier's name stays in view", async () => {
+  const html = renderRace(
+    await runRace(
+      QUERY,
+      new FakeResearch(
+        listing([{ name: "Joz Sida", ballot_designation: null, incumbent: false }]),
+        {},
+      ),
+    ),
+  );
+  assertStringIncludes(html, `<main id="top">`);
+  assertStringIncludes(html, `<a class="to-top" href="#top" aria-label="Back to top">`);
+  assertStringIncludes(html, `<h2 class="dossier-name">Joz Sida</h2>`);
 });
 
 Deno.test("a date that doesn't exist stays as the source gave it, not rolled over", () => {

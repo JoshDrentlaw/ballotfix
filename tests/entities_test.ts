@@ -412,7 +412,11 @@ Deno.test("entity pages escape research text and link only http(s) URLs", async 
   assertStringIncludes(text, "&lt;img src=x onerror=alert(1)&gt;");
   assertStringIncludes(text, "City &lt;b&gt;bio&lt;/b&gt;");
   for (const [, href] of text.matchAll(/href="([^"]*)"/g)) {
-    assert(href.startsWith("/bf/") || /^https?:\/\//.test(href) || href.startsWith("data:"), href);
+    assert(
+      href.startsWith("/bf/") || href.startsWith("#") || /^https?:\/\//.test(href) ||
+        href.startsWith("data:"),
+      href,
+    );
   }
   const evil = get(organizationRef("CA", "Fontana", EVIL).key);
   const page = (await fetch(`/bf/entities/${evil.slug}`)).text;
@@ -524,7 +528,7 @@ Deno.test("race and measure pages link names into the app; downloads never do", 
   const page = (await fetch("/bf/races/mayor-1")).text;
   assertStringIncludes(
     page,
-    `<h2><a class="ent" href="/bf/entities/${warren.slug}">Acquanetta Warren</a></h2>`,
+    `<h2 class="dossier-name"><a class="ent" href="/bf/entities/${warren.slug}">Acquanetta Warren</a></h2>`,
   );
   assertStringIncludes(page, `<span class="named"><a class="ent" href="/bf/entities/${pac.slug}">`);
   assertStringIncludes(

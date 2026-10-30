@@ -227,6 +227,15 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   candidates across in ballot order, each cell a fact count or stance linking to
   `sectionAnchor(candidateAnchor, section)`; counts only, never totals), then a sticky jump bar
   (`jumpHtml`) over the dossiers.
+- Long pages stay navigable without script: each dossier's name (`.dossier-name`) is sticky under
+  the jump bar; a measure page gets the same jump bar (`measureJump`); app race and measure pages
+  have a sticky pick dock (`dockNav`: pick plus prev/next in the ballot walk) that sits in the page
+  just above the pick card so it comes to rest there, never in downloads; every page has a
+  back-to-top link (`.to-top`, a plain `#top` anchor, faded in by a scroll timeline where
+  supported). Long lists fold the same way for everyone: contributions (`details.fold`, count in
+  view), each shared-connections pair (`details.pair`, `pairCount`), and the home page's one-race
+  form once there is saved work (`?new` opens it). A failed candidate or measure says why once
+  (`failedNote`); each section keeps its place saying "Not checked."
 - In-page ids for candidates come from `candidateAnchors` (never `slug(name)` directly): unique per
   page, readable when the name is, any script kept. `slug` stays ASCII for run ids and file names.
 - An empty section keeps its place in the template and says so, drawn compact (`.sec.empty`).
