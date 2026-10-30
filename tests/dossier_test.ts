@@ -296,6 +296,23 @@ Deno.test("a ballot heading is read as the government the office belongs to", ()
     ],
     ["San Bernardino County", "Measure I", "San Bernardino County"],
     ["District Offices", "Director, Division 2", "San Bernardino County"],
+    // A seat after the agency, and a state office's word inside a district's title.
+    [
+      "District Offices",
+      "Director, Inland Empire Utilities Agency, Division 2",
+      "Inland Empire Utilities Agency",
+    ],
+    [
+      "School Offices",
+      "Governing Board Member, Fontana Unified School District, Trustee Area 2",
+      "Fontana Unified School District",
+    ],
+    [
+      "District Offices",
+      "Treasurer, Cucamonga Valley Water District",
+      "Cucamonga Valley Water District",
+    ],
+    ["State Offices", "State Senator, 23rd District", "State of California"],
   ];
   for (const [heading, office, want] of cases) {
     assertEquals(ballotPlace(heading, office, county), want, `${heading} / ${office}`);

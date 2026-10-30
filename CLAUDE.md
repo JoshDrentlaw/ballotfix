@@ -256,12 +256,15 @@ show it. A found quote shows the page has those words, not that the statement re
   entity code: a contributor with its own FPPC id is an organization, one with an occupation or
   employer an individual, anyone else unknown (never matched). Nothing about the race is sent.
   Committees are matched locally (`filerMatches`): a candidate's by first and last name, or by
-  surname only when the name also states the election's year and the race's office ("Armendarez for
-  City Treasurer 2026"), candidate-controlled when the type is stated, never a recall or opposing
+  surname only when the name also states the election's year and the race's office and no other
+  given name comes right before the surname ("Armendarez for City Treasurer 2026", never "Jane
+  Smith for ..." for John Smith; a nickname committee is missed), never a recall or opposing
   committee, one naming another office (`officeFits`), or one named for another year; a measure
-  side's by the label plus "Yes on"/"No on" it, else words of that side only. A committee whose
-  reports state another election's date is never matched, and an amended report's transactions are
-  kept once, from the latest filing (`latestOnly`). A committee fitting two subjects goes to
+  side's by the label plus "Yes on"/"No on" it, else words of that side only. The search and the
+  committee list state no committee type or election date (checked live, 2026-10), so the
+  candidate-controlled and other-election checks in `filerMatches` only apply to sources that
+  give them; on NetFile the name, year, and office rules carry it. An amended report's
+  transactions are kept once, from the latest filing (`latestOnly`). A committee fitting two subjects goes to
   neither. Each unmatched subject gets a gap note saying how it was looked for. The place not on
   NetFile, no subject matched, or the export unreadable: the model looks up every subject (a portal
   gap says why when it was on NetFile), never a mix in one run. Rows keep the record's fields;

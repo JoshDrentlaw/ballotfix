@@ -680,6 +680,9 @@ const STATE_OFFICE =
 const HEADING_ONLY =
   /^(state|school|district|special district|county|city|judicial|federal|local|municipal|nonpartisan|partisan|voter[- ]nominated|party[- ]nominated|voter[- ]nominated and nonpartisan|congressional|legislative)s?$/i;
 const STATE_NAMES: Record<string, string> = { CA: "California" };
+/** A seat within an office's body, not who the office belongs to: "Division 2", "23rd District". */
+const SEAT =
+  /^((division|seat|area|trustee area|district|ward|zone)\s+(no\.?\s*)?[\w-]+|(\d+(st|nd|rd|th)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+((supervisorial|congressional|senate|assembly)\s+)?(district|division|ward|zone))$/i;
 
 /**
  * Who a contest's office belongs to, from what a ballot reading says: "City of
@@ -699,17 +702,16 @@ export function ballotPlace(
   const place = jurisdiction.trim().replace(/\s+(offices?|contests?|measures?)$/i, "").trim();
   if (place && !HEADING_ONLY.test(place)) return place;
   const st = (state ?? "").toUpperCase();
+  // The agency named after a comma, past any trailing seat ("..., Division 2",
+  // "..., Trustee Area 2", "..., 23rd District"). Checked before the state's
+  // offices, so "Treasurer, Cucamonga Valley Water District" is the district's.
+  const parts = office.split(",").map((s) => s.trim()).filter(Boolean);
+  while (parts.length > 1 && SEAT.test(parts.at(-1)!)) parts.pop();
+  const agency = parts.length > 1 ? parts.at(-1)! : "";
+  if (/\b(district|agency|authority|college|board of education)\b/i.test(agency)) return agency;
   const isCounty = /\bcounty\b/i.test(office);
   if (!isCounty && STATE_OFFICE.test(office) && !/\b(city|town)\b/i.test(office)) {
     return `State of ${STATE_NAMES[st] ?? (st || "California")}`;
-  }
-  const agency = office.split(",").map((s) => s.trim()).at(-1) ?? "";
-  if (
-    office.includes(",") &&
-    /\b(district|agency|authority|college|board of education)\b/i.test(agency) &&
-    !/\b(division|seat|area|trustee area)\s+\w+$/i.test(agency)
-  ) {
-    return agency;
   }
   if (county?.trim()) {
     const c = county.trim();

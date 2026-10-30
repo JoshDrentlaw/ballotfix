@@ -704,19 +704,20 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
   /**
    * The place to suggest for research again. Runs started from readings saved
    * before ballotPlace hold a section heading ("School Offices"); the ballot's
-   * county lets it be read as the office's own government.
+   * county lets it be read as the office's own government. Only contests are
+   * read this way: a measure's label or a retention question's court says
+   * nothing ballotPlace can use ("Proposition 50" under "State Measures" is not
+   * the county's), so those keep their saved place. Undefined when the form
+   * isn't shown, so a running page's refreshes don't read the ballot.
    */
-  const againPlace = async (run: RunRecord): Promise<string> => {
+  const againPlace = async (run: RunRecord): Promise<string | undefined> => {
+    if (!o.canResearch || run.status === "queued" || run.status === "running") return undefined;
     const saved = run.measure?.jurisdiction || run.query.city;
+    if (run.measure || run.candidate_source?.contest_kind === "retention") return saved;
     const reading = run.ballot && o.ballots
       ? (await o.ballots.store.get(run.ballot.id))?.reading
       : null;
-    return ballotPlace(
-      saved,
-      run.measure?.label ?? run.query.office,
-      reading?.county ?? null,
-      run.query.state,
-    );
+    return ballotPlace(saved, run.query.office, reading?.county ?? null, run.query.state);
   };
   const choiceFor = async (run: RunRecord): Promise<ChoiceRecord | null> =>
     o.choices ? await o.choices.get(run.choice_id ?? run.id) : null;

@@ -156,6 +156,10 @@ Deno.test("a committee is a candidate's only by first and last name, never again
   );
   assert(!filerMatches(f("Armendarez for Supervisor 2026"), treasurer, 2026, "City Treasurer"));
   assert(!filerMatches(f("Armendarez 2026"), treasurer, 2026, "City Treasurer"), "no office");
+  assert(
+    !filerMatches(f("Maria Armendarez for City Treasurer 2026"), treasurer, 2026, "City Treasurer"),
+    "another given name: a namesake",
+  );
   assert(!filerMatches(f("Armendarez for City Treasurer 2026"), treasurer, 2026), "no contest");
   assert(!filerMatches(f("Recall Jane Smith"), jane, 2026));
   assert(!filerMatches(f("Oaklanders Against Jane Smith"), jane, 2026));

@@ -1483,10 +1483,11 @@ export class AnthropicResearcher
     });
     const o = json as Record<string, unknown>;
     const date = stringOrNull(o.election_date);
-    const state = stringOrNull(o.state);
+    const read = stringOrNull(o.state);
+    const state = read && /^[A-Za-z]{2}$/.test(read) ? read.toUpperCase() : null;
     return {
       election_date: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
-      state: state && /^[A-Za-z]{2}$/.test(state) ? state.toUpperCase() : null,
+      state,
       county: stringOrNull(o.county),
       contests: (Array.isArray(o.contests) ? o.contests : [])
         .map((c) => c as Record<string, unknown>)
@@ -1497,7 +1498,7 @@ export class AnthropicResearcher
             stringOrNull(c.jurisdiction) ?? "",
             String(c.office).trim(),
             stringOrNull(o.county),
-            state && /^[A-Za-z]{2}$/.test(state) ? state.toUpperCase() : null,
+            state,
           ),
           vote_for: typeof c.vote_for === "number" && c.vote_for > 0 ? c.vote_for : null,
           candidates: cleanCandidates(c.candidates),

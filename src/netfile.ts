@@ -105,7 +105,7 @@ function get(row: ExportRow, ...names: string[]): string {
 function arrayIn(json: unknown): unknown[] {
   if (Array.isArray(json)) return json;
   const o = (json ?? {}) as Record<string, unknown>;
-  for (const k of ["results", "items", "agencies", "transactions", "data"]) {
+  for (const k of ["results", "items", "agencies", "transactions", "filers", "data"]) {
     if (Array.isArray(o[k])) return o[k] as unknown[];
   }
   return [];
@@ -147,7 +147,8 @@ export class NetFileClient implements NetFileSource {
           const id = get(r, "shortcut", "aid", "agencyshortcut");
           const name = get(r, "name", "agencyname");
           // The transaction search takes the agency's number, not its shortcut.
-          const number = typeof r.id === "number" && Number.isInteger(r.id) ? r.id : undefined;
+          const n = Number(get(r, "id"));
+          const number = Number.isInteger(n) && n > 0 ? n : undefined;
           return id && name ? [{ id, name, ...(number !== undefined ? { number } : {}) }] : [];
         }),
     ).catch((err) => {
@@ -188,8 +189,7 @@ export class NetFileClient implements NetFileSource {
           format: "json",
         })}`,
       ).then((json) => {
-        const list = (json as Record<string, unknown> | null)?.filers;
-        return (Array.isArray(list) ? list : []).flatMap((o): Filer[] => {
+        return arrayIn(json).flatMap((o): Filer[] => {
           const r = normalizeRow(o);
           const name = r ? get(r, "name") : "";
           const id = r ? get(r, "localagencyid", "fppcid") : "";
@@ -221,7 +221,8 @@ export class NetFileClient implements NetFileSource {
     })}`;
     const rows: ExportRow[] = [];
     const filers = new Map<string, Filer>();
-    for (const f of await this.#agencyFilers(agency)) filers.set(f.id, f);
+    // The list only adds committees that filed no rows: without it, the rows still name theirs.
+    for (const f of await this.#agencyFilers(agency).catch(() => [])) filers.set(f.id, f);
     for (let page = 0; page < NETFILE_MAX_PAGES; page++) {
       const json = await this.#json(
         `${url}&${new URLSearchParams({
@@ -433,6 +434,17 @@ function namesOffice(filerName: string, contest: string | undefined): boolean {
 }
 
 const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "md", "phd", "esq"]);
+/** Words that may come right before a surname in a surname-only committee name. */
+const SURNAME_ONLY_BEFORE = new Set([
+  "for",
+  "elect",
+  "reelect",
+  "re",
+  "to",
+  "of",
+  "friends",
+  "committee",
+]);
 /** Never a candidate's own committee, whatever names it holds. */
 const AGAINST = /\b(recall|oppose|opposing|against|stop|defeat|no on)\b/;
 const SUPPORT = /\b(yes|for|support|supporting|supports)\b/;
@@ -468,6 +480,11 @@ export function filerMatches(
     if (name.includes(` ${parts[0]} `)) return true;
     // Surname only ("Armendarez for City Treasurer 2026"): only when the name also states
     // this election's year and this race's office, so it can't be a namesake's elsewhere.
+    // Another given name before the surname ("Jane Smith for City Council 2026" for John Smith)
+    // is a namesake running for this office, maybe in another district: never theirs.
+    const committee = name.trim().split(" ");
+    const before = committee[committee.indexOf(parts.at(-1)!) - 1];
+    if (before && !SURNAME_ONLY_BEFORE.has(before) && !parts.includes(before)) return false;
     return name.includes(` ${year} `) && namesOffice(name, contest);
   }
   const label = labelWords(s.name).trim();
