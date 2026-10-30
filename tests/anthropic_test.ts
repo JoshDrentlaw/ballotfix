@@ -927,6 +927,10 @@ Deno.test("research returns the pages it opened, a PDF without text, and asks ev
     };
   };
   assert(mreq.output_config.format.schema.properties.vote_means.items.required.includes("quote"));
+  // What a vote would do is not an event: no event date is asked for it.
+  assert(
+    !mreq.output_config.format.schema.properties.vote_means.items.required.includes("event_date"),
+  );
   assertStringIncludes(mreq.system, "- quote: one short passage");
   assertStringIncludes(mreq.system, "- event_date: when what the statement describes happened");
 });

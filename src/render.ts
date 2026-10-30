@@ -9,6 +9,7 @@ import { attachNotes, MAX_CONTEXT_NAMES } from "./context.ts";
 import {
   coveredSections,
   incumbencyNote,
+  ISO_DATE,
   marksView,
   NOTHING_FOUND,
   type StanceSupport,
@@ -480,7 +481,7 @@ export function predatesEventDates(facts: readonly Fact[]): boolean {
   return facts.some((f) => f.event_date === undefined);
 }
 
-const datedOrNull = (s: string | null | undefined) => s && DATED.test(s) ? s : null;
+const datedOrNull = (s: string | null | undefined) => s && ISO_DATE.test(s) ? s : null;
 
 /** Newest first; a date as text sorts by its parts, and a missing one comes last. */
 function newestFirst(a: string | null, b: string | null): number {
@@ -509,9 +510,12 @@ function whenRange(facts: readonly Fact[]): string {
   const old = predatesEventDates(facts);
   const dates = facts.map((f) => old ? datedOrNull(f.published) : eventOf(f))
     .filter((d): d is string => d !== null).sort();
-  const span = !dates.length ? "" : dates.at(-1)!.startsWith(dates[0])
-    ? sourceDate(dates[0]) // a year or month and days inside it
-    : `${sourceDate(dates[0])} to ${sourceDate(dates.at(-1)!)}`;
+  // A year or month reaches past every day inside it, so the end is the date
+  // whose period ends last ("2024" ends after "2024-03-01").
+  const from = dates[0], to = dates.reduce((a, b) => (b + "~" > a + "~" ? b : a), from);
+  const span = !dates.length ? "" : to.startsWith(from)
+    ? sourceDate(from) // a year or month and days inside it
+    : `${sourceDate(from)} to ${sourceDate(to)}`;
   const undated = facts.length - dates.length;
   const text = old
     ? span ? `Sources published ${span}` : "No source gives a date"
@@ -572,8 +576,6 @@ export interface Evidence {
   to: string | null;
 }
 
-const DATED = /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/;
-
 export function evidenceOf(facts: readonly Fact[], effort?: ResearchEffort): Evidence {
   // A fact shown under a voter's issue and in its section counts once, with
   // every source either copy has: a merge in one may have joined outlets the
@@ -590,7 +592,7 @@ export function evidenceOf(facts: readonly Fact[], effort?: ResearchEffort): Evi
   const kept = [...byKey.values()];
   const cited = kept.flatMap((f) => [f, ...(f.also ?? [])]);
   // A year, a month, or a day, as the source gave it: these sort as text.
-  const dates = cited.map((f) => f.published ?? "").filter((p) => DATED.test(p)).sort();
+  const dates = cited.map((f) => f.published ?? "").filter((p) => ISO_DATE.test(p)).sort();
   return {
     ...(effort ? { effort } : {}),
     facts: kept.length,
@@ -1820,6 +1822,9 @@ export function raceBody(
   const anchors = candidateAnchors(r.candidates.map((d) => d.candidate.name));
   const glance = glanceHtml(r, anchors);
   const showShared = r.candidates.length > 0 && !r.candidates.some((c) => c.status === "pending");
+  const raceFacts = r.candidates.flatMap((d) =>
+    d.status === "ok" ? shownFacts(d.sections, d.priorities) : []
+  );
 
   return `<h1>${esc(raceTitle(r))}</h1>
 <p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
@@ -1829,18 +1834,8 @@ ${extra.status ?? ""}
 ${extra.actions ?? ""}
 
 <div class="banner info"><p><strong>This page does not rank, score, or recommend anyone.</strong> Every candidate gets the same sections and the same research instructions.</p>
-${
-    predatesQuoteChecks(
-        r.candidates.flatMap((d) => d.status === "ok" ? shownFacts(d.sections, d.priorities) : []),
-      )
-      ? BEFORE_QUOTE_CHECKS
-      : ""
-  }${
-    predatesEventDates(
-        r.candidates.flatMap((d) => d.status === "ok" ? shownFacts(d.sections, d.priorities) : []),
-      )
-      ? BEFORE_EVENT_DATES
-      : ""
+${predatesQuoteChecks(raceFacts) ? BEFORE_QUOTE_CHECKS : ""}${
+    predatesEventDates(raceFacts) ? BEFORE_EVENT_DATES : ""
   }
 ${cantSee(r.standing_gaps)}
 ${readingGuide("candidates' own statements")}</div>

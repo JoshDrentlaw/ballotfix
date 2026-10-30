@@ -244,8 +244,8 @@ Deno.test("a retention question's note explains there is no opponent", () => {
   assert(!note!.includes("Challengers"));
 });
 
-Deno.test("an event date is kept only as an ISO day, month, or year", () => {
-  const dates = ["2024-08-05", "2024-08", "2024", "August 2024", "2024-13", " ", undefined];
+Deno.test("an event date is kept only as an ISO day, month, or year, not after today", () => {
+  const dates = ["2024-08-05", "2024-08", "2024", "August 2024", "2024-13", " ", undefined, "2999"];
   const d = assembleCandidate(
     SIDA,
     raw({
@@ -261,6 +261,6 @@ Deno.test("an event date is kept only as an ISO day, month, or year", () => {
   );
   assertEquals(
     d.sections.record.facts.map((f) => f.event_date),
-    ["2024-08-05", "2024-08", "2024", null, null, null, null],
+    ["2024-08-05", "2024-08", "2024", null, null, null, null, null],
   );
 });

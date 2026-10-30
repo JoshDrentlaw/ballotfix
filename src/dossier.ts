@@ -111,13 +111,16 @@ export const ISO_DATE = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))
 
 /**
  * The event date as the research gave it, when it is an ISO day, month, or
- * year; anything else can't be ordered, so it reads as unknown (null). A
+ * year, and not after today; anything else can't be ordered as something
+ * that happened, so it reads as unknown (null). A
  * fact built now always has the field, so the page can tell a run with
  * event dates from one saved before them.
  */
 function eventDate(s: unknown): string | null {
   const v = clean(s);
-  return ISO_DATE.test(v) ? v : null;
+  if (!ISO_DATE.test(v)) return null;
+  // A date after today is something scheduled, not something that happened.
+  return v > new Date().toISOString().slice(0, v.length) ? null : v;
 }
 
 /** Longest quote kept. The prompt asks for under 300 characters; a longer one is not kept, never cut. */
@@ -499,7 +502,9 @@ function assembleVoteMeans(
   retrieved: Retrieved,
   unverified: Fact[],
 ): VoteMeanings {
-  const one = (rf: RawFact | undefined) => rf ? checkFact(rf, retrieved, unverified) : null;
+  // What a vote would do is not an event, so it never carries an event date.
+  const one = (rf: RawFact | undefined) =>
+    rf ? checkFact({ ...rf, event_date: null }, retrieved, unverified) : null;
   return { yes: one(raw?.yes), no: one(raw?.no) };
 }
 

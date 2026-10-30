@@ -680,3 +680,35 @@ Deno.test("facts in a section are ordered by when they happened, with the sectio
     .map((s) => before.indexOf(s));
   assert(was.every((n, i) => n > 0 && (i === 0 || n > was[i - 1])), `order ${was}`);
 });
+
+Deno.test("a section's range ends with the period that ends last", async () => {
+  const c = { name: "Joz Sida", ballot_designation: null, incumbent: false };
+  const at = (n: string) => `https://news.example/${n}`;
+  const f = (statement: string, url: string, event_date: string) => ({
+    statement,
+    source_name: "News",
+    source_url: url,
+    author: null,
+    published: null,
+    event_date,
+    evidence_type: "reported",
+  });
+  const port = new FakeResearch(listing([c]), {
+    "Joz Sida": raw({
+      sections: {
+        record: {
+          facts: [
+            f("A December vote.", at("a"), "2023-12"),
+            f("A March vote.", at("b"), "2024-03-01"),
+            f("A vote sometime in 2024.", at("c"), "2024"),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: ["a", "b", "c"].map(at),
+    }),
+  });
+  const html = renderRace(await runRace(QUERY, port));
+  assertStringIncludes(html, "Events Dec 2023 to 2024.");
+});

@@ -495,15 +495,19 @@ ${MEASURE_NEUTRALITY_RULE}
 
 ${UNTRUSTED_CONTENT_RULE}`;
 
+// A vote meaning says what a vote would do, not an event that happened, so it
+// takes every fact field but event_date.
+const { event_date: _eventDate, ...VOTE_MEANING_FIELDS } = FACT_SCHEMA.properties;
+
 // An array with a discriminant, like "sections", so the fact schema isn't inlined twice.
 const VOTE_MEANING_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
     vote: { type: "string", enum: ["yes", "no"] },
-    ...FACT_SCHEMA.properties,
+    ...VOTE_MEANING_FIELDS,
   },
-  required: ["vote", ...FACT_SCHEMA.required],
+  required: ["vote", ...FACT_SCHEMA.required.filter((k) => k !== "event_date")],
 } as const;
 
 const measureSchema = (priorities: readonly string[]) => ({

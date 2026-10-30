@@ -42,6 +42,7 @@ a { color: var(--accent); }
 p, li { overflow-wrap: anywhere; }
 .sub, .desig, .meta, .searched, .cov { color: var(--muted); }
 .meta, .searched { font-size: .85rem; margin: 2px 0 0; }
+.when-range { color: var(--muted); font-size: .85rem; margin: 2px 0 6px; }
 .banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: var(--r); padding: 12px 14px; margin: 14px 0; }
 .banner p { margin: 0; }
 .banner details { margin-top: 8px; }
@@ -207,6 +208,10 @@ details.ctx[open] > summary { background: var(--accent); color: var(--accent-fg)
 /* Mixed is both ways: body text, with a rule half conflicts and half aligns. */
 .stance-mixed { color: var(--fg); }
 .stance.stance-mixed { border-left: 4px solid; border-image: linear-gradient(var(--stance-conflicts) 50%, var(--stance-aligns) 50%) 1; } .stance-unclear { color: var(--muted); }
+.stance.thin { border-left-style: dashed; }
+.stance-old { font-size: .8rem; color: var(--muted); margin: 2px 0; }
+/* The mixed rule is an image, which a border style can't dash: dash the image instead. */
+.stance.stance-mixed.thin { border-image: repeating-linear-gradient(var(--stance-conflicts) 0 5px, transparent 5px 8px, var(--stance-aligns) 8px 13px, transparent 13px 16px) 1; }
 .measure-q { white-space: pre-line; }
 .votes { display: grid; gap: 10px; margin: 10px 0 6px; }
 @media (min-width: 640px) { .votes { grid-template-columns: 1fr 1fr; } }
@@ -391,20 +396,20 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024 · <span class="flag">page doesn't mention “A”</span></p>
   <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-a--record"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec empty" id="sample-candidate-a--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--criticisms"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-a--record"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec empty" id="sample-candidate-a--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--criticisms"><h4>Criticisms and controversies</h4><p class="when-range">Events Jul 2021.</p><ul class="facts"><li class="fact">
   <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
+  <p class="meta"><span class="happened">Happened Jul 14, 2021</span> · <a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
   
 </li><li class="fact">
   <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
   <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p>
-  <p class="meta"><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</p>
+  <p class="meta"><span class="happened">Happened Jul 2021</span> · <a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</p>
   
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-a--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
   <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026 · <span class="flag">page doesn't mention “A”</span></p>
+  <p class="meta"><span class="happened">Happened Sep 1, 2026</span> · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026 · <span class="flag">page doesn't mention “A”</span></p>
   <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details>
 </li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-a--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-a--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
   <section class="sec money" id="sample-candidate-a--filed"><h4>Contributions on file</h4>
@@ -433,20 +438,20 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
   <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
   <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details>
-</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-b--record"><h4>Record in this office</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--criticisms"><h4>Criticisms and controversies</h4><ul class="facts"><li class="fact">
+</li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-b--record"><h4>Record in this office</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--criticisms"><h4>Criticisms and controversies</h4><p class="when-range">Events Jul 2021.</p><ul class="facts"><li class="fact">
   <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
   <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
+  <p class="meta"><span class="happened">Happened Jul 14, 2021</span> · <a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
   
 </li><li class="fact">
   <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
   <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p>
-  <p class="meta"><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021 · <span class="flag">page doesn't mention “B”</span></p>
+  <p class="meta"><span class="happened">Happened Jul 2021</span> · <a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021 · <span class="flag">page doesn't mention “B”</span></p>
   
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-b--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
   <span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
   <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
+  <p class="meta"><span class="happened">Happened Sep 1, 2026</span> · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
   <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details>
 </li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-b--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
   <section class="sec money" id="sample-candidate-b--filed"><h4>Contributions on file</h4>
