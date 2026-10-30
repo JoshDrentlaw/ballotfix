@@ -35,6 +35,11 @@ Deno.test("a dossier keeps the searches and fetches its research made", () => {
   const d = assembleCandidate(SIDA, { ...raw(), effort: { searches: 12, fetches: 7 } });
   assertEquals(d.effort, { searches: 12, fetches: 7 });
   assert(!("effort" in assembleCandidate(SIDA, raw())));
+  const bad = { searches: Number.NaN, fetches: -1 } as unknown as {
+    searches: number;
+    fetches: number;
+  };
+  assert(!("effort" in assembleCandidate(SIDA, { ...raw(), effort: bad })));
 });
 
 Deno.test("unknown section keys from the model are dropped, not rendered", () => {

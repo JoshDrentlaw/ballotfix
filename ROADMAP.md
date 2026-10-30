@@ -21,15 +21,21 @@ architecture changes; runs saved before a change still render, saying what they 
 
 ## 1. Search caps hold across continuations — done
 
-Branch `feature/ecstatic-dirac-i4hajf`. Candidate, measure, and ballot-lookup research now pass
-`acrossTurns: true`, as the context and finance steps already did, so a pause no longer starts a
+Branch `feature/ecstatic-dirac-i4hajf`. Candidate, measure, and ballot-lookup research now count
+their caps across continuations, as the context and finance steps already did (so the old
+`acrossTurns` option is gone: every call with web tools does this), so a pause no longer starts a
 fresh `max_uses` budget. `remaining()` floors at 1 (the API rejects 0 while the tool is in the
 history), so a call makes at most its cap plus `MAX_CONTINUATIONS` (8). Each candidate and measure
-dossier saves `effort: { searches, fetches }` (from the API's usage counts), absent on older runs.
+dossier saves `effort: { searches, fetches }` (the tool uses the caps count), absent on older runs.
 Nothing renders it yet; item 4 does.
 
-Possible follow-up: a lower continuation limit for research, if usage logs show research often
-reaching the cap and then pausing several more times.
+Follow-ups (from review of PR #21):
+
+- A failed candidate or measure saves no `effort`, though a call that runs out of continuations is
+  the costliest case. Do this with item 4: let the research errors carry the counts and have
+  `failedCandidate`/`placeholderMeasure` save them, so the evidence row can show them.
+- A lower continuation limit for research (like `CONTEXT_MAX_CONTINUATIONS`), if usage logs show
+  research often reaching the cap and then pausing several more times.
 
 ## 2. Cal-Access → CARS (small, time-sensitive)
 

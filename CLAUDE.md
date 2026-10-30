@@ -62,7 +62,7 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   notes and finance to `claude-sonnet-5-5`. Calls with web tools use top-level prompt caching
   (continuations resend the turn) and cap fetched text at `FETCH_MAX_CONTENT_TOKENS`; tool-less
   calls don't cache. Every call with web tools counts its search and fetch caps across `pause_turn`
-  continuations (`acrossTurns`): the API counts `max_uses` per request, and a fresh budget per pause
+  continuations (`remaining`): the API counts `max_uses` per request, and a fresh budget per pause
   would give a well-covered candidate more searches. A capped tool still allows one use per
   continuation, so a call makes at most its cap plus its continuation limit. Candidate and measure
   research save what they used as `effort` on the dossier, so effort parity can be checked. Every

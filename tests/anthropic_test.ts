@@ -175,18 +175,22 @@ Deno.test("research caps hold across pause_turn continuations, for every kind of
   assertEquals(capsOf(requests), [[6, 4], [2, 4]]);
 });
 
-Deno.test("research returns the searches and fetches it made, summed across continuations", async () => {
+Deno.test("research returns the searches and fetches it made, counted as the caps count them", async () => {
   const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
-  const used = (searches: number, fetches: number) => ({
-    input_tokens: 1,
-    output_tokens: 1,
-    server_tool_use: { web_search_requests: searches, web_fetch_requests: fetches },
-  });
   const { client } = stubClient([
-    { stop_reason: "pause_turn", content: [search], usage: used(5, 2) },
-    { stop_reason: "end_turn", content: [{ type: "text", text: final }], usage: used(3, 1) },
+    {
+      stop_reason: "pause_turn",
+      content: [...toolUses("web_search", 5, "s"), ...toolUses("web_fetch", 2, "f"), search],
+    },
+    {
+      stop_reason: "end_turn",
+      content: [...toolUses("web_search", 3, "t"), toolUses("web_fetch", 1, "g")[0], {
+        type: "text",
+        text: final,
+      }],
+    },
   ]);
-  const r = await new AnthropicResearcher({ client, log: () => {} }).researchCandidate(
+  const r = await new AnthropicResearcher({ client }).researchCandidate(
     QUERY,
     cand,
     listing([cand]),
