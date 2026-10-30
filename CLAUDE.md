@@ -75,21 +75,23 @@ show it. A found quote shows the page has those words, not that the statement re
 ## Architecture
 
 - `src/types.ts`: core types and `ResearchPort`. No vendor imports.
-- `src/research/anthropic.ts`: the only adapter. Claude with server-side `web_search` and
+- `src/research/anthropic.ts`: the model adapter. Claude with server-side `web_search` and
   `web_fetch`, JSON-schema output, `pause_turn` resumption, `fallbacks: "default"`. Searches run on
-  Anthropic's side, so the process only needs `api.anthropic.com`. Research defaults to
-  `claude-opus-5-5`; merge to `claude-haiku-5-5` (no server-side fallback, so none is sent), context
-  notes, finance, office powers, and the shared pass to `claude-sonnet-5-5`. Calls with web tools
-  use top-level prompt caching (continuations resend the turn) and cap fetched text at
-  `FETCH_MAX_CONTENT_TOKENS`; tool-less calls don't cache. Every call with web tools counts its
-  search and fetch caps across `pause_turn` continuations (`remaining`): the API counts `max_uses`
-  per request, and a fresh budget per pause would give a well-covered candidate more searches. A
-  capped tool still allows one use per continuation, so a call makes at most its cap plus its
-  continuation limit. Candidate and measure research save what they used as `effort` on the dossier,
-  so effort parity can be checked; a failed call's error carries the same counts, and the failed
-  dossier saves them. Every call logs one `[usage]` line (tokens, searches, an estimate at list
-  prices via `PRICES`). It also implements `BallotReader` (`readBallot`): the voter's uploaded
-  ballot photos/PDFs in, contests in printed order out, with no web tools.
+  Anthropic's side, so research needs only `api.anthropic.com`; the one other outbound host is
+  `netfile.com`, for the NetFile primary-record adapter (approved for primary-record adapters;
+  `deno.jsonc` and `SECURITY.md` grant it). Research defaults to `claude-opus-5-5`; merge to
+  `claude-haiku-5-5` (no server-side fallback, so none is sent), context notes, finance, office
+  powers, and the shared pass to `claude-sonnet-5-5`. Calls with web tools use top-level prompt
+  caching (continuations resend the turn) and cap fetched text at `FETCH_MAX_CONTENT_TOKENS`;
+  tool-less calls don't cache. Every call with web tools counts its search and fetch caps across
+  `pause_turn` continuations (`remaining`): the API counts `max_uses` per request, and a fresh
+  budget per pause would give a well-covered candidate more searches. A capped tool still allows one
+  use per continuation, so a call makes at most its cap plus its continuation limit. Candidate and
+  measure research save what they used as `effort` on the dossier, so effort parity can be checked;
+  a failed call's error carries the same counts, and the failed dossier saves them. Every call logs
+  one `[usage]` line (tokens, searches, an estimate at list prices via `PRICES`). It also implements
+  `BallotReader` (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in printed
+  order out, with no web tools.
 - Shared race-level pass (roadmap item 9, `src/shared.ts`): once per race, after the candidate list
   and before any candidate, `runRace` makes one capped call (`SharedSourceFinder.findSharedSources`:
   `LOOKUP_EFFORT`, `BALLOTFIX_SHARED_MODEL` or `DEFAULT_SHARED_MODEL`, "off" skips it; CLI
@@ -231,6 +233,23 @@ show it. A found quote shows the page has those words, not that the statement re
   `contributed_to` relation with the filing's words as detail and its page in `relation_citations`;
   a measure's two sides are `side` entities its case for/against are also about;
   `KnowledgeBase.sharedBetween` answers what two entities share.
+- NetFile adapter (roadmap item 10, `src/netfile.ts`): a deterministic `FinanceResearcher` in front
+  of the model lookup (`NetFileResearcher`, its `fallback`). Where a California place matches one
+  NetFile agency (`agencyFor`: `BALLOTFIX_NETFILE_AGENCIES` set by hand, else by `agencyKey` in
+  NetFile's agency list, never a guess between two), it reads the agency's public transaction export
+  for the election year and the year before (Form 460 Schedules A and C, Form 497 Part 1; a 497 row
+  repeated on a 460 is kept once) and maps fields with no model in between. Nothing about the race
+  is sent. Committees are matched locally (`filerMatches`): a candidate's by first and last name,
+  candidate-controlled when the type is stated, never a recall or opposing committee or one named
+  for another year; a measure side's by the label plus words of that side only. A committee fitting
+  two subjects goes to neither. Each unmatched subject gets a gap note saying how it was looked for.
+  The place not on NetFile, no subject matched, or the export unreadable: the model looks up every
+  subject (a portal gap says why when it was on NetFile), never a mix in one run. Rows keep the
+  export's fields; `source_url` is the year's export URL (what counts as retrieved) and `filing_url`
+  the filing's image. The result names its `source`, and only then `checkFinance` takes its larger
+  share (`MAX_EXPORT_PER_SUBJECT`, the same for every subject). `BALLOTFIX_NETFILE=off` or CLI
+  `--no-netfile` always uses the model; with the finance model off, the step is off. The page says
+  which source the rows came from (`financeSource`).
 - Office powers (roadmap item 8, `src/office.ts`): after the other steps, races only, `JobRunner`
   looks up what the race's office can do (`OfficeResearcher.findOfficePowers`: `LOOKUP_EFFORT`,
   `BALLOTFIX_OFFICE_MODEL` or `DEFAULT_OFFICE_MODEL`, "off" skips it; CLI `--no-powers`), with
@@ -350,6 +369,7 @@ it before starting a new item, and mark an item done there in the PR that finish
 
 ## Phases
 
-Phase 0 (this) is web research only, for candidates and ballot measures. Later phases add
-primary-record adapters behind `ResearchPort`: city → ballot from the registrar, Form 460 campaign
-finance, council minutes, then budget/CIP extraction for a neighborhood-spending view.
+Phase 0 (this) is web research, for candidates and ballot measures, plus the first primary-record
+adapter: Form 460 campaign finance from NetFile's export (`src/netfile.ts`). Later phases add more
+behind `ResearchPort`/`FinanceResearcher`: city → ballot from the registrar, council minutes, then
+budget/CIP extraction for a neighborhood-spending view.

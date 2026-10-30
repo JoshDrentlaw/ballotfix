@@ -1030,7 +1030,7 @@ const alphabetical = (cs: readonly Contribution[]) =>
   [...cs].sort((a, b) => nameKey(a.contributor).localeCompare(nameKey(b.contributor)));
 
 const filingKey = (c: Contribution) =>
-  [c.filer, c.filing_period, c.filing, c.source_name, c.source_url].join("\n");
+  [c.filer, c.filing_period, c.filing, c.filing_url, c.source_name, c.source_url].join("\n");
 
 /**
  * Contributions as tables, one per filing they were read from, so the
@@ -1047,7 +1047,9 @@ function giftTables(cs: readonly Contribution[]): string {
     const c = rows[0];
     return `<div class="gift-group"><p class="meta">To ${esc(c.filer)} · ${
       c.filing_period ? esc(c.filing_period) : "filing period not stated"
-    }${c.filing ? ` · ${esc(c.filing)}` : ""} · ${link(c.source_url, c.source_name)}</p>
+    }${c.filing ? ` · ${c.filing_url ? link(c.filing_url, c.filing) : esc(c.filing)}` : ""} · ${
+      link(c.source_url, c.source_name)
+    }</p>
 <table class="gifts"><thead><tr><th scope="col">Contributor</th><th scope="col" class="num">Amount</th><th scope="col">Date</th></tr></thead><tbody>${
       rows.map((r) =>
         `<tr><th scope="row">${esc(r.contributor)}${work(r)}</th><td class="num">${
@@ -1129,8 +1131,18 @@ function moneyHtml(
     }</details>`
     : "";
   return `<section class="sec money"${id}><h4>${titleHtml}</h4>
-<p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
+<p class="sub">${financeSource(finance)}</p>
 ${totals}${gifts}${notes}${unverified}</section>`;
+}
+
+/** Where the rows came from: the same line for every subject in a run. */
+function financeSource(finance: FinanceResult): string {
+  const src = finance.source;
+  return src
+    ? `Itemized contributions taken from ${esc(src.agency_name)}'s NetFile export (${
+      src.years.join(", ")
+    }), each field as the export states it, with no model reading them; alphabetical by contributor.`
+    : "Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.";
 }
 
 /** The filing portals this run couldn't read: coverage gaps, shown, not collapsed. */

@@ -527,6 +527,8 @@ export interface RawContribution {
   filing: string;
   source_name: string;
   source_url: string;
+  /** The filing itself, when the source links it (the NetFile adapter does). */
+  filing_url?: string;
 }
 
 /** A total as the filing's summary page records it, before checks. */
@@ -564,6 +566,27 @@ export interface RawFinanceResult {
   portal_gaps: RawPortalGap[];
   retrieved_urls: string[];
   model: string;
+  /** Set when the rows came from a primary-record export, not a model's reading. */
+  source?: FinanceSource;
+  /**
+   * The share that source keeps per subject, the same for every subject; only a
+   * primary-record export sets it. Absent: the request's.
+   */
+  per_subject?: number;
+}
+
+/**
+ * A primary-record export the rows were read from directly, field by field,
+ * with no model in between (src/netfile.ts).
+ */
+export interface FinanceSource {
+  kind: "netfile";
+  /** NetFile's agency id, e.g. "COAK". */
+  agency: string;
+  /** The agency's name as NetFile lists it, "Oakland, City of" read as "City of Oakland". */
+  agency_name: string;
+  /** Calendar years of transactions read. */
+  years: number[];
 }
 
 /**
@@ -593,6 +616,8 @@ export interface Contribution {
   filing: string | null;
   source_name: string;
   source_url: string;
+  /** The filing itself, when the source links it. Absent on model-read rows. */
+  filing_url?: string;
   /** False when the cited page was never retrieved: never shown as fact. */
   verified: boolean;
 }
@@ -660,6 +685,8 @@ export interface FinanceResult {
   per_subject: number;
   portal_gaps: PortalGap[];
   model: string | null;
+  /** The export the rows came from, when not a model's reading. Absent before NetFile. */
+  source?: FinanceSource;
   /** Why the call failed, when it did; every subject then carries a gap note. */
   error?: string;
 }

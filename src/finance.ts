@@ -66,6 +66,12 @@ import {
 export const MAX_FINANCE_CONTRIBUTIONS = 120;
 /** Most kept for any one candidate or side, however few there are. */
 export const MAX_CONTRIBUTIONS_PER_SUBJECT = 20;
+/**
+ * Most kept per candidate or side when the rows come straight from a
+ * primary-record export (src/netfile.ts): the same for every subject, and
+ * only there to bound the page.
+ */
+export const MAX_EXPORT_PER_SUBJECT = 1000;
 /** Summary-page totals kept per candidate or side. */
 export const MAX_TOTALS_PER_SUBJECT = 4;
 /** Longer than any field a filing has: a row with one is dropped, never cut. */
@@ -181,6 +187,7 @@ function toContribution(raw: RawContribution, retrieved: ReadonlySet<string>): C
   const url = normalizeUrl(s.source_url);
   if (!s.filer || !s.contributor || !/\d/.test(s.amount) || url === null) return null;
   const type = field(raw.contributor_type);
+  const filingUrl = field(raw.filing_url);
   return {
     filer: s.filer,
     contributor: s.contributor,
@@ -195,6 +202,9 @@ function toContribution(raw: RawContribution, retrieved: ReadonlySet<string>): C
     filing: s.filing || null,
     source_name: s.source_name || "source name not given",
     source_url: s.source_url,
+    ...(typeof filingUrl === "string" && normalizeUrl(filingUrl) !== null
+      ? { filing_url: filingUrl }
+      : {}),
     verified: retrieved.has(url),
   };
 }
@@ -334,8 +344,9 @@ export function checkFinance(
   for (const s of Array.isArray(raw.subjects) ? raw.subjects : []) {
     if (s && typeof s.id === "string" && !byId.has(s.id)) byId.set(s.id, s);
   }
+  const perSubject = exportShare(raw) ?? plan.request.perSubject;
   const subjects = plan.request.subjects.map((s, i) =>
-    checkSubject(plan.labels[i], byId.get(s.id), retrieved, plan.request.perSubject)
+    checkSubject(plan.labels[i], byId.get(s.id), retrieved, perSubject)
   );
   return {
     // With no page opened, nothing was checked, whatever the answer says it
@@ -343,10 +354,21 @@ export function checkFinance(
     subjects: retrieved.size
       ? subjects
       : subjects.map((s) => ({ ...s, searched: [], gap_note: NOTHING_OPENED })),
-    per_subject: plan.request.perSubject,
+    per_subject: perSubject,
     portal_gaps: checkPortalGaps(raw.portal_gaps),
     model: raw.model,
+    ...(raw.source ? { source: raw.source } : {}),
   };
+}
+
+/**
+ * A primary-record export keeps a larger share, the same for every subject:
+ * nothing is transcribed, so the cap only bounds the page. Never above
+ * MAX_EXPORT_PER_SUBJECT, and only with a source named.
+ */
+function exportShare(raw: RawFinanceResult): number | null {
+  const n = raw.per_subject;
+  return raw.source && Number.isInteger(n) && n! > 0 ? Math.min(n!, MAX_EXPORT_PER_SUBJECT) : null;
 }
 
 // ---------------------------------------------------------------------------

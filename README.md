@@ -188,6 +188,9 @@ Without the finance step, a page's Shared connections compares endorsements only
    - **Campaign finance**: itemized contributions for every candidate or both sides of a measure
      (Claude Sonnet 5.5, medium effort, about 12 searches and 10 fetches, up to 120 rows shared
      equally, at most 20 per candidate). Rows over the share are counted on the page, not kept.
+     Where the city's or county's filings are on NetFile, the rows come straight from NetFile's
+     public export instead (no model reading them, up to 1,000 per candidate or side), and the model
+     lookup runs only where that isn't possible.
 5. **Knowledge graph.** Each finished run is indexed into the graph behind the entity pages (local,
    no model calls).
 
@@ -219,20 +222,22 @@ cheaper `BALLOTFIX_MODEL`, or turn a follow-up step off (below).
 
 ### Settings
 
-| Variable                  | Default             | What it does                                             |
-| ------------------------- | ------------------- | -------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`       | (none)              | Required to research; saved races still open without it  |
-| `HOST`, `PORT`            | `127.0.0.1`, `8787` | Listen address                                           |
-| `BALLOTFIX_PASSWORD`      | (none)              | Require this password (HTTP Basic, any username)         |
-| `BASE_PATH`               | (none)              | Mount prefix, e.g. `/ballotfix` behind a reverse proxy   |
-| `BALLOTFIX_DATA_DIR`      | `data`              | Where `ballotfix.db` lives                               |
-| `BALLOTFIX_MODEL`         | `claude-opus-5-5`   | Research model                                           |
-| `BALLOTFIX_EFFORT`        | `high`              | `low`, `medium`, `high`, `xhigh`, or `max`               |
-| `BALLOTFIX_MERGE_MODEL`   | `claude-haiku-5-5`  | Model for merging duplicates; `off` skips the step       |
-| `BALLOTFIX_CONTEXT_MODEL` | `claude-sonnet-5-5` | Model for notes on names; `off` skips the step           |
-| `BALLOTFIX_FINANCE_MODEL` | `claude-sonnet-5-5` | Model for campaign finance; `off` skips the step         |
-| `BALLOTFIX_OFFICE_MODEL`  | `claude-sonnet-5-5` | Model for what the office can do; `off` skips the step   |
-| `BALLOTFIX_SHARED_MODEL`  | `claude-sonnet-5-5` | Model for pages covering every candidate; `off` skips it |
+| Variable                     | Default             | What it does                                               |
+| ---------------------------- | ------------------- | ---------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`          | (none)              | Required to research; saved races still open without it    |
+| `HOST`, `PORT`               | `127.0.0.1`, `8787` | Listen address                                             |
+| `BALLOTFIX_PASSWORD`         | (none)              | Require this password (HTTP Basic, any username)           |
+| `BASE_PATH`                  | (none)              | Mount prefix, e.g. `/ballotfix` behind a reverse proxy     |
+| `BALLOTFIX_DATA_DIR`         | `data`              | Where `ballotfix.db` lives                                 |
+| `BALLOTFIX_MODEL`            | `claude-opus-5-5`   | Research model                                             |
+| `BALLOTFIX_EFFORT`           | `high`              | `low`, `medium`, `high`, `xhigh`, or `max`                 |
+| `BALLOTFIX_MERGE_MODEL`      | `claude-haiku-5-5`  | Model for merging duplicates; `off` skips the step         |
+| `BALLOTFIX_CONTEXT_MODEL`    | `claude-sonnet-5-5` | Model for notes on names; `off` skips the step             |
+| `BALLOTFIX_FINANCE_MODEL`    | `claude-sonnet-5-5` | Model for campaign finance; `off` skips the step           |
+| `BALLOTFIX_NETFILE`          | on                  | `off` never reads NetFile's export; the model looks up all |
+| `BALLOTFIX_NETFILE_AGENCIES` | none                | Places' NetFile agencies by hand, e.g. `Oakland=COAK`      |
+| `BALLOTFIX_OFFICE_MODEL`     | `claude-sonnet-5-5` | Model for what the office can do; `off` skips the step     |
+| `BALLOTFIX_SHARED_MODEL`     | `claude-sonnet-5-5` | Model for pages covering every candidate; `off` skips it   |
 
 Everything (races, ballot readings, your notes and picks, and the knowledge graph) is kept in one
 SQLite file, `<BALLOTFIX_DATA_DIR>/ballotfix.db`. JSON files written by older versions are imported
@@ -277,9 +282,10 @@ deno task dossier --city Fontana --office Mayor \
 
 Options: `--state` (default `CA`), `--election` (default `2026-11-03`), `--model`, `--effort`,
 `--concurrency` (default 3), `--out` (default `out`), `--no-shared` to skip the shared pass for
-pages covering every candidate, and `--no-merge`, `--no-context`, `--no-finance`, `--no-powers` to
-skip follow-up steps. It writes `<out>/<city>-<office>-<election>.json` and `.html`. Re-render a
-saved run without calling the API:
+pages covering every candidate, `--no-netfile` to read campaign finance with the model even where
+NetFile has it, and `--no-merge`, `--no-context`, `--no-finance`, `--no-powers` to skip follow-up
+steps. It writes `<out>/<city>-<office>-<election>.json` and `.html`. Re-render a saved run without
+calling the API:
 
 ```sh
 deno task dossier --render out/<file>.json
@@ -290,11 +296,12 @@ placeholder data.
 
 ## Limits (phase 0)
 
-Web research only. Campaign finance comes from whatever filings the finance step can find and open
-on public portals; a portal it can't read is listed as a gap. Council minutes and budget PDFs are
-included only when search surfaces them. Paywalled news and social media are blind spots. Notes on
-names are found by a heuristic, so some names may be missed (the page says so). It can be wrong:
-check anything that matters to your vote at the linked source.
+Web research, plus one primary-record source: where a place's filings are on NetFile, campaign
+finance comes from its public export. Elsewhere it comes from whatever filings the finance step can
+find and open on public portals; a portal it can't read is listed as a gap. Council minutes and
+budget PDFs are included only when search surfaces them. Paywalled news and social media are blind
+spots. Notes on names are found by a heuristic, so some names may be missed (the page says so). It
+can be wrong: check anything that matters to your vote at the linked source.
 
 ## Development
 
