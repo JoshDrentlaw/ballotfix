@@ -31,6 +31,12 @@ Deno.test("every template section is present, in order, even when research retur
   for (const id of SECTION_IDS) assert(d.sections[id].gap_note, `${id} has no gap note`);
 });
 
+Deno.test("a dossier keeps the searches and fetches its research made", () => {
+  const d = assembleCandidate(SIDA, { ...raw(), effort: { searches: 12, fetches: 7 } });
+  assertEquals(d.effort, { searches: 12, fetches: 7 });
+  assert(!("effort" in assembleCandidate(SIDA, raw())));
+});
+
 Deno.test("unknown section keys from the model are dropped, not rendered", () => {
   const d = assembleCandidate(
     SIDA,

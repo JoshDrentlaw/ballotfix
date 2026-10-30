@@ -61,9 +61,14 @@ search result, a fetched page, or a citation). Anything else goes to a separate,
   `claude-opus-5-5`; merge to `claude-haiku-5-5` (no server-side fallback, so none is sent), context
   notes and finance to `claude-sonnet-5-5`. Calls with web tools use top-level prompt caching
   (continuations resend the turn) and cap fetched text at `FETCH_MAX_CONTENT_TOKENS`; tool-less
-  calls don't cache. Every call logs one `[usage]` line (tokens, searches, an estimate at list
-  prices via `PRICES`). It also implements `BallotReader` (`readBallot`): the voter's uploaded
-  ballot photos/PDFs in, contests in printed order out, with no web tools.
+  calls don't cache. Every call with web tools counts its search and fetch caps across `pause_turn`
+  continuations (`acrossTurns`): the API counts `max_uses` per request, and a fresh budget per pause
+  would give a well-covered candidate more searches. A capped tool still allows one use per
+  continuation, so a call makes at most its cap plus its continuation limit. Candidate and measure
+  research save what they used as `effort` on the dossier, so effort parity can be checked. Every
+  call logs one `[usage]` line (tokens, searches, an estimate at list prices via `PRICES`). It also
+  implements `BallotReader` (`readBallot`): the voter's uploaded ballot photos/PDFs in, contests in
+  printed order out, with no web tools.
 - Ballot upload: images are held in memory for the one read call and never written to disk; only the
   `BallotReading` is saved (the `ballots` table). The reader must never report the voter's name,
   address, ballot id, or which choices are marked, and its schema has no field for them. The user
@@ -238,6 +243,11 @@ There is no browser test harness in CI. For UI changes, run `deno task demo` and
 Playwright against Chromium at `/opt/pw-browsers/chromium` at phone width (390px). Check for
 horizontal overflow and walk the form, running, and finished states. The first such run found a bug
 the unit tests missed: browsers can send `Origin: null` on the app's own form posts.
+
+## Roadmap
+
+`ROADMAP.md` holds the planned work in order, one PR per item, with the decisions already made. Read
+it before starting a new item, and mark an item done there in the PR that finishes it.
 
 ## Phases
 

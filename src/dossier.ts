@@ -217,6 +217,7 @@ export function assembleCandidate(
     priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     gaps: raw.gaps.map(clean).filter(Boolean),
     model: raw.model,
+    ...(raw.effort ? { effort: raw.effort } : {}),
     error: null,
   };
 }
@@ -312,6 +313,7 @@ export function assembleMeasure(
     gaps: raw.gaps.map(clean).filter(Boolean),
     standing_gaps: [...STANDING_GAPS],
     model: raw.model,
+    ...(raw.effort ? { effort: raw.effort } : {}),
     error: null,
     generated_at: now.toISOString(),
   };
