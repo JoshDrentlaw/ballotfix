@@ -182,9 +182,24 @@ function checkGroups(raw: unknown, slots: ReadonlyMap<string, Slot>): Group[] {
     });
     for (const same of byType.values()) {
       same.sort((a, b) => a.index - b.index);
+      // Facts that agree with the date most of the group shares go first, so
+      // one outlier date can't keep the rest apart; the kept fact is still
+      // the earliest in dossier order.
+      const dated = same.map((m) => m.fact.event_date).filter((d): d is string => !!d);
+      const agree = (d: string | null | undefined, anchor: string) => !d || sameEvent(d, anchor);
+      const anchor = dated.reduce<string | null>((best, d) =>
+        best === null ||
+          same.filter((m) => agree(m.fact.event_date, d)).length >
+            same.filter((m) => agree(m.fact.event_date, best)).length
+          ? d
+          : best, null);
+      const ordered = anchor === null ? same : [
+        ...same.filter((m) => agree(m.fact.event_date, anchor)),
+        ...same.filter((m) => !agree(m.fact.event_date, anchor)),
+      ];
       const outlets = new Set<string>(), pages = new Set<string>();
       const dates: string[] = [];
-      const kept = same.filter((m) => {
+      const kept = ordered.filter((m) => {
         const outlet = publisherKey(m.fact), page = normalizeUrl(m.fact.source_url) ?? "";
         if (outlets.has(outlet) || pages.has(page)) return false;
         // Two event dates that disagree are two events, whatever the words.
@@ -196,6 +211,7 @@ function checkGroups(raw: unknown, slots: ReadonlyMap<string, Slot>): Group[] {
         return true;
       });
       if (kept.length < 2) continue;
+      kept.sort((a, b) => a.index - b.index);
       for (const m of kept) used.add(m.id);
       out.push({ subject, part, indices: kept.map((m) => m.index) });
     }

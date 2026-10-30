@@ -364,3 +364,23 @@ Deno.test("facts whose event dates disagree are never merged; a year matches its
   assertEquals(facts.map((f) => f.statement), ["Voted for the budget.", "Approved the budget."]);
   assertEquals(facts[0].also?.map((f) => f.source_name), ["KVCR", "Inland Daily"]);
 });
+
+Deno.test("one outlier event date doesn't keep the facts that agree apart", async () => {
+  const port = new FakeResearch(listing([CANDS[0]]), {
+    "Acquanetta Warren": raw({
+      sections: {
+        record: section(
+          fact("Approved the budget.", PE, "Press-Enterprise", { event_date: "2024-06-03" }),
+          fact("Voted for the budget.", HERALD, "Fontana Herald News", { event_date: "2025-06" }),
+          fact("Backed the budget.", KVCR, "KVCR", { event_date: "2025-06-10" }),
+        ),
+      },
+      retrieved_urls: [HERALD, PE, KVCR],
+    }),
+  });
+  const r = await runRace(QUERY, port, { candidates: [CANDS[0]] });
+  const out = await mergeRace(r, new FakeMerger((b) => [idsWhere(b, "Acquanetta", () => true)]));
+  const facts = out.dossier.candidates[0].sections.record.facts;
+  assertEquals(facts.map((f) => f.statement), ["Approved the budget.", "Voted for the budget."]);
+  assertEquals(facts[1].also?.map((f) => f.source_name), ["KVCR"]);
+});
