@@ -36,6 +36,7 @@ import {
   type RawMeasureResearch,
   type RawSection,
   type RawStance,
+  type ResearchEffort,
   type SectionId,
   type SectionResult,
   type Stance,
@@ -77,6 +78,15 @@ function toEvidenceType(v: string): EvidenceType {
 
 function clean(s: unknown): string {
   return typeof s === "string" ? s.trim() : "";
+}
+
+/** An adapter's search and fetch counts, kept only when both are whole, non-negative numbers. */
+function effortOf(e: unknown): { effort?: ResearchEffort } {
+  const o = e as Partial<ResearchEffort> | null | undefined;
+  const ok = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0;
+  return o && ok(o.searches) && ok(o.fetches)
+    ? { effort: { searches: o.searches, fetches: o.fetches } }
+    : {};
 }
 
 function cleanOrNull(s: unknown): string | null {
@@ -217,6 +227,7 @@ export function assembleCandidate(
     priorities: assemblePriorities(priorities, raw, retrieved, unverified),
     gaps: raw.gaps.map(clean).filter(Boolean),
     model: raw.model,
+    ...effortOf(raw.effort),
     error: null,
   };
 }
@@ -312,6 +323,7 @@ export function assembleMeasure(
     gaps: raw.gaps.map(clean).filter(Boolean),
     standing_gaps: [...STANDING_GAPS],
     model: raw.model,
+    ...effortOf(raw.effort),
     error: null,
     generated_at: now.toISOString(),
   };

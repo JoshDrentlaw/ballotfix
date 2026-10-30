@@ -110,6 +110,94 @@ Deno.test("resumes after pause_turn and collects URLs across all turns", async (
   assertEquals(r.gaps, ["x"]);
 });
 
+// web_search and web_fetch uses, as the server reports them in a turn.
+const toolUses = (name: string, n: number, tag: string) =>
+  Array.from(
+    { length: n },
+    (_, i) => ({ type: "server_tool_use", id: `${tag}${i}`, name, input: {} }),
+  );
+const capsOf = (requests: Record<string, unknown>[]) =>
+  requests.map((r) => (r.tools as { max_uses: number }[]).map((t) => t.max_uses));
+
+Deno.test("research caps hold across pause_turn continuations, for every kind of research", async () => {
+  const MEASURE = {
+    label: "Measure X",
+    jurisdiction: "City of Fontana",
+    question: "",
+    state: "CA",
+    electionDate: "2026-11-03",
+  };
+  const measureSections = MEASURE_SECTION_IDS.map((id) => ({
+    id,
+    facts: [],
+    searched: [],
+    gap_note: "none",
+  }));
+  const finals: [string, (r: AnthropicResearcher) => Promise<unknown>][] = [
+    [
+      JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] }),
+      (r) => r.researchCandidate(QUERY, cand, listing([cand])),
+    ],
+    [
+      JSON.stringify({ sections: measureSections, identity_note: null, gaps: [], vote_means: [] }),
+      (r) => r.researchMeasure(MEASURE),
+    ],
+  ];
+  for (const [final, call] of finals) {
+    const { client, requests } = stubClient([
+      {
+        stop_reason: "pause_turn",
+        content: [...toolUses("web_search", 9, "s"), ...toolUses("web_fetch", 4, "f")],
+      },
+      {
+        stop_reason: "pause_turn",
+        content: [...toolUses("web_search", 6, "t"), ...toolUses("web_fetch", 6, "g")],
+      },
+      { stop_reason: "end_turn", content: [{ type: "text", text: final }] },
+    ]);
+    await call(new AnthropicResearcher({ client, maxSearches: 15, maxFetches: 10 }));
+    // 15/10, then what is left, then spent: 1 is the least the API takes with the tool in use.
+    assertEquals(capsOf(requests), [[15, 10], [6, 6], [1, 1]]);
+  }
+
+  const ballot = JSON.stringify({
+    candidates: [cand],
+    source_name: "Registrar",
+    source_url: null,
+    order_basis: "official_ballot_order",
+    notes: null,
+  });
+  const { client, requests } = stubClient([
+    { stop_reason: "pause_turn", content: toolUses("web_search", 4, "s") },
+    { stop_reason: "end_turn", content: [{ type: "text", text: ballot }] },
+  ]);
+  await new AnthropicResearcher({ client }).findBallot(QUERY);
+  assertEquals(capsOf(requests), [[6, 4], [2, 4]]);
+});
+
+Deno.test("research returns the searches and fetches it made, counted as the caps count them", async () => {
+  const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
+  const { client } = stubClient([
+    {
+      stop_reason: "pause_turn",
+      content: [...toolUses("web_search", 5, "s"), ...toolUses("web_fetch", 2, "f"), search],
+    },
+    {
+      stop_reason: "end_turn",
+      content: [...toolUses("web_search", 3, "t"), toolUses("web_fetch", 1, "g")[0], {
+        type: "text",
+        text: final,
+      }],
+    },
+  ]);
+  const r = await new AnthropicResearcher({ client }).researchCandidate(
+    QUERY,
+    cand,
+    listing([cand]),
+  );
+  assertEquals(r.effort, { searches: 8, fetches: 3 });
+});
+
 Deno.test("request uses server web tools, a shared sections-array item schema, and default fallbacks", async () => {
   const final = JSON.stringify({ sections: emptySections, identity_note: null, gaps: [] });
   const { client, requests } = stubClient([{
