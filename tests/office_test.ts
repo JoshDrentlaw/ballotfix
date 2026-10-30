@@ -166,8 +166,8 @@ Deno.test("office facts get the provenance and quote check, and marks need a sou
   assertEquals(decides.length, 2);
   assertEquals(decides[0].check?.level, "quoted");
   assertEquals(o.unverified.map((f) => f.source_url), [ELSEWHERE]);
-  // The budget page doesn't name the city: flagged, kept.
-  assertEquals(o.sections.budget.facts[0].check?.missing_name, "Fontana");
+  // No name check: the budget page doesn't name the city and isn't flagged.
+  assertEquals(o.sections.budget.facts[0].check?.missing_name, undefined);
   assertEquals(o.sections.budget.facts[0].check?.level, "not_found");
   assertEquals(o.sections.seats.facts.length, 0);
   assert(o.sections.seats.gap_note);
@@ -210,9 +210,10 @@ Deno.test("a failed marking call keeps the powers; a failed lookup says so", asy
 
 Deno.test("a reused lookup makes no lookup call and keeps marks only for the same words", async () => {
   const first = new FakeOffice();
-  const { dossier } = await officeForRace(await race(["Housing costs"]), first);
   const at = "2026-10-01T00:00:00.000Z";
-  const known = reusable(dossier.office, { id: "run-1", updated_at: at }, new Date(at))!;
+  const { dossier } = await officeForRace(await race(["Housing costs"]), first, null, new Date(at));
+  // The lookup's own time counts, not when the run was last saved.
+  const known = reusable(dossier.office, { id: "run-1", updated_at: "2027-01-01" }, new Date(at))!;
   assertEquals(known.from, { run: "run-1", looked_up: at });
 
   const second = new FakeOffice(new Error("should not be called"));
@@ -352,4 +353,33 @@ Deno.test("a failed lookup leaves the run done and says why", async () => {
   // A failed lookup is never reused.
   assertEquals(s.runs.knownOffice(QUERY, "other", new Date()), null);
   s.db.close();
+});
+
+Deno.test("a mark can't rest on a fact whose quote wasn't on its opened page", () => {
+  const facts = (level: "quoted" | "not_found") => ({
+    decides: {
+      facts: [{
+        statement: "Sets zoning.",
+        source_name: "City",
+        source_url: CHARTER,
+        author: null,
+        published: null,
+        evidence_type: "primary_record" as const,
+        check: { level, opened: true, read: true },
+      }],
+      searched: [],
+      gap_note: null,
+    },
+    budget: { facts: [], searched: [], gap_note: "none" },
+    seats: { facts: [], searched: [], gap_note: "none" },
+    term: { facts: [], searched: [], gap_note: "none" },
+  });
+  const raw = [{ id: "i1", scope: "inside", basis: "It sets zoning.", fact_ids: ["f1"] }];
+  assertEquals(checkScopes(["housing"], facts("quoted"), raw)[0].scope, "inside");
+  assertEquals(checkScopes(["housing"], facts("not_found"), raw)[0], {
+    issue: "housing",
+    scope: "unclear",
+    basis: NOT_SETTLED,
+    rests_on: [],
+  });
 });

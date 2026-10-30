@@ -218,17 +218,17 @@ show it. A found quote shows the page has those words, not that the statement re
   searches and fetches counted across continuations (`OFFICE_MAX_SEARCHES`/`FETCHES` +
   `OFFICE_MAX_CONTINUATIONS`). Nothing about the candidates is sent. Its fixed sections
   (`OFFICE_SECTIONS`: what it decides, budget, seats, term) get the same provenance and quote check
-  as a dossier (`assembleSections`), the name check looking for the place. One lookup per office:
-  `RunStore.knownOffice` reuses the newest verified, unfailed lookup from a finished race whose
-  `officeKey` matches (state + jurisdiction + office with any district, seat, or area number left
-  out) and that is under `OFFICE_REUSE_DAYS` old (`reused_from`, said on the page). Then each of the
-  race's issues is marked inside, partly, outside, or unclear by a call without web tools that sees
-  only the verified facts (`markIssueScopes`); a mark other than unclear stands only on a cited
-  verified fact that isn't unsourced (`checkScopes`), and an issue worded as a reused lookup's keeps
-  its mark without a call. The result is `RaceDossier.office`, once per race, the same for every
-  candidate: never a stance, never combined with one. A failed lookup is recorded (`error`) and
-  never reused; a failed marking call keeps the powers (`scope_error`). The graph doesn't hold it
-  yet.
+  as a dossier (`assembleSections`), without the name check (a state law rightly never names the
+  place). One lookup per office: `RunStore.knownOffice` reuses the newest verified, unfailed lookup
+  from a finished race whose `officeKey` matches (state + jurisdiction + office with any district,
+  seat, or area number left out) and whose lookup (`looked_up`) is under `OFFICE_REUSE_DAYS` old
+  (`reused_from`, said on the page). Then each of the race's issues is marked inside, partly,
+  outside, or unclear by a call without web tools that sees only the verified facts
+  (`markIssueScopes`); a mark other than unclear stands only on a cited verified fact that isn't
+  unsourced (`checkScopes`), and an issue worded as a reused lookup's keeps its mark without a call.
+  The result is `RaceDossier.office`, once per race, the same for every candidate: never a stance,
+  never combined with one. A failed lookup is recorded (`error`) and never reused; a failed marking
+  call keeps the powers (`scope_error`). The graph doesn't hold it yet.
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections

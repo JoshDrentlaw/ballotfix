@@ -293,6 +293,12 @@ Follow-ups:
 - Not yet run against the live API. Check that the lookup finds the charter or code rather than a
   generic explainer, and how often marks come back unclear.
 - The knowledge graph doesn't hold office facts yet, so the office's entity page doesn't show them.
+- Two races for one office finishing close together (council districts on one ballot) can each pay
+  for a lookup, since reuse only sees saved results. An in-flight map by `officeKey` in `JobRunner`
+  would fix it.
+- A page whose office step never ran (off, or a restart mid-steps) says nothing about it, as with
+  the other after-steps; and a failed lookup doesn't save its search counts, since `#after` passes
+  only the message on.
 - Retention races look up the judge's office the same way; a court's "budget" is often not on
   record, which reads as a gap.
 

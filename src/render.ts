@@ -81,7 +81,7 @@ export function slug(s: string): string {
 }
 
 /** Ids the page uses itself; a candidate's anchor never takes one. */
-const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new"]);
+const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new", "office"]);
 
 /**
  * Like slug, but keeps letters in any script: an anchor only has to work

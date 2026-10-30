@@ -232,11 +232,14 @@ export class RunStore extends RecordTable<RunRecord> {
         r.id !== except && r.race?.office &&
         officeKey(r.query.state, r.query.city, r.race.office.office) === key
       )
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-      .map((r) => reusable(r.race!.office, r, now))
-      .filter((k): k is KnownOffice => k !== null)
+      .map((r) => ({ r, k: reusable(r.race!.office, r, now) }))
+      .filter((x): x is { r: RunRecord; k: KnownOffice } => x.k !== null)
       // Newest lookup, not newest run: a run that reused an old lookup shouldn't hide a fresher one.
-      .sort((a, b) => b.from.looked_up.localeCompare(a.from.looked_up));
+      .sort((a, b) =>
+        b.k.from.looked_up.localeCompare(a.k.from.looked_up) ||
+        b.r.updated_at.localeCompare(a.r.updated_at)
+      )
+      .map((x) => x.k);
     return found[0] ?? null;
   }
 

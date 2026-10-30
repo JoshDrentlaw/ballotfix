@@ -744,6 +744,8 @@ export interface OfficeResult {
   /** One per issue the voter named for the race, in their order; [] when none. */
   issues: IssueScope[];
   model: string | null;
+  /** When this run's lookup ran. Absent when reused (see reused_from) or failed. */
+  looked_up?: string;
   /** Searches and fetches the lookup made. Absent when it was reused or failed before counting. */
   effort?: ResearchEffort;
   /**

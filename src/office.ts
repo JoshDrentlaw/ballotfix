@@ -8,8 +8,8 @@
  *   (`officeKey`): a race reuses a verified lookup another finished run in the
  *   same place made within OFFICE_REUSE_DAYS, and the page says when.
  * - Its facts get the same provenance and quote check as a dossier's
- *   (`assembleSections`): only a page the lookup retrieved is shown as fact,
- *   and the name check looks for the place.
+ *   (`assembleSections`): only a page the lookup retrieved is shown as fact.
+ *   No name check: a state law covering every such office never names the place.
  * - Each of the voter's issues is marked inside, partly, or outside the
  *   office's say by a call without web tools that sees only the verified
  *   facts. A mark stands only on a verified, sourced fact it cites; anything
@@ -72,7 +72,9 @@ export function reusable(
 ): KnownOffice | null {
   if (!result || result.error) return null;
   if (!OFFICE_SECTION_IDS.some((id) => result.sections[id]?.facts.length)) return null;
-  const from = result.reused_from ?? { run: run.id, looked_up: run.updated_at };
+  // When the lookup ran, not when the run was last saved: a later save mustn't restart the clock.
+  const from = result.reused_from ??
+    { run: run.id, looked_up: result.looked_up ?? run.updated_at };
   const age = now.getTime() - Date.parse(from.looked_up);
   if (!(age <= OFFICE_REUSE_DAYS * 86_400_000)) return null;
   return { result, from };
@@ -93,6 +95,8 @@ function factList(
 
 export const NO_POWERS_FOUND =
   "No verified source on this office's powers was found, so this can't be placed.";
+export const LOOKUP_FAILED =
+  "Looking up this office's powers failed in this run, so this can't be placed.";
 export const NOT_SETTLED = "The verified sources on this office's powers don't settle this.";
 
 const unclear = (issue: string, basis: string): IssueScope => ({
@@ -105,7 +109,7 @@ const unclear = (issue: string, basis: string): IssueScope => ({
 /**
  * Checks the marks that came back: one per issue, in the voter's order. A
  * mark other than "unclear" stands only when it cites at least one verified
- * fact that isn't unsourced; otherwise it is "unclear", whatever the model said.
+ * fact that isn't unsourced and whose quote wasn't missing from its page; otherwise it is "unclear", whatever the model said.
  */
 export function checkScopes(
   issues: readonly string[],
@@ -124,7 +128,8 @@ export function checkScopes(
     const shownBasis = basis && basis.length <= MAX_BASIS_CHARS ? basis : null;
     if (scope === "unclear") return unclear(issue, shownBasis ?? NOT_SETTLED);
     const cited = [...new Set(a!.fact_ids ?? [])].map((id) => facts.get(id))
-      .filter((x) => x && x.f.evidence_type !== "unsourced");
+      // A quote looked for on its opened page and not there supports nothing.
+      .filter((x) => x && x.f.evidence_type !== "unsourced" && x.f.check?.level !== "not_found");
     if (!cited.length) return unclear(issue, NOT_SETTLED);
     return { issue, scope, basis: shownBasis, rests_on: cited.map((x) => x!.ref) };
   });
@@ -199,6 +204,7 @@ export async function officeForRace(
   race: RaceDossier,
   researcher: OfficeResearcher,
   known: KnownOffice | null = null,
+  now: Date = new Date(),
 ): Promise<OfficeStepResult> {
   const q = race.query;
   let office: OfficeResult;
@@ -224,7 +230,8 @@ export async function officeForRace(
       raw.sections,
       raw.retrieved_urls,
       raw.opened_pages,
-      { shown: q.city, terms: q.city.trim() ? [q.city] : [] },
+      // No name check: a state law that covers every such office rightly never names the place.
+      { shown: q.city, terms: [] },
     );
     office = {
       office: q.office,
@@ -233,6 +240,7 @@ export async function officeForRace(
       gaps: (raw.gaps ?? []).map((g) => g.trim()).filter(Boolean),
       issues: [],
       model: raw.model,
+      looked_up: now.toISOString(),
       ...(raw.effort ? { effort: raw.effort } : {}),
     };
   }
@@ -252,7 +260,7 @@ export async function officeForRace(
   return {
     dossier: { ...race, office },
     looked_up: !known,
-    shown: OFFICE_SECTION_IDS.reduce((n, id) => n + office.sections[id].facts.length, 0),
+    shown: OFFICE_SECTION_IDS.reduce((n, id) => n + (office.sections[id]?.facts.length ?? 0), 0),
     marked,
   };
 }
@@ -267,7 +275,7 @@ export function raceOfficeFailed(race: RaceDossier, error: string): RaceDossier 
       sections: emptySections(OFFICE_SECTION_IDS, note),
       unverified: [],
       gaps: [],
-      issues: (race.priorities ?? []).map((x) => unclear(x, NO_POWERS_FOUND)),
+      issues: (race.priorities ?? []).map((x) => unclear(x, LOOKUP_FAILED)),
       model: null,
       error,
     },

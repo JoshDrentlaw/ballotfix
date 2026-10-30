@@ -295,8 +295,9 @@ export class JobRunner {
       "office powers",
       race,
       make && (async () => {
-        const known = this.#store.knownOffice(race.query, id, this.#now());
-        const r = await officeForRace(race, make(), known);
+        const now = this.#now();
+        const known = this.#store.knownOffice(race.query, id, now);
+        const r = await officeForRace(race, make(), known, now);
         return {
           dossier: r.dossier,
           changed: true,
