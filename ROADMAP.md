@@ -37,7 +37,21 @@ Follow-ups (from review of PR #21):
 - A lower continuation limit for research (like `CONTEXT_MAX_CONTINUATIONS`), if usage logs show
   research often reaching the cap and then pausing several more times.
 
-## 2. Cal-Access → CARS (small, time-sensitive)
+## 2. Cal-Access → CARS (small, time-sensitive) — done
+
+Branch `ccr-e25e74f0-3joiam`. Checked Oct 30, 2026 (by search; sos.ca.gov itself couldn't be fetched
+from the build session): the Secretary of State's go-live page says only "post-election, November
+2026", and its reports and briefings have said Nov 11, 16, and 26. No CARS address was found. So
+`CARS_CUTOVER` is the earliest of those (2026-11-11), the CARS instruction still allows Cal-Access
+if CARS isn't open yet, and the prompt names no CARS address (it says to find it from sos.ca.gov).
+The source goes by the lookup's date, not the election date as first planned: once Cal-Access is
+gone, an earlier election's filings are only in CARS. Local filings keep Forms 460/497/410; for CARS
+filings the prompt says to copy the record's own form name rather than assume the old numbers. The
+measure `money` ask says "or the state or local equivalent" rather than naming CARS, since the
+template is the same before and after the cutover. Update `CARS_CUTOVER` when the Secretary of State
+names the day.
+
+Original plan:
 
 The review says Cal-Access is replaced by CARS on Nov 11, 2026, after which the old site is gone and
 state filings drop the old FPPC form numbers. **Check the date and the new site's address against
