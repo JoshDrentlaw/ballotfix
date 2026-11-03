@@ -36,6 +36,8 @@ import type {
   ContextNote,
   ContextResult,
   Contribution,
+  DigestLine,
+  DigestResult,
   EvidenceType,
   Fact,
   FactCheck,
@@ -54,6 +56,7 @@ import type {
   SharedLeftOut,
   SharedSources,
   Stance,
+  SubjectDigest,
   VoteMeanings,
 } from "./types.ts";
 
@@ -482,6 +485,74 @@ function refItem(f: Fact, at: { id: string; label: string }, notes: Notes): stri
     : pageGroupItem([f], notes, jump, "fact ref");
 }
 
+// ---------------------------------------------------------------------------
+// Digests (src/digest.ts)
+// ---------------------------------------------------------------------------
+
+/** A subject's facts by section id ("priority_N" for an issue), for looking up a digest's citations. */
+type FactsAt = (section: string, index: number) => Fact | undefined;
+
+function factsAt(
+  sections: Record<string, SectionResult | undefined>,
+  priorities: readonly PriorityResult[] | undefined,
+): FactsAt {
+  return (section, index) => {
+    const m = /^priority_(\d+)$/.exec(section);
+    const r = m ? priorities?.[Number(m[1]) - 1]?.result : sections[section];
+    return r?.facts[index];
+  };
+}
+
+/**
+ * One digest box: each line with the outlets of the facts it cites and how
+ * many, so every sentence still carries its provenance.
+ */
+function digestBox(head: string, note: string, lines: readonly DigestLine[], at: FactsAt): string {
+  const items = lines.map((l) => {
+    const cited = l.facts.map((c) => at(c.section, c.index)).filter((f): f is Fact => !!f);
+    const outlets = [
+      ...new Set(
+        cited.flatMap((f) => [f.source_name, ...(f.also ?? []).map((a) => a.source_name)]),
+      ),
+    ];
+    return `<li>${esc(l.text)} <span class="dg-src">${esc(outlets.join(", "))} · ${
+      plural(cited.length, "fact")
+    }</span></li>`;
+  });
+  return `<div class="digest"><p class="dg-head">${esc(head)} <span class="dg-note">${
+    esc(note)
+  }</span></p><ul>${items.join("")}</ul></div>`;
+}
+
+/** Why a section with enough facts has no digest, said once in its place. */
+function digestLeft(s: SubjectDigest | undefined, section: string): string {
+  const left = s?.left_out.find((l) => l.section === section);
+  return left ? `<p class="dg-left">No summary here: ${esc(left.reason)}.</p>` : "";
+}
+
+/** What a section shows of its digest: the box, or why there is none, or nothing on runs without one. */
+function sectionDigest(s: SubjectDigest | undefined, section: string, at: FactsAt): string {
+  const lines = s?.sections[section];
+  return lines?.length
+    ? digestBox("In short", "a model's summary of the facts below", lines, at)
+    : digestLeft(s, section);
+}
+
+/** The brief, under a candidate's or measure's name; or why the run has none. */
+function briefHtml(
+  digest: DigestResult | undefined,
+  s: SubjectDigest | undefined,
+  at: FactsAt,
+  of: string,
+): string {
+  if (digest?.error) {
+    return `<p class="dg-left">No summaries for this run: ${esc(digest.error)}.</p>`;
+  }
+  return s?.brief.length
+    ? digestBox("In brief", `a model's summary of ${of} facts`, s.brief, at)
+    : digestLeft(s, "brief");
+}
+
 /**
  * The id a section gets on the page, so the overview grid can link to it.
  * `anchor` is the candidate's (candidateAnchors) or "m" for a measure; it
@@ -495,6 +566,8 @@ export function sectionAnchor(anchor: string, sectionId: string): string {
 interface SectionOptions {
   tag?: string;
   between?: string;
+  /** The section's digest box, drawn over its facts (digestHtml). */
+  digest?: string;
   id?: string;
   shown?: Shown;
 }
@@ -562,8 +635,8 @@ function sectionHtml(
     ? `<p class="searched">Looked at: ${r.searched.map(esc).join("; ")}</p>`
     : "";
   const empty = !r.facts.length && !o.between ? " empty" : "";
-  return `<section class="sec${empty}"${id}><${tag}>${esc(title)}</${tag}>${
-    o.between ?? ""
+  return `<section class="sec${empty}"${id}><${tag}>${esc(title)}</${tag}>${o.between ?? ""}${
+    o.digest ?? ""
   }${facts}${gap}${searched}</section>`;
 }
 
@@ -812,6 +885,7 @@ function prioritiesHtml(
   anchor: string,
   section: (r: SectionResult) => SectionResult | undefined = (r) => r,
   scopes: readonly IssueScope[] = [],
+  digest: (id: string) => string = () => "",
 ): string {
   if (!p?.length) return "";
   return `<section class="priorities"><h4>On what you said matters to you</h4>${
@@ -820,6 +894,7 @@ function prioritiesHtml(
         tag: "h5",
         between: stanceBadge(x, subject) + scopeLine(scopes[i]),
         id: sectionAnchor(anchor, `priority_${i + 1}`),
+        digest: digest(`priority_${i + 1}`),
       })
     ).join("")
   }</section>`;
@@ -1496,6 +1571,7 @@ function dossierSection(
   money?: FinanceSubjectResult,
   person?: { ref: EntityRef; links: EntityLinks },
   scopes: readonly IssueScope[] = [],
+  digest?: { result: DigestResult; subject: SubjectDigest | undefined },
 ): string {
   const c = d.candidate;
   if (d.status === "pending") {
@@ -1506,10 +1582,14 @@ function dossierSection(
   }
   const shown = shownInPriorities(d.priorities, anchor);
   const failed = failedNote(d.status === "failed", d.sections);
+  const at = factsAt(d.sections, d.priorities);
+  const ok = d.status === "ok" && digest;
+  const dg = (id: string) => ok ? sectionDigest(digest.subject, id, at) : "";
   const sections = SECTIONS.map((s) =>
     sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {
       id: sectionAnchor(anchor, s.id),
       shown,
+      digest: dg(s.id),
     })
   ).join("");
 
@@ -1525,7 +1605,8 @@ function dossierSection(
   ${evidenceLine(evidenceOf(candidateFacts(d), d.effort), d.status === "failed")}
   ${identity}
   ${failed.note}
-  ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section, scopes)}
+  ${ok ? briefHtml(digest.result, digest.subject, at, "this candidate's") : ""}
+  ${prioritiesHtml(d.priorities, "candidate", notes, anchor, failed.section, scopes, dg)}
   ${sections}
   ${
     finance || d.status !== "ok"
@@ -1808,6 +1889,14 @@ details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
 /* Every fact item: its source line first, the fact or facts under it on a quiet rule. */
 .fact > .grp-src { margin: 0 0 8px; font-size: .9rem; }
+/* A digest: a model's summary over a section's facts, tinted and quieter than a fact, never a chip. */
+.digest { background: var(--tint); border-radius: var(--r); padding: 10px 14px; margin: 8px 0 12px; }
+.digest .dg-head { margin: 0 0 4px; font-weight: 650; font-size: .9rem; }
+.digest .dg-note { font-weight: 400; color: var(--muted); font-size: .8rem; }
+.digest ul { margin: 0; padding-left: 18px; }
+.digest li { margin: 4px 0; }
+.dg-src { color: var(--muted); font-size: .8rem; }
+.dg-left { color: var(--muted); font-size: .82rem; margin: 4px 0; }
 /* The source heads its facts: named in body text, bold, so a skim finds who is talking. */
 .fact > .grp-src > a:first-child { color: var(--fg); font-weight: 650; text-decoration-color: var(--line-strong); }
 .fact.merged > .grp-src .nsrc { color: var(--fg); font-weight: 650; font-size: .9rem; }
@@ -2274,6 +2363,7 @@ ${
           }
           : undefined,
         r.office?.issues,
+        r.digest && { result: r.digest, subject: r.digest.subjects[i] },
       )
     ).join("")
   }
@@ -2351,6 +2441,7 @@ export function readingGuide(ownStatements: string): string {
   }</dt><dd>The research saw the page only as a search result: a title and a snippet.</dd>
 </dl>
 <p>A found quote shows the page has those words, not that the statement is a fair reading of them. "Page doesn't mention" means the opened page doesn't contain the candidate's surname (or the measure's label), so it may be about someone or something else.</p>
+<p>"In short" and "In brief" are a model's summary of the facts under them, written after the research. Each sentence lists the outlets and the number of facts it rests on, and was checked to cite only those facts, to name no outlet they don't come from, and to use no judging word they don't use. It wasn't checked against the pages themselves: the facts below it are the record. A section summarized for one candidate is summarized for every candidate, or for none.</p>
 <p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
 <p>In the app, a name with a dotted underline opens everything the research holds on it. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on it.</p>
 </details>`;
@@ -2392,6 +2483,9 @@ export function measureBody(
   const notes = notesFor(d.context, q.state, q.jurisdiction, links);
   const shown = shownInPriorities(d.priorities, "m");
   const failed = failedNote(d.status === "failed", d.sections);
+  const mat = factsAt(d.sections, d.priorities);
+  const mdg = d.status === "ok" && !!d.digest;
+  const mdgFor = (id: string) => mdg ? sectionDigest(d.digest!.subjects[0], id, mat) : "";
   const body = d.status === "pending"
     ? `<p class="gap">${
       extra.stopped
@@ -2406,13 +2500,16 @@ export function measureBody(
         ),
         d.status === "failed",
       )
-    }${failed.note}${prioritiesHtml(d.priorities, "measure", notes, "m", failed.section)}
+    }${failed.note}${mdg ? briefHtml(d.digest, d.digest!.subjects[0], mat, "this measure's") : ""}${
+      prioritiesHtml(d.priorities, "measure", notes, "m", failed.section, [], mdgFor)
+    }
 ${
       MEASURE_SECTIONS.map((s) =>
         sectionHtml(s.title, failed.section(d.sections[s.id]), notes, {
           id: sectionAnchor("m", s.id),
           shown,
           between: s.id === "effect" && d.status === "ok" ? voteMeansHtml(d.vote_means, notes) : "",
+          digest: mdgFor(s.id),
         })
       ).join("")
     }

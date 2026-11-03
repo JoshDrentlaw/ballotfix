@@ -302,6 +302,25 @@ show it. A found quote shows the page has those words, not that the statement re
   The result is `RaceDossier.office`, once per race, the same for every candidate: never a stance,
   never combined with one. A failed lookup is recorded (`error`) and never reused; a failed marking
   call keeps the powers (`scope_error`). The graph doesn't hold it yet.
+- Section digests (roadmap item 15, `src/digest.ts`): after every other step, `JobRunner` makes one
+  tool-less call per run (`Digester.digestFacts`: `DIGEST_EFFORT`, `BALLOTFIX_DIGEST_MODEL` or
+  `DEFAULT_DIGEST_MODEL`, "off" skips it) over its verified facts only, each with a short id: a
+  1-4 line summary of every section with `MIN_SECTION_FACTS`+ facts and a brief across sections
+  for each candidate or measure with `MIN_BRIEF_FACTS`+ (`planRace`, `planMeasure`; over
+  `MAX_DIGEST_FACTS` the run gets none and says so). Every line must cite facts of its own section
+  (the brief: its own subject), and may not name an outlet none of its facts come from, another
+  candidate none of its facts name, any name whose words aren't in its facts (`findNames`), or an
+  evaluative word (`CHARACTERIZATIONS`) they don't use (`lineProblem`). A section left out for one
+  candidate is left out for all of them, and a measure's case for and against stand together
+  (`even`); the page says why each is missing. A failed check is sent back once with what was
+  wrong (`problemsOf`), and the answer that left out less is kept (`runPlan`). The input's hash
+  (`digestHash`: facts, model, `DIGEST_VERSION`) is saved, so the same facts are never paid for
+  twice (`isCurrent`). Saved runs get theirs from `deno task digest` (`src/digest_cli.ts`:
+  `estimate` calls nothing; `run` prints its estimate and needs `--yes`, then sends one Message
+  Batch at half price, plus one for retries; `apply --from` copies digests made on a copy onto the
+  same runs where the facts hash the same, calling nothing). The page shows "In short" over a
+  section's facts and "In brief" under a name, each line with its facts' outlets and count, labeled
+  a model's summary: the facts below stay the record, and a found quote says nothing of its wording.
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections
@@ -389,6 +408,10 @@ show it. A found quote shows the page has those words, not that the statement re
   type, check, event date, flag, and quote. Merged facts and `refItem`s stand alone, but every item
   is drawn one way, a lone fact too: its source line (a merged fact's sources) first, the fact under
   it on the group's rule. A month-only date reads "Oct 2026", like the page's other dates.
+- A digest (`digestBox`) is a tinted box, never a chip or a stance color: "In short" over a
+  section's facts, "In brief" under a candidate's or measure's evidence line, each line followed by
+  its facts' outlets and count. Where a section had enough facts but no digest, a muted line says
+  why (`.dg-left`). Runs without a digest show nothing of it.
 - A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
   words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are

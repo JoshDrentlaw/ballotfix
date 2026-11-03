@@ -320,6 +320,8 @@ export interface RaceDossier {
   finance?: FinanceResult;
   /** What the office can do (src/office.ts). Absent until that step has run. */
   office?: OfficeResult;
+  /** A model's summary of each section's verified facts (src/digest.ts). Absent until made. */
+  digest?: DigestResult;
   /**
    * Pages covering every candidate, found once before any candidate's research
    * and put first in each one's prompt (src/shared.ts). Absent on runs saved
@@ -392,6 +394,73 @@ export interface MeasureDossier {
   context?: ContextResult;
   /** Contributions from campaign finance filings (src/finance.ts). Absent until that step has run. */
   finance?: FinanceResult;
+  /** A model's summary of each section's verified facts (src/digest.ts). Absent until made. */
+  digest?: DigestResult;
+}
+
+/** One sentence of a digest and the facts it rests on, by their place in the dossier. */
+export interface DigestLine {
+  text: string;
+  /** Each cited fact: its section ("priority_N" for a voter's issue) and index there. */
+  facts: { section: string; index: number }[];
+}
+
+/** One candidate's or a measure's digest: a short overview, then each section's. */
+export interface SubjectDigest {
+  /** Lines across sections; [] when the subject had too few facts or it was left out. */
+  brief: DigestLine[];
+  sections: Record<string, DigestLine[]>;
+  /** Sections (or "brief") with enough facts that got no digest, and why. */
+  left_out: { section: string; reason: string }[];
+}
+
+export interface DigestResult {
+  model: string;
+  made_at: string;
+  /** Hash of what was sent (src/digest.ts digestHash): the same input is never paid for twice. */
+  input_hash: string;
+  /** One per candidate in ballot order, or one for a measure. */
+  subjects: SubjectDigest[];
+  /** Set when no digest could be made at all. */
+  error?: string;
+}
+
+/** What the digest call sees: verified facts only, each with a short id. */
+export interface DigestRequest {
+  contest: string;
+  subjects: {
+    id: string;
+    name: string;
+    brief: boolean;
+    sections: {
+      id: string;
+      title: string;
+      /** False for a section with one fact: sent so the brief can cite it, never summarized. */
+      summarize: boolean;
+      facts: { id: string; statement: string; sources: string[]; type: string }[];
+    }[];
+  }[];
+  /** Problems with an earlier answer, sent back once so the model can fix them. */
+  problems?: string[];
+}
+
+/** The model's answer before checks. */
+export interface RawDigest {
+  subjects: {
+    id: string;
+    brief: RawDigestLine[];
+    sections: { id: string; lines: RawDigestLine[] }[];
+  }[];
+}
+
+export interface RawDigestLine {
+  text: string;
+  facts: string[];
+}
+
+/** Writes digests; src/digest.ts checks every line before anything is shown. */
+export interface Digester {
+  digestFacts(request: DigestRequest): Promise<RawDigest>;
 }
 
 /** One section's verified facts, as the merge step shows them to a model. */
