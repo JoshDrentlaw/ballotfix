@@ -311,13 +311,16 @@ function noteMeta(n: ContextNote): string {
  * (src/context.ts). Without notes it is the plain paragraph it always was;
  * with them it is a div, since a <details> can't sit inside a <p>.
  */
-function statementHtml(statement: string, notes: Notes): string {
+export function statementHtml(statement: string, notes: Notes): string {
   const pieces = attachNotes(statement, notes.list);
   if (pieces.every((p) => typeof p === "string")) return `<p>${esc(statement)}</p>`;
-  // Punctuation right after a name stays with it, not alone under an open note.
+  // Punctuation right after a name stays with it, not alone under an open note,
+  // and so does a possessive ("Association's"), never split by the note.
   const stuck = (i: number) => {
     const next = pieces[i + 1];
-    return typeof next === "string" ? next.match(/^[.,;:!?)\]"'”’]+/)?.[0] ?? "" : "";
+    return typeof next === "string"
+      ? next.match(/^(?:['’]s(?![\p{L}\p{N}]))?[.,;:!?)\]"'”’]*/u)?.[0] ?? ""
+      : "";
   };
   return `<div class="st">${
     pieces.map((p, i) =>

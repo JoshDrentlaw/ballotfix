@@ -11,8 +11,9 @@ import {
   renderRace,
   safeHref,
   slug,
+  statementHtml,
 } from "../src/render.ts";
-import type { FinanceResult } from "../src/types.ts";
+import type { ContextNote, FinanceResult } from "../src/types.ts";
 import { runMeasure, runRace } from "../src/race.ts";
 import { FakeResearch, listing, QUERY, raw, rawMeasure } from "./fakes.ts";
 
@@ -769,4 +770,27 @@ Deno.test("an issue the voter ended with a period gets no second one", () => {
   assertStringIncludes(box(["easier for us."]), "easier for us. Sought equally.");
   assertStringIncludes(box(["is it fair?"]), "is it fair? Sought equally.");
   assertStringIncludes(box(["housing costs", "parks"]), "housing costs; parks. Sought equally.");
+});
+
+Deno.test("a note never splits a possessive name", () => {
+  const note: ContextNote = {
+    name: "Howard Jarvis Taxpayers Association",
+    kind: "organization",
+    note: "A taxpayer group.",
+    source_name: "HJTA",
+    source_url: "https://hjta.org/about",
+    author: null,
+    published: null,
+    verified: true,
+  };
+  const html = statementHtml("The Howard Jarvis Taxpayers Association's guide says no.", {
+    list: [note],
+  });
+  assertStringIncludes(html, "Howard Jarvis Taxpayers Association&#39;s</span>");
+  assert(!html.includes("</details>s guide"));
+  // A closing quote or comma still sticks; a word starting with s after a quote doesn't.
+  assertStringIncludes(
+    statementHtml("Backed by Howard Jarvis Taxpayers Association, it says.", { list: [note] }),
+    "Association,</span>",
+  );
 });
