@@ -50,7 +50,7 @@ import type {
 } from "./types.ts";
 
 /** Bump when projection logic changes; the app rebuilds the graph from saved runs on start. */
-export const KNOWLEDGE_VERSION = 8;
+export const KNOWLEDGE_VERSION = 9;
 
 /** "side": the supporters or the opponents of one measure, so the two can be compared. */
 export const ENTITY_KINDS = ["person", "office", "measure", "organization", "side"] as const;

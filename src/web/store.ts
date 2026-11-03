@@ -6,6 +6,7 @@
  */
 
 import { notesToReuse } from "../context.ts";
+import { ballotPlace } from "../dossier.ts";
 import { scopeKey } from "../knowledge.ts";
 import { type KnownOffice, officeKey, reusable } from "../office.ts";
 import { Db } from "./db.ts";
@@ -67,6 +68,29 @@ export function isRunId(id: string): boolean {
   return ID_RE.test(id);
 }
 
+/**
+ * A race started from a ballot, read with its place as `ballotPlace` reads
+ * it. Readings made before the reader stopped allowing section headings saved
+ * a heading as the place ("School Offices", "City of Fontana Offices"), which
+ * split the statewide races from the state's measures and kept the graph,
+ * the connections views, and note and office reuse from seeing them as one
+ * place. The saved body is left as it is; the heading is kept as
+ * `place_as_saved` so the page says it was read. Measures carry their own
+ * jurisdiction from the reading and are left alone, as is any run whose
+ * place already stands. `county` is the ballot's.
+ */
+export function placeRun(run: RunRecord, county: string | null): RunRecord {
+  if (!run.ballot || run.measure) return run;
+  const place = (q: RaceQuery): RaceQuery => {
+    const saved = q.place_as_saved ?? q.city;
+    const city = ballotPlace(saved, q.office, county, q.state);
+    return city === q.city ? q : { ...q, city, place_as_saved: saved };
+  };
+  const query = place(run.query);
+  if (query === run.query) return run;
+  return { ...run, query, race: run.race ? { ...run.race, query: place(run.race.query) } : null };
+}
+
 type Table = "runs" | "ballots" | "choices";
 
 /**
@@ -113,16 +137,27 @@ class RecordTable<T extends { id: string; created_at: string }> {
     return this.write(record, "keep") > 0;
   }
 
+  /** A record as the app reads it: every read goes through here. As stored, by default. */
+  protected revive(record: T): T {
+    return record;
+  }
+
+  /** A row's body, parsed and revived; null when unreadable. */
+  protected read(body: unknown): T | null {
+    const r = parse<T>(body);
+    return r && this.revive(r);
+  }
+
   get(id: string): Promise<T | null> {
     if (!isRunId(id)) return Promise.resolve(null);
     const r = this.db.get(`SELECT body FROM ${this.table} WHERE id = ?`, id);
-    return Promise.resolve(r ? parse<T>(r.body) : null);
+    return Promise.resolve(r ? this.read(r.body) : null);
   }
 
   /** All records, newest first. Unreadable rows are skipped, not fatal. */
   list(): Promise<T[]> {
     const rows = this.db.all(`SELECT body FROM ${this.table} ORDER BY created_at DESC, id`);
-    return Promise.resolve(rows.map((r) => parse<T>(r.body)).filter((r): r is T => r !== null));
+    return Promise.resolve(rows.map((r) => this.read(r.body)).filter((r): r is T => r !== null));
   }
 
   /** Records whose status column is `status`. Needs hasStatus. */
@@ -131,7 +166,7 @@ class RecordTable<T extends { id: string; created_at: string }> {
       `SELECT body FROM ${this.table} WHERE status IN (${statuses.map(() => "?").join(", ")})`,
       ...statuses,
     );
-    return rows.map((r) => parse<T>(r.body)).filter((r): r is T => r !== null);
+    return rows.map((r) => this.read(r.body)).filter((r): r is T => r !== null);
   }
 }
 
@@ -149,8 +184,19 @@ export class RunStore extends RecordTable<RunRecord> {
 
   constructor(db: Db, log: (msg: string) => void = () => {}) {
     super(db, "runs", true);
-    this.knowledge = new KnowledgeBase(db);
+    this.knowledge = new KnowledgeBase(db, (body) => this.read(body));
     this.#log = log;
+  }
+
+  /** Every run is read with its ballot's place reading (placeRun), the graph's rebuild included. */
+  protected override revive(run: RunRecord): RunRecord {
+    if (!run.ballot || run.measure) return run;
+    const r = this.db.get(
+      `SELECT CASE WHEN json_valid(body) THEN json_extract(body, '$.reading.county') END AS county
+       FROM ballots WHERE id = ?`,
+      run.ballot.id,
+    );
+    return placeRun(run, typeof r?.county === "string" ? r.county : null);
   }
 
   /**
@@ -165,7 +211,8 @@ export class RunStore extends RecordTable<RunRecord> {
       this.db.tx(() => {
         this.write(run, "update");
         try {
-          this.knowledge.indexRun(run);
+          // Indexed as the app reads it, so the graph and the pages agree on its place.
+          this.knowledge.indexRun(this.revive(run));
         } catch (err) {
           this.#log(`Could not add run ${run.id} to the knowledge graph: ${err}`);
           // Don't leave an earlier version of this run in the graph. A rebuild repairs the rest.
@@ -254,7 +301,7 @@ export class RunStore extends RecordTable<RunRecord> {
       `SELECT body FROM runs WHERE status = ? ORDER BY created_at, rowid`,
       "queued",
     );
-    return rows.map((r) => parse<RunRecord>(r.body)).filter((r): r is RunRecord => r !== null);
+    return rows.map((r) => this.read(r.body)).filter((r): r is RunRecord => r !== null);
   }
 
   /**

@@ -152,7 +152,16 @@ const toCitation = (r: Row): StoredCitation => ({
 const strOrNull = (v: unknown) => v === null || v === undefined ? null : String(v);
 
 export class KnowledgeBase {
-  constructor(readonly db: Db) {}
+  /**
+   * `read` parses a saved run's body the way the app reads it (RunStore's
+   * revive, e.g. its place, src/web/store.ts placeRun), so a rebuild indexes
+   * what the pages show. Without one, the body as stored.
+   */
+  constructor(
+    readonly db: Db,
+    readonly read: (body: unknown) => RunRecord | null = (body) =>
+      JSON.parse(String(body)) as RunRecord,
+  ) {}
 
   /**
    * Replaces what one run contributes, all or nothing. If it throws, the
@@ -360,7 +369,9 @@ export class KnowledgeBase {
       );
       for (const r of rows) {
         try {
-          this.indexRun(JSON.parse(String(r.body)));
+          const run = this.read(r.body);
+          if (!run) throw new Error("its saved body can't be read");
+          this.indexRun(run);
           indexed++;
         } catch (err) {
           skipped++;
