@@ -141,3 +141,42 @@ Deno.test("a byline the facts give differently is said on each fact, never on th
   assertStringIncludes(group, "by Sam Reporter");
   assertStringIncludes(group, "by S. Reporter");
 });
+
+Deno.test("a fact cited at another address of its page keeps its own link; undated facts moved up are said to be", async () => {
+  const CANDS: BallotCandidate[] = [{
+    name: "Joz Sida",
+    ballot_designation: null,
+    incumbent: false,
+  }];
+  const PAGE = "https://www.fontanaherald.com/news/forum";
+  const f = (statement: string, extra: Partial<RawFact> = {}): RawFact => ({
+    statement,
+    source_name: "Fontana Herald News",
+    source_url: PAGE,
+    author: "Sam Reporter",
+    published: "2026-10-01",
+    evidence_type: "reported",
+    ...extra,
+  });
+  const port = new FakeResearch(listing(CANDS), {
+    "Joz Sida": raw({
+      sections: {
+        platform: {
+          facts: [
+            f("Joz Sida wants parks.", { event_date: "2026-09-01" }),
+            f("Joz Sida wants trees.", { source_url: `${PAGE}#trees` }),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: [PAGE],
+    }),
+  });
+  const page = renderRace(await runRace(QUERY, port, { candidates: CANDS }));
+  assertStringIncludes(page, 'href="https://www.fontanaherald.com/news/forum#trees"');
+  assertStringIncludes(
+    page,
+    "without an event date listed last or with their page&#39;s other facts",
+  );
+});

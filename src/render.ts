@@ -147,15 +147,19 @@ export function publishedDate(s: string): string {
 
 /** Source, author, date, and, when the opened page doesn't name the subject, that flag. */
 function factMeta(f: Fact): string {
-  const when = f.event_date
-    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span> · `
+  return [happened(f), sourceMeta({ ...f, url: f.source_url }), missingFlag(f)]
+    .filter(Boolean).join(" · ");
+}
+
+function happened(f: Fact): string {
+  return f.event_date
+    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span>`
     : "";
-  return when + sourceMeta({ ...f, url: f.source_url }) + missingFlag(f);
 }
 
 function missingFlag(f: Fact): string {
   return f.check?.missing_name
-    ? ` · <span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
+    ? `<span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
     : "";
 }
 
@@ -383,22 +387,26 @@ function pageKey(f: Fact): string | null {
  * importance. `alone` marks facts that keep their own item (refItems).
  */
 export function byPage(ordered: readonly Fact[], alone: (f: Fact) => boolean): (Fact | Fact[])[] {
+  const keys = ordered.map((f) => alone(f) ? null : pageKey(f));
   const groups = new Map<string, Fact[]>();
-  for (const f of ordered) {
-    const k = alone(f) ? null : pageKey(f);
-    if (k !== null) groups.set(k, [...(groups.get(k) ?? []), f]);
-  }
+  ordered.forEach((f, i) => {
+    const k = keys[i];
+    if (k === null) return;
+    const g = groups.get(k);
+    if (g) g.push(f);
+    else groups.set(k, [f]);
+  });
   const placed = new Set<string>();
   const out: (Fact | Fact[])[] = [];
-  for (const f of ordered) {
-    const k = alone(f) ? null : pageKey(f);
+  ordered.forEach((f, i) => {
+    const k = keys[i];
     const group = k === null ? undefined : groups.get(k);
     if (!group || group.length < 2) out.push(f);
     else if (!placed.has(k!)) {
       placed.add(k!);
       out.push(group);
     }
-  }
+  });
   return out;
 }
 
@@ -420,11 +428,11 @@ function pageGroupItem(facts: readonly Fact[], notes: Notes): string {
     same("published") ? dated(f) : "",
   ].filter(Boolean).join(" · ");
   const items = facts.map((x) => {
-    const when = x.event_date
-      ? `<span class="happened">Happened ${esc(sourceDate(x.event_date))}</span>`
-      : "";
+    // The page is one as the provenance check reads it, but a fact cited at
+    // another address (a deep link, http, www) keeps its own link.
+    const at = x.source_url === f.source_url ? "" : link(x.source_url, "cited at this link");
     const own = [same("author") ? "" : byline(x), same("published") ? "" : dated(x)];
-    const meta = [when, ...own, missingFlag(x).replace(/^ · /, "")].filter(Boolean).join(" · ");
+    const meta = [happened(x), at, ...own, missingFlag(x)].filter(Boolean).join(" · ");
     return `<li>${evTag(x.evidence_type)}${checkTag(x)}
     ${statementHtml(x.statement, notes)}${meta ? `<p class="meta">${meta}</p>` : ""}
     ${quotesHtml([x])}</li>`;
@@ -527,10 +535,10 @@ function sectionHtml(
   r ??= NOT_IN_THIS_RUN;
   const tag = o.tag ?? "h4";
   const id = o.id ? ` id="${esc(o.id)}"` : "";
-  const ordered = byWhen(r.facts);
+  const placed = byPage(byWhen(r.facts), (f) => o.shown?.has(shownKey(f)) ?? false);
   const facts = r.facts.length
-    ? `${whenRange(r.facts)}<ul class="facts">${
-      byPage(ordered, (f) => !!o.shown?.get(shownKey(f))).map((x) => {
+    ? `${whenRange(r.facts, placed)}<ul class="facts">${
+      placed.map((x) => {
         if (Array.isArray(x)) return pageGroupItem(x, notes);
         const at = o.shown?.get(shownKey(x));
         return at ? refItem(x, at, notes) : factItem(x, notes);
@@ -589,7 +597,7 @@ export function byWhen(facts: readonly Fact[]): Fact[] {
 }
 
 /** The span of dates a section's facts cover, said above them when there are two or more. */
-function whenRange(facts: readonly Fact[]): string {
+function whenRange(facts: readonly Fact[], placed: readonly (Fact | Fact[])[] = facts): string {
   // One fact's date is on the fact itself.
   if (facts.length < 2) return "";
   const old = predatesEventDates(facts);
@@ -602,18 +610,24 @@ function whenRange(facts: readonly Fact[]): string {
     ? sourceDate(from) // a year or month and days inside it
     : `${sourceDate(from)} to ${sourceDate(to)}`;
   const undated = facts.length - dates.length;
+  // byPage moves an undated fact up beside a dated one from its page.
+  const withPage = placed.some((x) => Array.isArray(x) && x.some((f) => !eventOf(f)));
   const text = old
     ? span ? `Sources published ${span}` : "No source gives a date"
     : !span
     ? "No fact here gives an event date; listed by publication date"
     : `Events ${span}${
-      undated ? `; ${plural(undated, "fact")} without an event date listed last` : ""
+      undated
+        ? `; ${plural(undated, "fact")} without an event date listed last${
+          withPage ? " or with their page's other facts" : ""
+        }`
+        : ""
     }`;
   return `<p class="when-range">${esc(text)}.</p>`;
 }
 
 const BEFORE_EVENT_DATES =
-  `<p class="note">This run was saved before event dates were recorded: each section lists its facts by when their sources were published, newest first, not by when the events happened.</p>`;
+  `<p class="note">This run was saved before event dates were recorded: each section lists its facts by when their sources were published, newest first, with a page's facts kept together, not by when the events happened.</p>`;
 
 /**
  * What a yes vote and a no vote each mean, side by side above the effect
