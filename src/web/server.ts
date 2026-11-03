@@ -710,14 +710,13 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
    * the county's), so those keep their saved place. Undefined when the form
    * isn't shown, so a running page's refreshes don't read the ballot.
    */
-  const againPlace = async (run: RunRecord): Promise<string | undefined> => {
+  const againPlace = (run: RunRecord): string | undefined => {
     if (!o.canResearch || run.status === "queued" || run.status === "running") return undefined;
     const saved = run.measure?.jurisdiction || run.query.city;
     if (run.measure || run.candidate_source?.contest_kind === "retention") return saved;
-    const reading = run.ballot && o.ballots
-      ? (await o.ballots.store.get(run.ballot.id))?.reading
-      : null;
-    return ballotPlace(saved, run.query.office, reading?.county ?? null, run.query.state);
+    // A ballot's run comes from RunStore already read with the ballot's county (placeRun).
+    if (run.ballot) return saved;
+    return ballotPlace(saved, run.query.office, null, run.query.state);
   };
   const choiceFor = async (run: RunRecord): Promise<ChoiceRecord | null> =>
     o.choices ? await o.choices.get(run.choice_id ?? run.id) : null;
@@ -1136,7 +1135,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           choice: await choiceFor(run),
           walk: await walkFor(run),
           links: linksFor(run),
-          againPlace: await againPlace(run),
+          againPlace: againPlace(run),
           ...extra,
         });
       if (!suffix && req.method === "GET") {
@@ -1180,7 +1179,10 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         if (!o.canResearch) return researchOff();
         const again = parseAgain(run, await req.formData());
         if (!again.ok) return html(messagePage("Not started", again.error, BASE), 400);
-        const query = { ...run.query, city: again.place };
+        // The new run's place is what the voter left in the form: never re-read from
+        // the old heading (placeRun reads place_as_saved first).
+        const { place_as_saved: _saved, ...asRun } = run.query;
+        const query = { ...asRun, city: again.place };
         const values: FormValues = {
           ...DEFAULT_FORM,
           city: query.city,

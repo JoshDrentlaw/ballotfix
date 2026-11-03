@@ -80,15 +80,52 @@ export function isRunId(id: string): boolean {
  * place already stands. `county` is the ballot's.
  */
 export function placeRun(run: RunRecord, county: string | null): RunRecord {
-  if (!run.ballot || run.measure) return run;
+  if (!readsPlace(run)) return run;
   const place = (q: RaceQuery): RaceQuery => {
     const saved = q.place_as_saved ?? q.city;
     const city = ballotPlace(saved, q.office, county, q.state);
-    return city === q.city ? q : { ...q, city, place_as_saved: saved };
+    // ballotPlace trims: a place that differs only in spaces still stands, and isn't a heading.
+    return city === q.city.trim() ? q : { ...q, city, place_as_saved: saved };
   };
   const query = place(run.query);
   if (query === run.query) return run;
   return { ...run, query, race: run.race ? { ...run.race, query: place(run.race.query) } : null };
+}
+
+/**
+ * Whether placeRun reads this run's place: a race from a ballot. Measures keep
+ * their own jurisdiction, and a retention question's court says nothing
+ * ballotPlace can use (server.ts againPlace).
+ */
+function readsPlace(run: RunRecord): boolean {
+  return !!run.ballot && !run.measure && run.candidate_source?.contest_kind !== "retention" &&
+    run.created_at < PLACES_FIXED_AT;
+}
+
+/**
+ * When the reader stopped allowing headings and research began reading every
+ * new race's place through ballotPlace (PR #33, merged Oct 30, 2026). Only
+ * races saved before it can hold a heading. A later one's place was read when
+ * it started, or set by the voter in "Research again", and stands as saved:
+ * reading it again could rewrite what the voter typed.
+ */
+export const PLACES_FIXED_AT = "2026-10-30T20:50:58Z";
+
+/**
+ * A run as it is stored: placeRun's reading undone, so saving a run that was
+ * read never writes the corrected place into its body.
+ */
+export function unplaceRun(run: RunRecord): RunRecord {
+  const back = (q: RaceQuery): RaceQuery => {
+    if (q.place_as_saved === undefined) return q;
+    const { place_as_saved, ...rest } = q;
+    return { ...rest, city: place_as_saved };
+  };
+  const query = back(run.query);
+  const race = run.race && back(run.race.query) !== run.race.query
+    ? { ...run.race, query: back(run.race.query) }
+    : run.race;
+  return query === run.query && race === run.race ? run : { ...run, query, race };
 }
 
 type Table = "runs" | "ballots" | "choices";
@@ -188,13 +225,18 @@ export class RunStore extends RecordTable<RunRecord> {
     this.#log = log;
   }
 
+  /** Stored as saved: a run that was read (revive) gets its saved place back on every write. */
+  protected override write(run: RunRecord, onConflict: "update" | "keep"): number {
+    return super.write(unplaceRun(run), onConflict);
+  }
+
   /** Every run is read with its ballot's place reading (placeRun), the graph's rebuild included. */
   protected override revive(run: RunRecord): RunRecord {
-    if (!run.ballot || run.measure) return run;
+    if (!readsPlace(run)) return run;
     const r = this.db.get(
       `SELECT CASE WHEN json_valid(body) THEN json_extract(body, '$.reading.county') END AS county
        FROM ballots WHERE id = ?`,
-      run.ballot.id,
+      run.ballot!.id,
     );
     return placeRun(run, typeof r?.county === "string" ? r.county : null);
   }
@@ -277,6 +319,8 @@ export class RunStore extends RecordTable<RunRecord> {
     const found = this.withStatus("done")
       .filter((r) =>
         r.id !== except && r.race?.office &&
+        // Looked up under a ballot heading ("School Offices"), not the place it is now read as.
+        r.query.place_as_saved === undefined &&
         officeKey(r.query.state, r.query.city, r.race.office.office) === key
       )
       .map((r) => ({ r, k: reusable(r.race!.office, r, now) }))

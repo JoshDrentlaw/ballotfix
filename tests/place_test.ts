@@ -110,6 +110,21 @@ Deno.test("a place that stands, a measure, and a run without a ballot are left a
     },
   };
   assertEquals(placeRun(measure, "San Bernardino"), measure);
+  // A retention question keeps its saved place, as research again offers it.
+  const kept = await run("r", "Judicial", "Associate Justice, Court of Appeal");
+  const retention: RunRecord = {
+    ...kept,
+    candidate_source: {
+      source_name: "ballot",
+      order_basis: "official_ballot_order",
+      notes: null,
+      contest_kind: "retention",
+    },
+  };
+  assertEquals(placeRun(retention, "San Bernardino"), retention);
+  // A place that differs from ballotPlace's only in spaces stands, never a heading.
+  const spaced = await run("r", "City of Fontana ", "City Clerk");
+  assertEquals(placeRun(spaced, "San Bernardino"), spaced);
 });
 
 Deno.test("the store reads the corrected place, leaves the saved body alone, and the graph agrees", async () => {
@@ -148,4 +163,34 @@ Deno.test("the store reads the corrected place, leaves the saved body alone, and
     page,
     "State of California, CA (saved as “School Offices”, a ballot heading",
   );
+});
+
+Deno.test("a race started after places were fixed keeps the place it was given", async () => {
+  // E.g. "Research again" with a place the voter typed, which may look like a heading.
+  const later = {
+    ...(await run("r", "Mountain Offices", "Superintendent of Public Instruction")),
+    created_at: "2026-11-01T00:00:00Z",
+  };
+  assertEquals(placeRun(later, "San Bernardino"), later);
+});
+
+Deno.test("saving a run that was read stores its saved place, never the reading", async () => {
+  const s = await openStores(await Deno.makeTempDir());
+  await s.ballots.save(BALLOT);
+  await s.runs.save(await run("r-1", "School Offices", "Superintendent of Public Instruction"));
+  // A later step reads the run and saves it again, as the job runner does.
+  const read = (await s.runs.get("r-1"))!;
+  assertEquals(read.query.city, "State of California");
+  await s.runs.save({ ...read, updated_at: "2026-10-30T00:00:00Z" });
+  const body = JSON.parse(String(s.db.get("SELECT body FROM runs WHERE id = 'r-1'")!.body));
+  assertEquals([body.query.city, body.query.place_as_saved], ["School Offices", undefined]);
+  assertEquals([body.race.query.city, body.race.query.place_as_saved], [
+    "School Offices",
+    undefined,
+  ]);
+  assertEquals(body.updated_at, "2026-10-30T00:00:00Z");
+  // And it still reads, and indexes, as the state's.
+  assertEquals((await s.runs.get("r-1"))!.query.city, "State of California");
+  assert(s.runs.knowledge.entity(personRef("CA", "State of California", "Sonja Shaw").key));
+  s.db.close();
 });
