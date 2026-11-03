@@ -2294,7 +2294,7 @@ ${extra.mine ?? ""}
 </footer>`;
 }
 
-function askedAbout(
+export function askedAbout(
   issues: readonly string[] | undefined,
   same: string,
   priorities: readonly PriorityResult[],
@@ -2303,9 +2303,12 @@ function askedAbout(
   const before = predatesStanceThreshold(priorities)
     ? `<p>This run's marks were made before that threshold existed, when one verified source of any kind was enough: read them as possibly thin.</p>`
     : "";
+  // An issue the voter ended with a period, a question, or a "!" gets no second one.
+  const list = issues.join("; ");
+  const end = /[.?!]["”')]*$/.test(list) ? "" : ".";
   return `<div class="note"><p><strong>You asked about:</strong> ${
-    issues.map(esc).join("; ")
-  }. ${same}</p><details${
+    esc(list)
+  }${end} ${same}</p><details${
     before ? " open" : ""
   }><summary>How your issues are marked</summary><p>Findings on them come first. Where your wording states a view, each issue is marked as conflicting with it, matching it, or mixed, but only when a verified source backs that up. A mark is full when a primary record backs it, or facts from two different outlets, with the quoted passage found on each page. Below that it is marked thin, with the number of facts behind it, and listed after the full ones. That is a reading of the cited record, not a recommendation, and there is no overall score: open the sources before relying on it.</p>${before}</details></div>`;
 }

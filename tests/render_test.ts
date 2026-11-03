@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
+  askedAbout,
   candidateAnchors,
   ICON_SVG,
   measureBody,
@@ -761,4 +762,11 @@ Deno.test("pages the research couldn't read are listed to read yourself, with th
   assert(!html.includes("Seen only"), "only pages found and unreadable");
   assert(!html.includes("javascript:"), "only http(s) links");
   assert(!html.includes("Login portal"), "never a portal asking for a login");
+});
+
+Deno.test("an issue the voter ended with a period gets no second one", () => {
+  const box = (issues: string[]) => askedAbout(issues, "Sought equally.", []);
+  assertStringIncludes(box(["easier for us."]), "easier for us. Sought equally.");
+  assertStringIncludes(box(["is it fair?"]), "is it fair? Sought equally.");
+  assertStringIncludes(box(["housing costs", "parks"]), "housing costs; parks. Sought equally.");
 });
