@@ -1787,7 +1787,7 @@ p, li { overflow-wrap: anywhere; }
 .inc { font-weight: 600; color: var(--fg); }
 .dossier { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 16px; margin: 24px 0; }
 .facts { list-style: none; padding: 0; margin: 0; }
-.fact { padding: 10px 0; }
+.fact { padding: 16px 0; }
 .fact + .fact { border-top: 1px solid var(--line); }
 .fact p { margin: 4px 0 0; }
 /* Evidence chips: told apart by fill and border as well as color. */
@@ -1807,7 +1807,10 @@ details.quote ul { margin: 4px 0 0; padding-left: 20px; }
 details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
 /* Every fact item: its source line first, the fact or facts under it on a quiet rule. */
-.fact > .grp-src { margin: 0 0 4px; }
+.fact > .grp-src { margin: 0 0 8px; font-size: .9rem; }
+/* The source heads its facts: named in body text, bold, so a skim finds who is talking. */
+.fact > .grp-src > a:first-child { color: var(--fg); font-weight: 650; text-decoration-color: var(--line-strong); }
+.fact.merged > .grp-src .nsrc { color: var(--fg); font-weight: 650; font-size: .9rem; }
 .grp { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
 .grp > li { padding: 6px 0; }
 .grp > li + li { border-top: 1px dashed var(--line); }
