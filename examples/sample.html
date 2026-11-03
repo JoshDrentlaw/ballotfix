@@ -77,8 +77,8 @@ details.quote blockquote { margin: 4px 0 0; padding: 2px 10px; border-left: 3px 
 details.quote ul { margin: 4px 0 0; padding-left: 20px; }
 details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
-/* Facts from one page: its source line once, the facts under it on a quiet rule. */
-.page-group .grp-src { margin: 0 0 4px; }
+/* Every fact item: its source line first, the fact or facts under it on a quiet rule. */
+.fact > .grp-src { margin: 0 0 4px; }
 .grp { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
 .grp > li { padding: 6px 0; }
 .grp > li + li { border-top: 1px dashed var(--line); }
@@ -411,25 +411,25 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 <p class="sub">About the office, not anyone running for it, and the same for every candidate. Looked up in this run: 3 searches and 2 pages opened.</p>
 
 <details class="office-facts" open><summary>Its powers, budget, seats, and term (4 sourced facts)</summary><section class="sec"><h4>What the office decides</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: the council adopts the budget, sets land use and zoning, and appoints the city manager; Example City schools are run by a separate district board.</p>
-  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall adopt the annual budget and shall appoint the City Manager</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: the council adopts the budget, sets land use and zoning, and appoints the city manager; Example City schools are run by a separate district board.</p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall adopt the annual budget and shall appoint the City Manager</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Budget</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: the adopted general fund budget for fiscal year 2025-26 is $250 million.</p>
-  <p class="meta"><a href="https://example.org/budget" rel="noopener noreferrer nofollow" target="_blank">Example City Adopted Budget</a> · author not stated · 2025</p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>General Fund adopted budget for fiscal year 2025-26 totals $250 million</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/budget" rel="noopener noreferrer nofollow" target="_blank">Example City Adopted Budget</a> · author not stated · 2025</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: the adopted general fund budget for fiscal year 2025-26 is $250 million.</p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>General Fund adopted budget for fiscal year 2025-26 totals $250 million</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Seats and how they&#39;re filled</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: the council has five seats, four elected by district and a mayor elected at large.</p>
-  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall consist of four members elected by district and the Mayor</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: the council has five seats, four elected by district and a mayor elected at large.</p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>The Council shall consist of four members elected by district and the Mayor</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city charter; adopted budget</p></section><section class="sec"><h4>Term and limits</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: terms are four years, with a limit of three terms.</p>
-  <p class="meta"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>Members shall serve terms of four years and no more than three terms</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/charter" rel="noopener noreferrer nofollow" target="_blank">Example City Charter</a> · author not stated · 2025</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: terms are four years, with a limit of three terms.</p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>Members shall serve terms of four years and no more than three terms</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city charter; adopted budget</p></section></details>
 </section>
 <section class="sec read-yourself"><h3>Pages to read yourself</h3>
@@ -445,25 +445,25 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   
   
   <section class="sec" id="sample-candidate-a--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
-  <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024 · <span class="flag">page doesn't mention “A”</span></p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p><p class="meta"><span class="flag">page doesn't mention “A”</span></p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-a--record"><h4>Record in this office</h4><p class="gap">Not the incumbent in this office, so there is no record in it to report.</p></section><section class="sec empty" id="sample-candidate-a--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--criticisms"><h4>Criticisms and controversies</h4><p class="when-range">Events Jul 2021.</p><ul class="facts"><li class="fact">
-  <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
-  <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><span class="happened">Happened Jul 14, 2021</span> · <a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
-  
+  <p class="meta grp-src"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
+  <ul class="grp"><li><span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
+    <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p><p class="meta"><span class="happened">Happened Jul 14, 2021</span></p>
+    </li></ul>
 </li><li class="fact">
-  <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
-  <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p>
-  <p class="meta"><span class="happened">Happened Jul 2021</span> · <a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</p>
-  
+  <p class="meta grp-src"><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</p>
+  <ul class="grp"><li><span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
+    <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p><p class="meta"><span class="happened">Happened Jul 2021</span></p>
+    </li></ul>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-a--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-a--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
-  <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><span class="happened">Happened Sep 1, 2026</span> · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026 · <span class="flag">page doesn't mention “A”</span></p>
-  <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
+  <ul class="grp"><li><span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
+    <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · Jul 2026</span></span></details> and the Example Labor Council Local 99.</div><p class="meta"><span class="happened">Happened Sep 1, 2026</span> · <span class="flag">page doesn't mention “A”</span></p>
+    <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-a--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-a--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
   <section class="sec money" id="sample-candidate-a--filed"><h4>Contributions on file</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
@@ -473,10 +473,10 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
-  <span class="ev ev-opinion">Opinion / claim</span>
-  <p>Placeholder: a claim whose cited page was never opened.</p>
-  <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
-  
+  <p class="meta grp-src"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
+  <ul class="grp"><li><span class="ev ev-opinion">Opinion / claim</span>
+    <p>Placeholder: a claim whose cited page was never opened.</p>
+    </li></ul>
 </li></ul></details>
   <p class="back"><a href="#glance">Back to the overview</a> · <a href="#sample-candidate-b">Next: Sample Candidate B</a></p>
 </article><article class="dossier" id="sample-candidate-b">
@@ -487,25 +487,25 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   
   
   <section class="sec" id="sample-candidate-b--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
-  <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
-  <p class="meta"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
-  <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
+  <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
+    <p>Placeholder: served on the city council from 2006 to 2010 before becoming mayor.</p>
+    <details class="quote"><summary>Quote from the page</summary><blockquote>served on the City Council from 2006 to 2010 and was elected mayor</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: city website biography; county registrar</p></section><section class="sec empty" id="sample-candidate-b--record"><h4>Record in this office</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--accomplishments"><h4>Accomplishments</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--criticisms"><h4>Criticisms and controversies</h4><p class="when-range">Events Jul 2021.</p><ul class="facts"><li class="fact">
-  <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
-  <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p>
-  <p class="meta"><span class="happened">Happened Jul 14, 2021</span> · <a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
-  
+  <p class="meta grp-src"><a href="https://example.org/news/1" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · by A. Reporter · Jul 15, 2021</p>
+  <ul class="grp"><li><span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Search result only</span>
+    <p>Placeholder: the state attorney general sued the city over a warehouse approval.</p><p class="meta"><span class="happened">Happened Jul 14, 2021</span></p>
+    </li></ul>
 </li><li class="fact">
-  <span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
-  <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p>
-  <p class="meta"><span class="happened">Happened Jul 2021</span> · <a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021 · <span class="flag">page doesn't mention “B”</span></p>
-  
+  <p class="meta grp-src"><a href="https://example.org/daily/2" rel="noopener noreferrer nofollow" target="_blank">Example Daily</a> · author not stated · Jul 16, 2021</p>
+  <ul class="grp"><li><span class="ev ev-reported">Reported</span> <span class="chk chk-seen">Page opened, no quote long enough to check</span>
+    <p>Placeholder: the city was sued by the state attorney general over the warehouse.</p><p class="meta"><span class="happened">Happened Jul 2021</span> · <span class="flag">page doesn't mention “B”</span></p>
+    </li></ul>
 </li></ul><p class="searched">Looked at: state AG press releases; local news archive</p></section><section class="sec empty" id="sample-candidate-b--money"><h4>Money and interests</h4><p class="gap">Nothing this run could source.</p></section><section class="sec" id="sample-candidate-b--endorsements"><h4>Endorsements and affiliations</h4><ul class="facts"><li class="fact">
-  <span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
-  <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</span></span></details> and the Example Labor Council Local 99.</div>
-  <p class="meta"><span class="happened">Happened Sep 1, 2026</span> · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
-  <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details>
+  <p class="meta grp-src"><a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a> · author not stated · Sep 2, 2026</p>
+  <ul class="grp"><li><span class="ev ev-opinion">Opinion / claim</span> <span class="chk chk-not_found">Quote not found on page</span>
+    <div class="st">Placeholder: endorsed by <span class="named">Example Builders PAC</span><details class="ctx"><summary aria-label="What is Example Builders PAC?">what?</summary><span class="ctx-body">Placeholder: a political action committee formed by home builders in Example County. <span class="meta"><a href="https://example.org/sos/committees/123" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · Jul 2026</span></span></details> and the Example Labor Council Local 99.</div><p class="meta"><span class="happened">Happened Sep 1, 2026</span></p>
+    <details class="quote"><summary>The quote given, not found on the page</summary><blockquote>Example Builders PAC and Local 99 announced their endorsements Tuesday</blockquote></details></li></ul>
 </li></ul><p class="searched">Looked at: local news endorsements</p></section><section class="sec empty" id="sample-candidate-b--platform"><h4>Stated platform</h4><p class="gap">Nothing this run could source.</p></section><section class="sec empty" id="sample-candidate-b--community"><h4>Community impact and local coverage</h4><p class="gap">Nothing this run could source.</p></section>
   <section class="sec money" id="sample-candidate-b--filed"><h4>Contributions on file</h4>
 <p class="sub">Itemized contributions read from campaign finance filings, each as the record states it, alphabetical by contributor.</p>
@@ -514,10 +514,10 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <section class="sec"><h4>What this run couldn't check</h4><ul class="gaps"><li>Placeholder: the campaign finance portal could not be searched.</li></ul></section><details class="unverified"><summary>1 claim not shown above because the cited page was never retrieved in this run</summary>
 <p>These cite a URL the research session did not actually open, so they can't be traced. Treat them as leads to check yourself, not findings.</p>
 <ul class="facts"><li class="fact">
-  <span class="ev ev-opinion">Opinion / claim</span>
-  <p>Placeholder: a claim whose cited page was never opened.</p>
-  <p class="meta"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
-  
+  <p class="meta grp-src"><a href="https://example.org/never-opened" rel="noopener noreferrer nofollow" target="_blank">Example Blog</a> · author not stated · date not stated</p>
+  <ul class="grp"><li><span class="ev ev-opinion">Opinion / claim</span>
+    <p>Placeholder: a claim whose cited page was never opened.</p>
+    </li></ul>
 </li></ul></details>
   <p class="back"><a href="#glance">Back to the overview</a> · <a href="#sample-candidate-c">Next: Sample Candidate C</a></p>
 </article><article class="dossier" id="sample-candidate-c">
@@ -538,7 +538,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 <details class="shared sec" id="shared"><summary>Shared connections (1 of 3 pairs shares someone)</summary>
 <p>For each pair, the contributors and the names in the facts both have, each with its source. A contributor counts only from a filing this run retrieved; a name only where a verified fact in Endorsements and affiliations, The case for, or The case against names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it, so read each one. They are matched within Example City, CA by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
 <p class="gap">Each candidate or side keeps at most 20 contributions from the filings, so finding no shared contributor means little: the filings may list more.</p><details class="pair"><summary><h5>Sample Candidate A and Sample Candidate B <span class="desig">2 shared · 2 possibly the same</span></h5></summary><ul class="shared-list"><li><strong>Example Builders PAC</strong> <span class="desig">organization</span><ul class="ties"><li><span class="who-tag">Sample Candidate A:</span> contribution of $1,000.00, 09/14/2026, to Placeholder A for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate A:</span> named in Endorsements and affiliations: “Placeholder: endorsed by Example Builders PAC and the Example Labor Council Local 99.” · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a></li><li><span class="who-tag">Sample Candidate B:</span> contribution of $2,500.00, 09/14/2026, to Placeholder B for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate B:</span> named in Endorsements and affiliations: “Placeholder: endorsed by Example Builders PAC and the Example Labor Council Local 99.” · <a href="https://example.org/news/endorsements" rel="noopener noreferrer nofollow" target="_blank">Example News</a></li></ul></li><li><strong>Pat Placeholder</strong> <span class="desig">individual</span><ul class="ties"><li><span class="who-tag">Sample Candidate A:</span> contribution of $250.00, 09/14/2026, to Placeholder A for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/a-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li><li><span class="who-tag">Sample Candidate B:</span> contribution of $100.00, 09/14/2026, to Placeholder B for Mayor 2026 (07/01/2026 - 09/19/2026) · <a href="https://example.org/netfile/filings/b-460.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, NetFile (placeholder)</a></li></ul></li></ul><p class="gap">Possibly the same, kept separate because the names or details don't match exactly: Smith Development (Sample Candidate A) and Smith Development LLC (Sample Candidate B).</p><p class="gap">Possibly the same, kept separate because the names or details don't match exactly: Lee Placeholder (Sample Candidate A) and Lee Placeholder (Sample Candidate B).</p></details><details class="pair"><summary><h5>Sample Candidate A and Sample Candidate C <span class="desig">none shared</span></h5></summary><p class="gap">No shared contributors or names found.</p></details><details class="pair"><summary><h5>Sample Candidate B and Sample Candidate C <span class="desig">none shared</span></h5></summary><p class="gap">No shared contributors or names found.</p></details></details>
-<section class="sec names"><h4>Names in these facts</h4><p>Names were picked out of the facts automatically, so some may be missed. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. Every name was looked up the same way, whichever candidate or side it came up for.</p><details class="unverified"><summary>1 note not shown because the cited page was never retrieved</summary><ul class="facts"><li class="fact"><p><strong>Example Labor Council Local 99:</strong> Placeholder: a council of construction trade unions in Example County.</p><p class="meta"><a href="https://example.org/never-opened/labor" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · 2026-07</p></li></ul></details></section>
+<section class="sec names"><h4>Names in these facts</h4><p>Names were picked out of the facts automatically, so some may be missed. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on who or what it is, from a page this run retrieved. Notes describe; they don't evaluate. Every name was looked up the same way, whichever candidate or side it came up for.</p><details class="unverified"><summary>1 note not shown because the cited page was never retrieved</summary><ul class="facts"><li class="fact"><p><strong>Example Labor Council Local 99:</strong> Placeholder: a council of construction trade unions in Example County.</p><p class="meta"><a href="https://example.org/never-opened/labor" rel="noopener noreferrer nofollow" target="_blank">Example Secretary of State (placeholder)</a> · Jul 2026</p></li></ul></details></section>
 
 
 <footer>

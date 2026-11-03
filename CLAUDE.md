@@ -386,7 +386,9 @@ show it. A found quote shows the page has those words, not that the statement re
   (the provenance check's normalized URL and the same outlet) are gathered where its newest fact
   falls (`byPage`, `pageGroupItem`): the page's link once, with an author or date said there only
   when every fact gives the same, else on each fact as it gives it. Each fact keeps its own evidence
-  type, check, event date, flag, and quote. Merged facts and `refItem`s stand alone.
+  type, check, event date, flag, and quote. Merged facts and `refItem`s stand alone, but every item
+  is drawn one way, a lone fact too: its source line (a merged fact's sources) first, the fact under
+  it on the group's rule. A month-only date reads "Oct 2026", like the page's other dates.
 - A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
   words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are

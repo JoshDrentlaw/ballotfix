@@ -180,3 +180,38 @@ Deno.test("a fact cited at another address of its page keeps its own link; undat
     "without an event date listed last or with their page&#39;s other facts",
   );
 });
+
+Deno.test("a fact alone on its page is drawn like a group: its source line first, the fact under it", async () => {
+  const CANDS: BallotCandidate[] = [{
+    name: "Joz Sida",
+    ballot_designation: null,
+    incumbent: false,
+  }];
+  const PAGE = "https://spur.example/prop";
+  const port = new FakeResearch(listing(CANDS), {
+    "Joz Sida": raw({
+      sections: {
+        platform: {
+          facts: [{
+            statement: "Joz Sida wants parks.",
+            source_name: "SPUR",
+            source_url: PAGE,
+            author: null,
+            published: "2026-10",
+            evidence_type: "opinion",
+          }],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: [PAGE],
+    }),
+  });
+  const page = renderRace(await runRace(QUERY, port, { candidates: CANDS }));
+  const item = page.slice(page.indexOf('<li class="fact">'));
+  const src = item.indexOf('class="meta grp-src"');
+  assert(src >= 0 && src < item.indexOf("wants parks"), "source line comes before the fact");
+  assertStringIncludes(item.slice(0, item.indexOf("</p>")), "Oct 2026"); // a month reads as one
+  assertEquals(item.includes("facts from this page"), false);
+  assertStringIncludes(item, '<ul class="grp">');
+});
