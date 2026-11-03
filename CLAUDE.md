@@ -382,7 +382,11 @@ show it. A found quote shows the page has those words, not that the statement re
 - Facts in a section are ordered by when they happened (`byWhen`): newest event date first, facts
   with none last, then by publication date. Never by importance. Each fact with an event date says
   "Happened ..." before its source; a section of two or more says its range (`whenRange`). Runs
-  saved before event dates are ordered by publication date and the page says so.
+  saved before event dates are ordered by publication date and the page says so. Facts from one page
+  (the provenance check's normalized URL and the same outlet) are gathered where its newest fact
+  falls (`byPage`, `pageGroupItem`): the page's link once, with an author or date said there only
+  when every fact gives the same, else on each fact as it gives it. Each fact keeps its own evidence
+  type, check, event date, flag, and quote. Merged facts and `refItem`s stand alone.
 - A fact shown in full under a voter's issue appears in its template section as a `refItem`: its
   words and every source of its own, plus a link up. Never drop a source from a fact anywhere.
 - Contributions are tables, one per filing (`giftTables`), so filer, period, form, and source are

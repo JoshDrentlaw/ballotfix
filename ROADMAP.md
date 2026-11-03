@@ -503,13 +503,31 @@ Bernardino County, Fontana's two to City of Fontana, the IEUA race to the agency
 four, names connected across items went from 6 to 7 (the California Teachers Association, Barrera
 and Prop 37's supporters), and "tied on both sides, scopes differ" went from 1 to 0.
 
-## 14. Facts grouped on the page
+## 14. Facts grouped on the page — done
 
 Within a section, facts from one source sit under that source, named once. A fact that closely
 repeats one in another section shows in full once and as a reference elsewhere (like `refItem`). No
 model calls.
 
+Done: within a section, facts from one page (`normalizeUrl` and the same outlet) are gathered where
+that page's newest fact falls, so `byWhen` still decides where everything goes (`byPage`). The
+research words a page's byline per fact, often differently (the official argument in favor of Prop
+37 came with three), so author and date don't split a group: the page's line states them only when
+every fact agrees, and each fact states its own otherwise. On a copy of the live data, the 35 pages
+went from 1,555 fact items to 1,244, with 499 facts in 188 groups. Prop 37's case for went from 9
+items to 3.
+
+**Not done here: folding repeats across sections.** Word overlap can't tell a repeat from a
+neighbor. Of the 65 cross-section pairs with at least half their words shared, 62 came from one
+page, and one of them paired two different CalMatters facts (the price cap and new homes only).
+Folding either into a reference would hide a real fact. This moves to item 15, whose digest reads
+the facts.
+
 ## 15. Section digests
+
+Also takes on what item 14 left: a point several sections repeat (Prop 37's income limit is in "What
+a yes or no vote does" and under the voter's issue) is said once in the digest, citing every fact
+that makes it.
 
 One tool-less call per run over its verified facts only. Each clause cites the fact ids it uses. The
 code rejects a digest that cites an unknown or unverified fact, names an outlet that isn't among

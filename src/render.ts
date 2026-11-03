@@ -11,6 +11,7 @@ import {
   incumbencyNote,
   ISO_DATE,
   marksView,
+  normalizeUrl,
   NOTHING_FOUND,
   type StanceSupport,
   stanceSupport,
@@ -146,13 +147,20 @@ export function publishedDate(s: string): string {
 
 /** Source, author, date, and, when the opened page doesn't name the subject, that flag. */
 function factMeta(f: Fact): string {
-  const flag = f.check?.missing_name
-    ? ` · <span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
+  return [happened(f), sourceMeta({ ...f, url: f.source_url }), missingFlag(f)]
+    .filter(Boolean).join(" · ");
+}
+
+function happened(f: Fact): string {
+  return f.event_date
+    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span>`
     : "";
-  const when = f.event_date
-    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span> · `
+}
+
+function missingFlag(f: Fact): string {
+  return f.check?.missing_name
+    ? `<span class="flag">page doesn't mention “${esc(f.check.missing_name)}”</span>`
     : "";
-  return when + sourceMeta({ ...f, url: f.source_url }) + flag;
 }
 
 /** What a quote-check level says on the page. */
@@ -359,6 +367,82 @@ function factItem(f: Fact, notes: Notes = NO_NOTES): string {
 </li>`;
 }
 
+/**
+ * Which facts are from one page: the page as the provenance check normalizes
+ * it, and the outlet named for it. The research words a page's author and
+ * date per fact, often differently (one byline long, one short), so those
+ * don't split a group; the group's line says them only where every fact
+ * agrees, and each fact says its own otherwise (pageGroupItem). A merged fact
+ * has several sources and stands alone.
+ */
+function pageKey(f: Fact): string | null {
+  if (f.also?.length) return null;
+  return `${normalizeUrl(f.source_url) ?? f.source_url}\n${f.source_name}`;
+}
+
+/**
+ * A section's facts in byWhen order, with each page's facts gathered where
+ * that page's newest fact falls, still in byWhen order inside. The rule is
+ * the same for every candidate and measure: it groups by source, never by
+ * importance. `alone` marks facts that keep their own item (refItems).
+ */
+export function byPage(ordered: readonly Fact[], alone: (f: Fact) => boolean): (Fact | Fact[])[] {
+  const keys = ordered.map((f) => alone(f) ? null : pageKey(f));
+  const groups = new Map<string, Fact[]>();
+  ordered.forEach((f, i) => {
+    const k = keys[i];
+    if (k === null) return;
+    const g = groups.get(k);
+    if (g) g.push(f);
+    else groups.set(k, [f]);
+  });
+  const placed = new Set<string>();
+  const out: (Fact | Fact[])[] = [];
+  ordered.forEach((f, i) => {
+    const k = keys[i];
+    const group = k === null ? undefined : groups.get(k);
+    if (!group || group.length < 2) out.push(f);
+    else if (!placed.has(k!)) {
+      placed.add(k!);
+      out.push(group);
+    }
+  });
+  return out;
+}
+
+/**
+ * Two or more facts from one page: the page's source line once, then each
+ * fact with its own evidence type, check, event date, flag, and quote. An
+ * author or date every fact gives the same is said on the line; one they
+ * give differently is said on each fact, as that fact gives it, so every
+ * statement still carries its whole provenance.
+ */
+function pageGroupItem(facts: readonly Fact[], notes: Notes): string {
+  const f = facts[0];
+  const same = (k: "author" | "published") => facts.every((x) => x[k] === f[k]);
+  const byline = (x: Fact) => x.author ? `by ${esc(x.author)}` : "author not stated";
+  const dated = (x: Fact) => x.published ? esc(publishedDate(x.published)) : "date not stated";
+  const line = [
+    link(f.source_url, f.source_name),
+    same("author") ? byline(f) : "",
+    same("published") ? dated(f) : "",
+  ].filter(Boolean).join(" · ");
+  const items = facts.map((x) => {
+    // The page is one as the provenance check reads it, but a fact cited at
+    // another address (a deep link, http, www) keeps its own link.
+    const at = x.source_url === f.source_url ? "" : link(x.source_url, "cited at this link");
+    const own = [same("author") ? "" : byline(x), same("published") ? "" : dated(x)];
+    const meta = [happened(x), at, ...own, missingFlag(x)].filter(Boolean).join(" · ");
+    return `<li>${evTag(x.evidence_type)}${checkTag(x)}
+    ${statementHtml(x.statement, notes)}${meta ? `<p class="meta">${meta}</p>` : ""}
+    ${quotesHtml([x])}</li>`;
+  });
+  return `<li class="fact page-group">
+  <p class="meta grp-src">${line} · <span class="nsrc">${facts.length} facts from this page</span></p>
+  <ul class="grp">${items.join("")}</ul>
+</li>`;
+}
+
 function evTag(t: EvidenceType): string {
   return `<span class="ev ev-${t}">${EVIDENCE_LABEL[t]}</span>`;
 }
@@ -451,12 +535,13 @@ function sectionHtml(
   r ??= NOT_IN_THIS_RUN;
   const tag = o.tag ?? "h4";
   const id = o.id ? ` id="${esc(o.id)}"` : "";
-  const ordered = byWhen(r.facts);
+  const placed = byPage(byWhen(r.facts), (f) => o.shown?.has(shownKey(f)) ?? false);
   const facts = r.facts.length
-    ? `${whenRange(r.facts)}<ul class="facts">${
-      ordered.map((f) => {
-        const at = o.shown?.get(shownKey(f));
-        return at ? refItem(f, at, notes) : factItem(f, notes);
+    ? `${whenRange(r.facts, placed)}<ul class="facts">${
+      placed.map((x) => {
+        if (Array.isArray(x)) return pageGroupItem(x, notes);
+        const at = o.shown?.get(shownKey(x));
+        return at ? refItem(x, at, notes) : factItem(x, notes);
       }).join("")
     }</ul>`
     : "";
@@ -512,7 +597,7 @@ export function byWhen(facts: readonly Fact[]): Fact[] {
 }
 
 /** The span of dates a section's facts cover, said above them when there are two or more. */
-function whenRange(facts: readonly Fact[]): string {
+function whenRange(facts: readonly Fact[], placed: readonly (Fact | Fact[])[] = facts): string {
   // One fact's date is on the fact itself.
   if (facts.length < 2) return "";
   const old = predatesEventDates(facts);
@@ -525,18 +610,24 @@ function whenRange(facts: readonly Fact[]): string {
     ? sourceDate(from) // a year or month and days inside it
     : `${sourceDate(from)} to ${sourceDate(to)}`;
   const undated = facts.length - dates.length;
+  // byPage moves an undated fact up beside a dated one from its page.
+  const withPage = placed.some((x) => Array.isArray(x) && x.some((f) => !eventOf(f)));
   const text = old
     ? span ? `Sources published ${span}` : "No source gives a date"
     : !span
     ? "No fact here gives an event date; listed by publication date"
     : `Events ${span}${
-      undated ? `; ${plural(undated, "fact")} without an event date listed last` : ""
+      undated
+        ? `; ${plural(undated, "fact")} without an event date listed last${
+          withPage ? " or with their page's other facts" : ""
+        }`
+        : ""
     }`;
   return `<p class="when-range">${esc(text)}.</p>`;
 }
 
 const BEFORE_EVENT_DATES =
-  `<p class="note">This run was saved before event dates were recorded: each section lists its facts by when their sources were published, newest first, not by when the events happened.</p>`;
+  `<p class="note">This run was saved before event dates were recorded: each section lists its facts by when their sources were published, newest first, with a page's facts kept together, not by when the events happened.</p>`;
 
 /**
  * What a yes vote and a no vote each mean, side by side above the effect
@@ -1716,6 +1807,11 @@ details.quote blockquote { margin: 4px 0 0; padding: 2px 10px; border-left: 3px 
 details.quote ul { margin: 4px 0 0; padding-left: 20px; }
 details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
+/* Facts from one page: its source line once, the facts under it on a quiet rule. */
+.page-group .grp-src { margin: 0 0 4px; }
+.grp { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
+.grp > li { padding: 6px 0; }
+.grp > li + li { border-top: 1px dashed var(--line); }
 .srcs { list-style: none; padding: 0; margin: 2px 0 0; }
 .srcs li { margin: 2px 0; }
 .wording { font-size: .9rem; margin-top: 4px; }
