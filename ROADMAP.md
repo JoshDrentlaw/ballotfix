@@ -535,15 +535,15 @@ those facts' sources, or treats the case for and the case against unevenly. Show
 the facts, never in place of them. A found quote doesn't extend to the digest's wording. About $1–2
 on Sonnet for all saved runs, stored by input hash.
 
-Done (`src/digest.ts`, `deno task digest`). Each section with two or more facts gets 1-4 lines,
-and each candidate or measure with four or more a brief across its sections, which is where a
-point several sections repeat is said once, citing every fact that makes it. Besides the checks
-above, a line may not name anything whose words aren't in the facts it cites: the outlet check
-alone missed an outlet the run never cited ("KQED reports..." with no KQED fact). Evenness is by
-section: one left out for one candidate is left out for all, and a measure's case for and against
-stand together. A failed answer is sent back once with its problems. Saved runs are done as one
-Message Batch on a copy, then copied to the live database by hash (`apply`), so the live data is
-written by a step that calls nothing. The job runner makes one for every new run, last.
+Done (`src/digest.ts`, `deno task digest`). Each section with two or more facts gets 1-4 lines, and
+each candidate or measure with four or more a brief across its sections, which is where a point
+several sections repeat is said once, citing every fact that makes it. Besides the checks above, a
+line may not name anything whose words aren't in the facts it cites: the outlet check alone missed
+an outlet the run never cited ("KQED reports..." with no KQED fact). Evenness is by section: one
+left out for one candidate is left out for all, and a measure's case for and against stand together.
+A failed answer is sent back once with its problems. Saved runs are done as one Message Batch on a
+copy, then copied to the live database by hash (`apply`), so the live data is written by a step that
+calls nothing. The job runner makes one for every new run, last.
 
 ## 16. Tie roles
 

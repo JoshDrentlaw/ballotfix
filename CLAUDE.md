@@ -304,23 +304,23 @@ show it. A found quote shows the page has those words, not that the statement re
   call keeps the powers (`scope_error`). The graph doesn't hold it yet.
 - Section digests (roadmap item 15, `src/digest.ts`): after every other step, `JobRunner` makes one
   tool-less call per run (`Digester.digestFacts`: `DIGEST_EFFORT`, `BALLOTFIX_DIGEST_MODEL` or
-  `DEFAULT_DIGEST_MODEL`, "off" skips it) over its verified facts only, each with a short id: a
-  1-4 line summary of every section with `MIN_SECTION_FACTS`+ facts and a brief across sections
-  for each candidate or measure with `MIN_BRIEF_FACTS`+ (`planRace`, `planMeasure`; over
-  `MAX_DIGEST_FACTS` the run gets none and says so). Every line must cite facts of its own section
-  (the brief: its own subject), and may not name an outlet none of its facts come from, another
-  candidate none of its facts name, any name whose words aren't in its facts (`findNames`), or an
-  evaluative word (`CHARACTERIZATIONS`) they don't use (`lineProblem`). A section left out for one
-  candidate is left out for all of them, and a measure's case for and against stand together
-  (`even`); the page says why each is missing. A failed check is sent back once with what was
-  wrong (`problemsOf`), and the answer that left out less is kept (`runPlan`). The input's hash
-  (`digestHash`: facts, model, `DIGEST_VERSION`) is saved, so the same facts are never paid for
-  twice (`isCurrent`). Saved runs get theirs from `deno task digest` (`src/digest_cli.ts`:
-  `estimate` calls nothing; `run` prints its estimate and needs `--yes`, then sends one Message
-  Batch at half price, plus one for retries; `apply --from` copies digests made on a copy onto the
-  same runs where the facts hash the same, calling nothing). The page shows "In short" over a
-  section's facts and "In brief" under a name, each line with its facts' outlets and count, labeled
-  a model's summary: the facts below stay the record, and a found quote says nothing of its wording.
+  `DEFAULT_DIGEST_MODEL`, "off" skips it) over its verified facts only, each with a short id: a 1-4
+  line summary of every section with `MIN_SECTION_FACTS`+ facts and a brief across sections for each
+  candidate or measure with `MIN_BRIEF_FACTS`+ (`planRace`, `planMeasure`; over `MAX_DIGEST_FACTS`
+  the run gets none and says so). Every line must cite facts of its own section (the brief: its own
+  subject), and may not name an outlet none of its facts come from, another candidate none of its
+  facts name, any name whose words aren't in its facts (`findNames`), or an evaluative word
+  (`CHARACTERIZATIONS`) they don't use (`lineProblem`). A section left out for one candidate is left
+  out for all of them, and a measure's case for and against stand together (`even`); the page says
+  why each is missing. A failed check is sent back once with what was wrong (`problemsOf`), and the
+  answer that left out less is kept (`runPlan`). The input's hash (`digestHash`: facts, model,
+  `DIGEST_VERSION`) is saved, so the same facts are never paid for twice (`isCurrent`). Saved runs
+  get theirs from `deno task digest` (`src/digest_cli.ts`: `estimate` calls nothing; `run` prints
+  its estimate and needs `--yes`, then sends one Message Batch at half price, plus one for retries;
+  `apply --from` copies digests made on a copy onto the same runs where the facts hash the same,
+  calling nothing). The page shows "In short" over a section's facts and "In brief" under a name,
+  each line with its facts' outlets and count, labeled a model's summary: the facts below stay the
+  record, and a found quote says nothing of its wording.
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections
