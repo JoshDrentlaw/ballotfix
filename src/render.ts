@@ -140,7 +140,10 @@ export function sourceMeta(
   ].join(" · ");
 }
 
-/** A full date reads like the rest of the page; a year or anything else stays as the source gave it. */
+/**
+ * A day or month reads like the rest of the page ("Aug 5, 2024", "Aug 2024");
+ * a year or anything else stays as the source gave it.
+ */
 export function publishedDate(s: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return readableDate(s);
   if (!/^\d{4}-\d{2}$/.test(s)) return s;
@@ -158,7 +161,7 @@ function factMeta(f: Fact): string {
 
 function happened(f: Fact): string {
   return f.event_date
-    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span>`
+    ? `<span class="happened">Happened ${esc(publishedDate(f.event_date))}</span>`
     : "";
 }
 
@@ -415,7 +418,7 @@ export function byPage(ordered: readonly Fact[], alone: (f: Fact) => boolean): (
 }
 
 /**
- * Two or more facts from one page: the page's source line once, then each
+ * Facts from one page, or a lone fact: the page's source line once, then each
  * fact with its own evidence type, check, event date, flag, and quote. An
  * author or date every fact gives the same is said on the line; one they
  * give differently is said on each fact, as that fact gives it, so every
@@ -612,8 +615,8 @@ function whenRange(facts: readonly Fact[], placed: readonly (Fact | Fact[])[] = 
   // whose period ends last ("2024" ends after "2024-03-01").
   const from = dates[0], to = dates.reduce((a, b) => (b + "~" > a + "~" ? b : a), from);
   const span = !dates.length ? "" : to.startsWith(from)
-    ? sourceDate(from) // a year or month and days inside it
-    : `${sourceDate(from)} to ${sourceDate(to)}`;
+    ? publishedDate(from) // a year or month and days inside it
+    : `${publishedDate(from)} to ${publishedDate(to)}`;
   const undated = facts.length - dates.length;
   // byPage moves an undated fact up beside a dated one from its page.
   const withPage = placed.some((x) => Array.isArray(x) && x.some((f) => !eventOf(f)));
@@ -716,17 +719,12 @@ function effortText(e: ResearchEffort | undefined): string {
     : "searches and pages opened not recorded for this run";
 }
 
-/** A year, month, or day as the page writes dates: "2024", "Aug 2024", "Aug 5, 2024". */
-function sourceDate(s: string): string {
-  return publishedDate(s);
-}
-
 function datesText(e: Evidence): string {
   // Dates in other forms ("March 2024") don't sort, so they aren't counted: said as such.
   if (!e.from || !e.to) return "no source gives a date in year-month-day form";
   return e.from === e.to
-    ? `sources dated ${sourceDate(e.from)}`
-    : `sources dated ${sourceDate(e.from)} to ${sourceDate(e.to)}`;
+    ? `sources dated ${publishedDate(e.from)}`
+    : `sources dated ${publishedDate(e.from)} to ${publishedDate(e.to)}`;
 }
 
 /**
@@ -2306,9 +2304,9 @@ export function askedAbout(
   const before = predatesStanceThreshold(priorities)
     ? `<p>This run's marks were made before that threshold existed, when one verified source of any kind was enough: read them as possibly thin.</p>`
     : "";
-  // An issue the voter ended with a period, a question, or a "!" gets no second one.
+  // An issue the voter ended with a period, a question, a "!", or "…" gets no second one.
   const list = issues.join("; ");
-  const end = /[.?!]["”')]*$/.test(list) ? "" : ".";
+  const end = /[.?!…]["”'’)]*$/.test(list) ? "" : ".";
   return `<div class="note"><p><strong>You asked about:</strong> ${
     esc(list)
   }${end} ${same}</p><details${

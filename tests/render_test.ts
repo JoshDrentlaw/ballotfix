@@ -769,6 +769,8 @@ Deno.test("an issue the voter ended with a period gets no second one", () => {
   const box = (issues: string[]) => askedAbout(issues, "Sought equally.", []);
   assertStringIncludes(box(["easier for us."]), "easier for us. Sought equally.");
   assertStringIncludes(box(["is it fair?"]), "is it fair? Sought equally.");
+  assertStringIncludes(box(["is it ‘fair?’"]), "is it ‘fair?’ Sought equally.");
+  assertStringIncludes(box(["and so on…"]), "and so on… Sought equally.");
   assertStringIncludes(box(["housing costs", "parks"]), "housing costs; parks. Sought equally.");
 });
 
