@@ -483,11 +483,25 @@ explanations now say "named in" and tell the reader that being named can mean su
 or reporting. Neither a name rule nor a source-name rule can tell these apart. Reform California's
 own guide is sourced to Reform California, a real position, so no tie is dropped.
 
-## 13. Places corrected in the graph
+## 13. Places corrected in the graph — done
 
 Runs saved with a ballot heading as their place ("School Offices") are indexed under `ballotPlace`'s
 reading, so statewide offices share the state's scope. The saved runs are unchanged. This is a graph
 rebuild (`KNOWLEDGE_VERSION`).
+
+Done in the store, not only the graph: the race and ballot pages build entity keys from the run's
+place too, and a graph-only fix would have made them disagree. `placeRun` corrects races from a
+ballot on every read (`RunStore` `revive`, the rebuild, `deno task diagnose`), with the ballot's
+county, for races saved before `PLACES_FIXED_AT` (the reader fix's merge, Oct 30), so a place the
+voter typed in "Research again" is never rewritten. Measures, retention questions, and typed-in runs
+are left alone. Every write puts the saved place back (`unplaceRun`), and office lookups from those
+races aren't reused. Review follow-ups not done: a ballot's county corrected after its races are
+done reaches the graph only at the next rebuild, and each read of a ballot race looks its ballot's
+county up again (one small query; fine at this size). On a copy of the live data (Nov 2): five races
+moved (Superintendent of Public Instruction to the State of California, County Superintendent to San
+Bernardino County, Fontana's two to City of Fontana, the IEUA race to the agency). Six places became
+four, names connected across items went from 6 to 7 (the California Teachers Association, Barrera
+and Prop 37's supporters), and "tied on both sides, scopes differ" went from 1 to 0.
 
 ## 14. Facts grouped on the page
 

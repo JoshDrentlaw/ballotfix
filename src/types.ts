@@ -15,6 +15,12 @@ export interface RaceQuery {
   office: string;
   /** ISO date of the election, e.g. "2026-11-03". */
   electionDate: string;
+  /**
+   * The place as a run saved it, when that was a ballot heading ("School
+   * Offices") and `city` is ballotPlace's reading of it (src/web/store.ts
+   * `placeRun`). Absent when the saved place stands.
+   */
+  place_as_saved?: string;
 }
 
 export interface BallotCandidate {

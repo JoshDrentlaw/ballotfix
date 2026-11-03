@@ -2114,7 +2114,13 @@ export function raceBody(
   );
 
   return `<h1>${esc(raceTitle(r))}</h1>
-<p class="sub">${esc(q.city)}, ${esc(q.state)} · Candidate list from ${source} · Researched ${
+<p class="sub">${esc(q.city)}, ${esc(q.state)}${
+    q.place_as_saved
+      ? ` (saved as “${
+        esc(q.place_as_saved)
+      }”, a ballot heading, and read as the office's government)`
+      : ""
+  } · Candidate list from ${source} · Researched ${
     esc(readableDate(r.generated_at.slice(0, 10)))
   }</p>
 ${extra.status ?? ""}

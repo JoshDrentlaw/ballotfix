@@ -121,7 +121,15 @@ show it. A found quote shows the page has those words, not that the statement re
   the office's title decides, statewide offices being the state's and an agency after a comma that
   agency's, then the ballot's county). The shared pass, office powers, NetFile, and context notes
   all look the place up by this name. Readings saved before it are read through it on the review
-  form and when researching again; their saved data is unchanged.
+  form and when researching again; their saved data is unchanged. Races started from those readings
+  saved the heading as their place; every read of a run goes through `placeRun` (`RunStore`'s
+  `revive`, the graph's rebuild, and the diagnostic), using the ballot's county, so pages,
+  connections, note reuse, and the graph all see the office's government. Only races saved before
+  `PLACES_FIXED_AT` are read this way (a later place was read at the start, or typed by the voter in
+  "Research again", and stands); retention questions and measures never are. The body stays as
+  saved: every write undoes the reading (`unplaceRun`); `query.place_as_saved` keeps the heading,
+  and the race page says it was read. An office lookup from such a race isn't reused, since it was
+  researched under the heading.
 - A read ballot has three tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
   each also taking a pick and notes; "Hide the N with a saved pick" is a CSS-only toggle that posts
   with the form and comes back as `?hide=decided`, never hides an item checked to research, and is

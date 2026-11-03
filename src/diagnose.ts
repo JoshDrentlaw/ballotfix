@@ -21,7 +21,7 @@ import { exclusions, findNames } from "./context.ts";
 import { measureParties, NOTHING_OPENED, type Party, raceParties } from "./finance.ts";
 import { contributorRef, keptApart, looseKey, nameKey, scopeKey } from "./knowledge.ts";
 import { measuresOf } from "./dossier.ts";
-import type { BallotRecord, RunRecord } from "./web/store.ts";
+import { type BallotRecord, placeRun, type RunRecord } from "./web/store.ts";
 import type { ContextResult, FinanceResult, FinanceSubjectResult, SectionResult } from "./types.ts";
 
 /** One subject a connection can be about: a candidate, or one side of a measure. */
@@ -526,8 +526,16 @@ if (import.meta.main) {
   const rows = (table: string) =>
     (db.prepare(`SELECT body FROM ${table}`).all() as { body: string }[])
       .map((r) => JSON.parse(r.body));
-  const runs = new Map((rows("runs") as RunRecord[]).map((r) => [r.id, r]));
-  const ballots = (rows("ballots") as BallotRecord[])
+  const all = rows("ballots") as BallotRecord[];
+  // Runs as the app reads them (placeRun), so scopes here are the pages' scopes.
+  const county = new Map(all.map((b) => [b.id, b.reading?.county ?? null]));
+  const runs = new Map(
+    (rows("runs") as RunRecord[]).map((r) => [
+      r.id,
+      placeRun(r, county.get(r.ballot?.id ?? "") ?? null),
+    ]),
+  );
+  const ballots = all
     .filter((b) => Object.keys(b.started).length && (!args.ballot || b.id === args.ballot))
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
   db.close();
