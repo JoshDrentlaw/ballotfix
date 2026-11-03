@@ -178,7 +178,7 @@ Deno.test("an entity tied to subjects of two items is listed once, every holder 
   assertEquals(ballotSharedHtml(ballotConnections(items.slice(0, 1))), "");
 });
 
-Deno.test("a contributor to one side and an endorser of another are one entity in one place", async () => {
+Deno.test("a contributor to one side and a name in the other's facts are one entity in one place", async () => {
   const c = ballotConnections([
     {
       heading: "City Council",
@@ -199,7 +199,11 @@ Deno.test("a contributor to one side and an endorser of another are one entity i
     ["Jane Roe", ["named"]],
     ["Supporters", ["contribution"]],
   ]);
-  assertStringIncludes(ballotSharedHtml(c), "contribution of $5,000");
+  const html = ballotSharedHtml(c);
+  assertStringIncludes(html, "contribution of $5,000");
+  // A name in a support fact may oppose or only have reported it, so no view calls it an endorser.
+  assertStringIncludes(html, "Being named isn't the same as endorsing");
+  assertEquals(/endorser/i.test(html), false);
 });
 
 Deno.test("sharing within one item only is left to that item's page", async () => {

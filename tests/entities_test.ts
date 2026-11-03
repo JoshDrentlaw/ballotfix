@@ -610,7 +610,7 @@ Deno.test("every peer gets a block in alphabetical order, whatever it shares", a
     "Opponents of Measure X (2026-11-03 election)",
     "Supporters of Measure X (2026-11-03 election)",
   ]);
-  assertStringIncludes(shared, "No shared contributors or endorsers found.");
+  assertStringIncludes(shared, "No shared contributors or names found.");
   s.db.close();
 });
 

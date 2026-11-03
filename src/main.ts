@@ -33,7 +33,7 @@ and puts them first in every candidate's research (--no-shared skips it). After 
 merges facts that several sources report into one (--no-merge skips it), and one more, with a
 few capped web searches, adds short sourced notes on names in the facts (--no-context skips it).
 A last capped call reads contributions off the candidates' campaign finance filings, so the page
-can show who they share as contributors and endorsers (--no-finance skips it). Where the city's
+can show who they share as contributors and as names in the facts (--no-finance skips it). Where the city's
 filings are on NetFile, the contributions come straight from its public export instead, with no
 model reading them (--no-netfile always uses the model; BALLOTFIX_NETFILE_AGENCIES="Oakland=COAK"
 sets a place's agency by hand). One more capped

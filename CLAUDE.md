@@ -128,16 +128,16 @@ show it. A found quote shows the page has those words, not that the statement re
   off on an error page so what needs fixing stays in view; "Research checked" saves the page's picks
   and notes even when research can't start), Researched (`/researched`, each started item with its
   per-name stance lines, then a collapsed "Shared across this ballot": `ballotConnections` in
-  `src/finance.ts`, every contributor or endorser tied to subjects of two or more items, by the same
-  entity keys the race pages use, alphabetical, holders in ballot order, never counted up; same
-  names in other places or close names are listed as possible matches, never matched; shown from two
-  items up, with each item it couldn't fully compare named as a gap: research not done, finance not
-  looked up or failed, no sourced notes), and Picks (`/picks`, only items with a pick; the rest are
-  named in a "Still undecided" list linking to where to decide them). A page saving picks only
-  touches the items it posted (`parseSheet`). Race pages started from a ballot get prev/next links
-  through its researched items in ballot order (`walkFor`). The checked-to-research highlight and
-  the count on the research button are CSS only (`:has()` and a CSS counter), so they need no
-  script.
+  `src/finance.ts`, every contributor or name in a support fact tied to subjects of two or more
+  items, by the same entity keys the race pages use, alphabetical, holders in ballot order, never
+  counted up; same names in other places or close names are listed as possible matches, never
+  matched; shown from two items up, with each item it couldn't fully compare named as a gap:
+  research not done, finance not looked up or failed, no sourced notes), and Picks (`/picks`, only
+  items with a pick; the rest are named in a "Still undecided" list linking to where to decide
+  them). A page saving picks only touches the items it posted (`parseSheet`). Race pages started
+  from a ballot get prev/next links through its researched items in ballot order (`walkFor`). The
+  checked-to-research highlight and the count on the research button are CSS only (`:has()` and a
+  CSS counter), so they need no script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
@@ -239,10 +239,12 @@ show it. A found quote shows the page has those words, not that the statement re
   compare without a leading "City of" (`jurisdictionKey`). The race and measure pages show each
   subject's money the same way (alphabetical, totals only as the filing's own lines) and a collapsed
   "Shared connections" view for every pair (`raceConnections`, `measureConnections`): contributors,
-  and endorsers via verified context notes in `SUPPORT_SECTIONS`. In the graph, a contribution is a
-  `contributed_to` relation with the filing's words as detail and its page in `relation_citations`;
-  a measure's two sides are `side` entities its case for/against are also about;
-  `KnowledgeBase.sharedBetween` answers what two entities share.
+  and names in `SUPPORT_SECTIONS` facts via verified context notes. A name there is never called an
+  endorser (`NAMED_TIE`, said wherever ties show): the fact may support, oppose, or only report, and
+  only the fact's words say which. In the graph, a contribution is a `contributed_to` relation with
+  the filing's words as detail and its page in `relation_citations`; a measure's two sides are
+  `side` entities its case for/against are also about; `KnowledgeBase.sharedBetween` answers what
+  two entities share.
 - NetFile adapter (roadmap item 10, `src/netfile.ts`): a deterministic `FinanceResearcher` in front
   of the model lookup (`NetFileResearcher`, its `fallback`). Where a California place matches one
   NetFile agency (`agencyFor`: `BALLOTFIX_NETFILE_AGENCIES` set by hand, else by `agencyKey` in

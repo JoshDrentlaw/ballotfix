@@ -667,7 +667,7 @@ export class KnowledgeBase {
   }
 
   /**
-   * The contributors and endorsers two entities share: every entity tied to
+   * The contributors and names in support facts two entities share: every entity tied to
    * both (tiesOf), by entity identity only. Entity keys carry their scope, so
    * two subjects in one jurisdiction only ever share that jurisdiction's
    * entities; nothing is matched on name here.

@@ -602,7 +602,7 @@ export interface BallotHolder {
   ties: Tie[];
 }
 
-/** A contributor or endorser tied to subjects of two or more ballot items. */
+/** A contributor or name in support facts tied to subjects of two or more ballot items. */
 export interface BallotShared {
   ref: EntityRef;
   /** In ballot order. */
@@ -633,12 +633,12 @@ function itemGaps(it: BallotItemDossier): string[] {
   }
   return [
     !d.finance
-      ? "campaign finance filings weren't looked up, so only endorsements are compared"
+      ? "campaign finance filings weren't looked up, so only names in the facts are compared"
       : d.finance.error
-      ? "campaign finance filings couldn't be looked up, so only endorsements are compared"
+      ? "campaign finance filings couldn't be looked up, so only names in the facts are compared"
       : "",
     !d.context?.notes.some((n) => n.verified)
-      ? "no names in its facts have a sourced note, so endorsements can't be matched by name"
+      ? "no names in its facts have a sourced note, so names in the facts can't be matched"
       : "",
   ].filter(Boolean);
 }

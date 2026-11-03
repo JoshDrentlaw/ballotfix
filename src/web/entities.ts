@@ -30,6 +30,7 @@ import {
   EVIDENCE_LABEL,
   levelChip,
   link,
+  NAMED_TIE,
   page,
   pairCount,
   publishedDate,
@@ -441,7 +442,7 @@ function sharedHtml(v: EntityView, base: string): string {
           }</ul></li>`
         ).join("")
       }</ul>`
-      : `<p class="gap">No shared contributors or endorsers found.</p>`;
+      : `<p class="gap">No shared contributors or names found.</p>`;
     const possible = p.pair.possible.map((m) =>
       `<p class="gap">Possibly the same, kept separate because the names or details don't match exactly: ${
         m.a.map(esc).join(" / ")
@@ -459,7 +460,7 @@ function sharedHtml(v: EntityView, base: string): string {
   return `<details class="shared sec"><summary>Shared with others in ${esc(place)}</summary>
 <p>Every other candidate and measure side in ${
     esc(place)
-  } that finished research holds, alphabetically, with the contributors and endorsers both have and where each tie comes from. A contributor counts only from a filing a run retrieved; an endorser only where a verified fact names someone with a sourced note. They are matched by identity only: the same exact name and kind in this place, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. Nobody in another place is compared, whatever their name. A shared name is a connection to look into, not a judgment of anyone.</p>
+  } that finished research holds, alphabetically, with the contributors and the names in the facts both have, and where each tie comes from. A contributor counts only from a filing a run retrieved; ${NAMED_TIE} They are matched by identity only: the same exact name and kind in this place, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. Nobody in another place is compared, whatever their name. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${body}</details>`;
 }
 

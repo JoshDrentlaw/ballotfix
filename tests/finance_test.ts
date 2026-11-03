@@ -321,7 +321,7 @@ Deno.test("contributors match only by kind, place, and exact name; near misses a
     "Acquanetta Warren and Third Person",
     "Joz Sida and Third Person",
   ]);
-  assertEquals(page.split("No shared contributors or endorsers found.").length - 1, 2);
+  assertEquals(page.split("No shared contributors or names found.").length - 1, 2);
 });
 
 Deno.test("an individual without identifying work is never one entity across rows", () => {
@@ -365,7 +365,7 @@ Deno.test("an individual without identifying work is never one entity across row
   assertEquals(contributorRef("CA", "Fontana", { ...org, contributor_type: "unknown" }, "x"), null);
 });
 
-Deno.test("a contributor and an endorser are one connection when they are one entity", async () => {
+Deno.test("a contributor and a name in the facts are one connection when they are one entity", async () => {
   const { dossier: noted } = await contextForRace(await race(), notes);
   const { dossier } = await financeForRace(
     noted,
@@ -383,6 +383,9 @@ Deno.test("a contributor and an endorser are one connection when they are one en
     `<details class="shared sec" id="shared"><summary>Shared connections (1 of 3 pairs shares someone)`,
   );
   assertStringIncludes(page, "named in Endorsements and affiliations");
+  // The explanation names the sections as the ties do, and never calls a name an endorser.
+  assertStringIncludes(page, "a verified fact in Endorsements and affiliations, The case for,");
+  assertEquals(/endorser/i.test(page), false);
   assertStringIncludes(page, FILING);
   // Rows are capped per subject, so no overlap found says little; the page says so.
   assertStringIncludes(
@@ -393,12 +396,12 @@ Deno.test("a contributor and an endorser are one connection when they are one en
   );
 });
 
-Deno.test("a run without the step still compares endorsements, and says money wasn't looked up", async () => {
+Deno.test("a run without the step still compares names in the facts, and says money wasn't looked up", async () => {
   const { dossier } = await contextForRace(await race(), notes);
   const page = renderRace(dossier);
   assertStringIncludes(
     page,
-    "weren&#39;t looked up in this run, so only endorsements are compared",
+    "weren&#39;t looked up in this run, so only names in the facts are compared",
   );
   // The money section leaves contributions to this step, so each dossier says it hasn't run.
   assertStringIncludes(page, "Contributions to the campaign come from a separate step");

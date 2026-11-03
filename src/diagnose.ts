@@ -325,7 +325,7 @@ function recurringNames(subjects: Subject[]): Recurring[] {
     const at = { item: s.item.label, subject: s.label, scope: s.item.scope };
     const tied = new Set<string>();
     for (const { ref, ties } of s.party?.ties.values() ?? []) {
-      const kinds = [...new Set(ties.map((t) => t.kind === "contribution" ? "gave" : "endorses"))];
+      const kinds = [...new Set(ties.map((t) => t.kind === "contribution" ? "gave" : "named"))];
       add(looseKey(ref.name), ref.name, i, { ...at, key: ref.key, how: kinds.join(" + ") });
       tied.add(looseKey(ref.name));
     }
@@ -491,7 +491,7 @@ export function formatReport(reports: readonly BallotReport[]): string {
             `dropped ${m.dropped}, over share ${m.over_share}`;
         line(
           `      - ${s.label}: ${money}; support names ${s.support_names}; ties: ` +
-            `gave ${s.ties.contribution}, endorses ${s.ties.named}`,
+            `gave ${s.ties.contribution}, named ${s.ties.named}`,
         );
         if (m.found && !m.kept && m.gap_note && !m.opened_nothing) {
           line(`          gap: ${m.gap_note.slice(0, 160)}${m.gap_note.length > 160 ? "…" : ""}`);
