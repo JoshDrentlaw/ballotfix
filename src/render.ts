@@ -140,9 +140,17 @@ export function sourceMeta(
   ].join(" · ");
 }
 
-/** A full date reads like the rest of the page; a year or anything else stays as the source gave it. */
+/**
+ * A day or month reads like the rest of the page ("Aug 5, 2024", "Aug 2024");
+ * a year or anything else stays as the source gave it.
+ */
 export function publishedDate(s: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? readableDate(s) : s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return readableDate(s);
+  if (!/^\d{4}-\d{2}$/.test(s)) return s;
+  const d = new Date(`${s}-01T00:00:00Z`);
+  return isNaN(d.getTime())
+    ? s
+    : d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", year: "numeric" });
 }
 
 /** Source, author, date, and, when the opened page doesn't name the subject, that flag. */
@@ -153,7 +161,7 @@ function factMeta(f: Fact): string {
 
 function happened(f: Fact): string {
   return f.event_date
-    ? `<span class="happened">Happened ${esc(sourceDate(f.event_date))}</span>`
+    ? `<span class="happened">Happened ${esc(publishedDate(f.event_date))}</span>`
     : "";
 }
 
@@ -306,13 +314,16 @@ function noteMeta(n: ContextNote): string {
  * (src/context.ts). Without notes it is the plain paragraph it always was;
  * with them it is a div, since a <details> can't sit inside a <p>.
  */
-function statementHtml(statement: string, notes: Notes): string {
+export function statementHtml(statement: string, notes: Notes): string {
   const pieces = attachNotes(statement, notes.list);
   if (pieces.every((p) => typeof p === "string")) return `<p>${esc(statement)}</p>`;
-  // Punctuation right after a name stays with it, not alone under an open note.
+  // Punctuation right after a name stays with it, not alone under an open note,
+  // and so does a possessive ("Association's"), never split by the note.
   const stuck = (i: number) => {
     const next = pieces[i + 1];
-    return typeof next === "string" ? next.match(/^[.,;:!?)\]"'”’]+/)?.[0] ?? "" : "";
+    return typeof next === "string"
+      ? next.match(/^(?:['’]s(?![\p{L}\p{N}]))?[.,;:!?)\]"'”’]*/u)?.[0] ?? ""
+      : "";
   };
   return `<div class="st">${
     pieces.map((p, i) =>
@@ -338,32 +349,28 @@ function namedText(text: string, n: ContextNote, notes: Notes): string {
 }
 
 /**
- * One fact. A merged one (src/merge.ts) shows once, with every outlet that
- * reported it and, collapsed, how each of the others worded it.
+ * One fact, drawn like every other item in a section: who said it first, the
+ * fact under it. A merged one (src/merge.ts) shows once, with every outlet
+ * that reported it and, collapsed, how each of the others worded it.
  */
 function factItem(f: Fact, notes: Notes = NO_NOTES): string {
-  const also = f.also ?? [];
+  return f.also?.length ? mergedItem(f, notes) : pageGroupItem([f], notes);
+}
+
+/** A merged fact: its sources listed first, as a page's line is, then the fact under them. */
+function mergedItem(f: Fact, notes: Notes, jump = "", cls = "fact merged"): string {
+  const all = [f, ...(f.also ?? [])];
   // A merge keeps one check per group (src/merge.ts), so the first fact's speaks for all.
-  const tag = evTag(f.evidence_type) + checkTag(f);
-  if (!also.length) {
-    return `<li class="fact">
-  ${tag}
-  ${statementHtml(f.statement, notes)}
-  <p class="meta">${factMeta(f)}</p>
-  ${quotesHtml([f])}
-</li>`;
-  }
-  return `<li class="fact merged">
-  ${tag} <span class="nsrc">Reported by ${also.length + 1} sources</span>
-  ${statementHtml(f.statement, notes)}
-  <ul class="meta srcs">${[f, ...also].map((x) => `<li>${factMeta(x)}</li>`).join("")}</ul>
-  ${quotesHtml([f, ...also])}
-  <details class="wording"><summary>How each source put it</summary><ul>${
-    [f, ...also].map((x) =>
-      `<li><span class="src">${esc(x.source_name)}:</span> ${esc(x.statement)}</li>`
-    )
+  return `<li class="${cls}">
+  <p class="meta grp-src"><span class="nsrc">Reported by ${all.length} sources</span></p>
+  <ul class="meta srcs">${all.map((x) => `<li>${factMeta(x)}</li>`).join("")}</ul>
+  <ul class="grp"><li>${evTag(f.evidence_type)}${checkTag(f)}
+    ${statementHtml(f.statement, notes)}${jump}
+    ${quotesHtml(all)}
+    <details class="wording"><summary>How each source put it</summary><ul>${
+    all.map((x) => `<li><span class="src">${esc(x.source_name)}:</span> ${esc(x.statement)}</li>`)
       .join("")
-  }</ul></details>
+  }</ul></details></li></ul>
 </li>`;
 }
 
@@ -411,13 +418,18 @@ export function byPage(ordered: readonly Fact[], alone: (f: Fact) => boolean): (
 }
 
 /**
- * Two or more facts from one page: the page's source line once, then each
+ * Facts from one page, or a lone fact: the page's source line once, then each
  * fact with its own evidence type, check, event date, flag, and quote. An
  * author or date every fact gives the same is said on the line; one they
  * give differently is said on each fact, as that fact gives it, so every
  * statement still carries its whole provenance.
  */
-function pageGroupItem(facts: readonly Fact[], notes: Notes): string {
+function pageGroupItem(
+  facts: readonly Fact[],
+  notes: Notes,
+  jump = "",
+  cls = facts.length > 1 ? "fact page-group" : "fact",
+): string {
   const f = facts[0];
   const same = (k: "author" | "published") => facts.every((x) => x[k] === f[k]);
   const byline = (x: Fact) => x.author ? `by ${esc(x.author)}` : "author not stated";
@@ -434,11 +446,14 @@ function pageGroupItem(facts: readonly Fact[], notes: Notes): string {
     const own = [same("author") ? "" : byline(x), same("published") ? "" : dated(x)];
     const meta = [happened(x), at, ...own, missingFlag(x)].filter(Boolean).join(" · ");
     return `<li>${evTag(x.evidence_type)}${checkTag(x)}
-    ${statementHtml(x.statement, notes)}${meta ? `<p class="meta">${meta}</p>` : ""}
+    ${statementHtml(x.statement, notes)}${meta ? `<p class="meta">${meta}</p>` : ""}${jump}
     ${quotesHtml([x])}</li>`;
   });
-  return `<li class="fact page-group">
-  <p class="meta grp-src">${line} · <span class="nsrc">${facts.length} facts from this page</span></p>
+  const count = facts.length > 1
+    ? ` · <span class="nsrc">${facts.length} facts from this page</span>`
+    : "";
+  return `<li class="${cls}">
+  <p class="meta grp-src">${line}${count}</p>
   <ul class="grp">${items.join("")}</ul>
 </li>`;
 }
@@ -459,19 +474,12 @@ const shownKey = (f: Fact) => `${f.source_url}\n${f.statement.trim().toLowerCase
  * links to the rest.
  */
 function refItem(f: Fact, at: { id: string; label: string }, notes: Notes): string {
-  const also = f.also ?? [];
-  const jump = `<a class="jumpto" href="#${esc(at.id)}">Shown in full under “${esc(at.label)}”</a>`;
-  const sources = also.length
-    ? `<ul class="meta srcs">${
-      [f, ...also].map((x) => `<li>${factMeta(x)}</li>`).join("")
-    }</ul><p class="meta">${jump}</p>`
-    : `<p class="meta">${factMeta(f)} · ${jump}</p>`;
-  return `<li class="fact ref">
-  ${evTag(f.evidence_type)}${checkTag(f)}
-  ${statementHtml(f.statement, notes)}
-  ${sources}
-  ${quotesHtml([f, ...also])}
-</li>`;
+  const jump = `<p class="meta"><a class="jumpto" href="#${esc(at.id)}">Shown in full under “${
+    esc(at.label)
+  }”</a></p>`;
+  return f.also?.length
+    ? mergedItem(f, notes, jump, "fact ref")
+    : pageGroupItem([f], notes, jump, "fact ref");
 }
 
 /**
@@ -607,8 +615,8 @@ function whenRange(facts: readonly Fact[], placed: readonly (Fact | Fact[])[] = 
   // whose period ends last ("2024" ends after "2024-03-01").
   const from = dates[0], to = dates.reduce((a, b) => (b + "~" > a + "~" ? b : a), from);
   const span = !dates.length ? "" : to.startsWith(from)
-    ? sourceDate(from) // a year or month and days inside it
-    : `${sourceDate(from)} to ${sourceDate(to)}`;
+    ? publishedDate(from) // a year or month and days inside it
+    : `${publishedDate(from)} to ${publishedDate(to)}`;
   const undated = facts.length - dates.length;
   // byPage moves an undated fact up beside a dated one from its page.
   const withPage = placed.some((x) => Array.isArray(x) && x.some((f) => !eventOf(f)));
@@ -711,21 +719,12 @@ function effortText(e: ResearchEffort | undefined): string {
     : "searches and pages opened not recorded for this run";
 }
 
-/** A year, month, or day as the page writes dates: "2024", "Aug 2024", "Aug 5, 2024". */
-function sourceDate(s: string): string {
-  if (!/^\d{4}-\d{2}$/.test(s)) return publishedDate(s);
-  const d = new Date(`${s}-01T00:00:00Z`);
-  return isNaN(d.getTime())
-    ? s
-    : d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", year: "numeric" });
-}
-
 function datesText(e: Evidence): string {
   // Dates in other forms ("March 2024") don't sort, so they aren't counted: said as such.
   if (!e.from || !e.to) return "no source gives a date in year-month-day form";
   return e.from === e.to
-    ? `sources dated ${sourceDate(e.from)}`
-    : `sources dated ${sourceDate(e.from)} to ${sourceDate(e.to)}`;
+    ? `sources dated ${publishedDate(e.from)}`
+    : `sources dated ${publishedDate(e.from)} to ${publishedDate(e.to)}`;
 }
 
 /**
@@ -1807,8 +1806,8 @@ details.quote blockquote { margin: 4px 0 0; padding: 2px 10px; border-left: 3px 
 details.quote ul { margin: 4px 0 0; padding-left: 20px; }
 details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
-/* Facts from one page: its source line once, the facts under it on a quiet rule. */
-.page-group .grp-src { margin: 0 0 4px; }
+/* Every fact item: its source line first, the fact or facts under it on a quiet rule. */
+.fact > .grp-src { margin: 0 0 4px; }
 .grp { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
 .grp > li { padding: 6px 0; }
 .grp > li + li { border-top: 1px dashed var(--line); }
@@ -2296,7 +2295,7 @@ ${extra.mine ?? ""}
 </footer>`;
 }
 
-function askedAbout(
+export function askedAbout(
   issues: readonly string[] | undefined,
   same: string,
   priorities: readonly PriorityResult[],
@@ -2305,9 +2304,12 @@ function askedAbout(
   const before = predatesStanceThreshold(priorities)
     ? `<p>This run's marks were made before that threshold existed, when one verified source of any kind was enough: read them as possibly thin.</p>`
     : "";
+  // An issue the voter ended with a period, a question, a "!", or "…" gets no second one.
+  const list = issues.join("; ");
+  const end = /[.?!…]["”'’)]*$/.test(list) ? "" : ".";
   return `<div class="note"><p><strong>You asked about:</strong> ${
-    issues.map(esc).join("; ")
-  }. ${same}</p><details${
+    esc(list)
+  }${end} ${same}</p><details${
     before ? " open" : ""
   }><summary>How your issues are marked</summary><p>Findings on them come first. Where your wording states a view, each issue is marked as conflicting with it, matching it, or mixed, but only when a verified source backs that up. A mark is full when a primary record backs it, or facts from two different outlets, with the quoted passage found on each page. Below that it is marked thin, with the number of facts behind it, and listed after the full ones. That is a reading of the cited record, not a recommendation, and there is no overall score: open the sources before relying on it.</p>${before}</details></div>`;
 }
