@@ -1279,8 +1279,17 @@ function possibleHtml(p: PairConnections): string {
 }
 
 /**
- * Who each pair shares as a contributor or endorser, each tie with its
- * source. Collapsed. Every pair gets its own block in ballot order, one with
+ * What a "named" tie is, said wherever ties are shown. A name in an
+ * Endorsements or case for/against fact may be someone supporting, someone
+ * opposing (Trellis lists groups recommending No), or the outlet that reported
+ * it, and nothing here can tell which, so no view calls a name an endorser.
+ */
+export const NAMED_TIE =
+  "a name only where a verified fact in Endorsements, The case for, or The case against names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it, so read each one.";
+
+/**
+ * Who each pair shares as a contributor or a name in its support facts, each
+ * tie with its source. Collapsed. Every pair gets its own block in ballot order, one with
  * nothing shared saying so: pairs are never grouped or ordered by what they
  * share. Nothing is scored or ranked.
  */
@@ -1294,12 +1303,12 @@ function sharedHtml(
 ): string {
   const caveats = [
     !finance
-      ? "Campaign finance filings weren't looked up in this run, so only endorsements are compared."
+      ? "Campaign finance filings weren't looked up in this run, so only names in the facts are compared."
       : finance.error
-      ? "Campaign finance filings couldn't be looked up in this run, so only endorsements are compared."
+      ? "Campaign finance filings couldn't be looked up in this run, so only names in the facts are compared."
       : "",
     !context?.notes.some((n) => n.verified)
-      ? "No names in this run's facts have a sourced note, so endorsements can't be matched by name."
+      ? "No names in this run's facts have a sourced note, so names in the facts can't be matched."
       : "",
     filingsRead(finance) ? capCaveat(finance.per_subject) : "",
   ].filter(Boolean).map((c) => `<p class="gap">${esc(c)}</p>`).join("");
@@ -1320,7 +1329,7 @@ function sharedHtml(
             )
           ).join("")
         }</ul>`
-        : `<p class="gap">No shared contributors or endorsers found.</p>`
+        : `<p class="gap">No shared contributors or names found.</p>`
     }${possibleHtml(p)}</details>`
   ).join("");
   const body = pairs.length ? blocks : `<p class="gap">${esc(single)}</p>`;
@@ -1332,7 +1341,7 @@ function sharedHtml(
       } someone`
       : "none found"
   })</summary>
-<p>For each pair, the contributors and endorsers both have, each with its source. A contributor counts only from a filing this run retrieved; an endorser only where a fact names someone with a sourced note. They are matched within ${
+<p>For each pair, the contributors and the names in the facts both have, each with its source. A contributor counts only from a filing this run retrieved; ${NAMED_TIE} They are matched within ${
     esc(place)
   } by exact name and kind, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${caveats}${body}</details>`;
@@ -1364,7 +1373,7 @@ export function ballotSharedHtml(
         )
       ).join("")
     }</ul>`
-    : `<p class="gap">No contributor or endorser is tied to more than one item.</p>`;
+    : `<p class="gap">No contributor or name is tied to more than one item.</p>`;
   const gaps = [
     ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
     ...(notCompared.length
@@ -1380,7 +1389,7 @@ export function ballotSharedHtml(
   return `<details class="shared sec" id="shared"><summary>Shared across this ballot (${
     c.shared.length ? `${c.shared.length} found` : "none found"
   })</summary>
-<p>Contributors and endorsers tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them: a contributor only from a filing that run retrieved, an endorser only where a fact names someone with a sourced note, by exact name and kind, and an individual also by the same stated occupation and employer.${
+<p>Contributors and names tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them, by exact name and kind, and an individual also by the same stated occupation and employer: a contributor only from a filing that run retrieved; ${NAMED_TIE}${
     c.places > 1
       ? ` These items are in ${c.places} different places (city, county, district, or state), and names are only matched within one place, so the same group in two places is listed under possible matches instead.`
       : ""

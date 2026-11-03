@@ -6,7 +6,7 @@
  * offices, measures), each claim with its citations, plus typed relations
  * between entities ("candidate_for"). That is what lets later steps merge one
  * fact reported by several outlets into one claim, and connect candidates and
- * measures through shared donors, endorsers, and cases. Merged facts (one
+ * measures through shared donors, names in support facts, and cases. Merged facts (one
  * fact, several outlets; src/merge.ts) become one claim with several citations.
  *
  * Nothing here touches storage; src/web/kb.ts writes a Projection to SQLite.
@@ -16,7 +16,7 @@
  * Context notes (src/context.ts) add the people and organizations the facts
  * name: each verified note is a claim about its entity, and every claim whose
  * statement names it links to it with the role "named", so later steps can
- * connect candidates through shared donors and endorsers.
+ * connect candidates through shared donors and names in support facts.
  *
  * Campaign finance (src/finance.ts) adds who gave to whom: each verified
  * contribution is a "contributed_to" relation from the contributor to the

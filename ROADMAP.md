@@ -448,3 +448,78 @@ Follow-ups:
   MAGA platform". The tip on wording is the only remedy for now.
 - A note already saved for a non-name ("Building", from Prop 42's run) stays on the pages of runs
   that hold it until they are researched again.
+
+---
+
+# After the ballot: the saved data (Nov 2026)
+
+Planned on Nov 2, 2026, after the owner's ballot was turned in. The aim: get more out of the 35
+saved runs without paying for research again, keep them safe for tracking results, and make the
+pages easier to read. Measured on a copy of the live database (`deno task diagnose` plus queries):
+38 names recur across the ballot's subjects and 6 connect. 3 of 41 subjects have any contributions.
+Most names were never looked up (the context cap). The ballot-heading places split the statewide
+races apart. 43% of verified facts share a section and a source with another fact, and about a
+quarter closely repeat a fact in another section.
+
+## Decisions already made (by the owner, Nov 2 2026)
+
+- **No new research runs** for these items. Steps that call no model come first. A step that calls
+  one (the digest, tie roles) is priced first, runs once over saved data, and is stored by input
+  hash.
+- **The data stays safe:** nightly snapshots are in `/srv/backups/pg-backup.sh` (done Nov 2). Moving
+  them off-box is issue #34. Every experiment runs on a copy.
+- **SQLite stays.** The problem is presentation, not storage. Runs are whole JSON rows, and the
+  graph is rebuilt from them, so a move later is a copy plus a rebuild.
+- **A digest is wanted**: "X, Y, and Z report A, B, and C" over one line per fact, with the facts
+  kept one click below.
+
+## 12. A name is not an endorser — done
+
+The connections views (race, measure, ballot, entity pages) called anyone named in a verified
+Endorsements / case for / case against fact an "endorser". The facts often say the opposite: Trellis
+lists Reform California recommending No on most of the appellate justices. Some name only the outlet
+that reported them ("KQED described Shaw as..."). Each tie already quotes its fact. The headings and
+explanations now say "named in" and tell the reader that being named can mean supporting, opposing,
+or reporting. Neither a name rule nor a source-name rule can tell these apart. Reform California's
+own guide is sourced to Reform California, a real position, so no tie is dropped.
+
+## 13. Places corrected in the graph
+
+Runs saved with a ballot heading as their place ("School Offices") are indexed under `ballotPlace`'s
+reading, so statewide offices share the state's scope. The saved runs are unchanged. This is a graph
+rebuild (`KNOWLEDGE_VERSION`).
+
+## 14. Facts grouped on the page
+
+Within a section, facts from one source sit under that source, named once. A fact that closely
+repeats one in another section shows in full once and as a reference elsewhere (like `refItem`). No
+model calls.
+
+## 15. Section digests
+
+One tool-less call per run over its verified facts only. Each clause cites the fact ids it uses. The
+code rejects a digest that cites an unknown or unverified fact, names an outlet that isn't among
+those facts' sources, or treats the case for and the case against unevenly. Shown as a summary over
+the facts, never in place of them. A found quote doesn't extend to the digest's wording. About $1–2
+on Sonnet for all saved runs, stored by input hash.
+
+## 16. Tie roles
+
+A tool-less call per run reads each named tie's fact and marks the name supports / opposes /
+reported / other, kept only where the fact's words say so. Cents on Haiku. Until then, item 12's
+wording stands.
+
+## 17. Possible matches from names never looked up
+
+Names that recur across items but have no note (over the cap, or not picked up) are listed as
+possible matches, never as ties.
+
+## 18. Fontana finance from NetFile
+
+Rerun only the finance step for the Fontana races through `NetFileResearcher` (no model; netfile.com
+only), on a copy first.
+
+## 19. Results tracking
+
+Official results per contest (entered by hand first; registrar or Secretary of State later), linked
+to the runs and kept across elections.
