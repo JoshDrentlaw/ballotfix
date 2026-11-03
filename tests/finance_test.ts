@@ -383,6 +383,9 @@ Deno.test("a contributor and a name in the facts are one connection when they ar
     `<details class="shared sec" id="shared"><summary>Shared connections (1 of 3 pairs shares someone)`,
   );
   assertStringIncludes(page, "named in Endorsements and affiliations");
+  // The explanation names the sections as the ties do, and never calls a name an endorser.
+  assertStringIncludes(page, "a verified fact in Endorsements and affiliations, The case for,");
+  assertEquals(/endorser/i.test(page), false);
   assertStringIncludes(page, FILING);
   // Rows are capped per subject, so no overlap found says little; the page says so.
   assertStringIncludes(

@@ -1285,7 +1285,7 @@ function possibleHtml(p: PairConnections): string {
  * it, and nothing here can tell which, so no view calls a name an endorser.
  */
 export const NAMED_TIE =
-  "a name only where a verified fact in Endorsements, The case for, or The case against names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it, so read each one.";
+  `a name only where a verified fact in ${SUPPORT_TITLE.endorsements}, ${SUPPORT_TITLE.case_for}, or ${SUPPORT_TITLE.case_against} names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it, so read each one.`;
 
 /**
  * Who each pair shares as a contributor or a name in its support facts, each
