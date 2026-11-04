@@ -11,6 +11,8 @@ import type {
   RawFact,
 } from "../src/types.ts";
 import { FakeResearch, listing, QUERY, raw } from "./fakes.ts";
+import { JobRunner } from "../src/web/jobs.ts";
+import { openStores } from "../src/web/store.ts";
 
 const CANDS: BallotCandidate[] = [
   { name: "Joz Sida", ballot_designation: null, incumbent: false },
@@ -178,4 +180,40 @@ Deno.test("a failed call is recorded and the page says there are no summaries", 
   const { digestFailed } = await import("../src/digest.ts");
   const r = digestFailed(planRace(await race(), "m", NOW)!, "the model declined");
   assertStringIncludes(renderRace(r), "No summaries for this run: the model declined.");
+});
+
+Deno.test("the job runner digests a finished run after its other steps", async () => {
+  const s = await openStores(await Deno.makeTempDir());
+  const research = (who: string) =>
+    raw({
+      sections: {
+        platform: {
+          facts: [
+            fact(`${who} wants more parks.`, "Fontana Herald News", HERALD),
+            fact(`${who} said rents are too high.`, "Inland Daily", DAILY),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: [HERALD, DAILY],
+    });
+  const port = new FakeResearch(listing(CANDS), {
+    "Joz Sida": research("Joz Sida"),
+    "Ana Reyes": research("Ana Reyes"),
+  });
+  const d = new Scripted([(req) => fair(req)]);
+  const logs: string[] = [];
+  const jobs = new JobRunner(s.runs, () => port, {
+    log: (m) => logs.push(m),
+    makeDigester: () => d,
+    digestModel: "m",
+  });
+  const run = await jobs.submit(QUERY, CANDS);
+  await jobs.idle();
+  const saved = (await s.runs.get(run.id))!;
+  assertEquals(d.calls.length, 1);
+  assertEquals(saved.race!.digest!.subjects[1].sections.platform.length, 1);
+  assert(logs.some((l) => l.includes("digested 4 facts in 1 call(s), 0 left out")));
+  s.db.close();
 });
