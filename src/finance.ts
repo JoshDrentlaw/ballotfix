@@ -623,6 +623,8 @@ export interface BallotItemDossier {
 
 /** A subject on the ballot: a candidate in a contest, or one side of a measure. */
 export interface BallotHolder {
+  /** The item's position in the list ballotConnections was given. */
+  at: number;
   item: string;
   label: string;
   ties: Tie[];
@@ -639,7 +641,8 @@ export interface BallotConnections {
   /** Alphabetical by name. */
   shared: BallotShared[];
   /** Names that may be one entity across items, kept separate: each with where it appears. */
-  possible: { name: string; item: string; label: string }[][];
+  /** Each with its item's position in the list ballotConnections was given (`at`). */
+  possible: { at: number; name: string; item: string; label: string }[][];
   /** Items and subjects compared, and how many places (state + jurisdiction) they are in. */
   items: number;
   subjects: number;
@@ -709,7 +712,7 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
   subjects.forEach((s, n) => {
     for (const [key, { ref, ties }] of s.party.ties) {
       const got = byKey.get(key) ?? { ref, holders: [], items: new Set<number>() };
-      got.holders.push({ item: s.item, label: s.label, ties });
+      got.holders.push({ at: s.at, item: s.item, label: s.label, ties });
       got.items.add(s.at);
       byKey.set(key, got);
     }
@@ -737,7 +740,7 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
     const m = byLoose.get(k)!;
     const seen = [...m.values()].flat().sort((a, b) => a.at - b.at);
     if (m.size > 1 && new Set(seen.map((x) => x.at)).size > 1) {
-      possible.push(seen.map(({ name, item, label }) => ({ name, item, label })));
+      possible.push(seen.map(({ at, name, item, label }) => ({ at, name, item, label })));
     }
   }
   return {

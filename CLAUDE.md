@@ -331,6 +331,21 @@ show it. A found quote shows the page has those words, not that the statement re
   marks from a copy by hash (`apply`). The connection views show a marked tie as "supports (“the
   fact's words”), named in ..." (`tieRole`); every other tie stays "named". Entity pages read ties
   from the graph, which doesn't hold marks yet, so they still say only "named".
+- On this ballot (`src/onballot.ts`, `onBallotHtml`): app race and measure pages started from a
+  ballot, once done, get a collapsed box after the overview (race: after the office; measure: before
+  the jump bar) comparing the run with the ballot's other finished items (the latest started run of
+  each, this run in its own place). No model or network calls. Per other item, in ballot order: this
+  item's verified facts that name it and its verified facts that name this item, each with every
+  source and a link to the fact in place. A measure is named by its label as facts write it
+  (`measurePattern`: "Prop. 40", "Props. 41 and 40", "Yes on 40"; never inside "400"), a candidate
+  by a given name (or quoted nickname) and the surname together (`namesPerson`), never the surname
+  alone (a particle such as "de" is never a given name) and never across a comma or a sentence's
+  end. Then every group or contributor tied to this item and another (`ballotConnections`), once
+  each with all its holders and their tie marks, and the near misses that include this item. What
+  limits the comparison is folded under its count. The page says it can over-match (an earlier
+  measure with the same number) and under-match, that a fact naming an item says nothing about how
+  they relate beyond its words, and that candidates' own positions on measures weren't researched
+  (issue #41). Downloads never include it.
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections

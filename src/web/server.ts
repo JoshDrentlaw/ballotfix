@@ -24,11 +24,14 @@
  */
 
 import { ballotPlace, measuresOf, parsePriorities } from "../dossier.ts";
+import type { BallotItemDossier } from "../finance.ts";
 import { nameKey } from "../knowledge.ts";
+import { onBallot } from "../onballot.ts";
 import {
   CSP,
   type EntityLinks,
   measureTitle,
+  onBallotHtml,
   renderMeasure,
   renderRace,
   slug,
@@ -763,6 +766,52 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     };
   };
 
+  /**
+   * "On this ballot" for a finished run started from a ballot: this run (the
+   * one being viewed, even if the ballot has since started a newer one) beside
+   * the ballot's other finished items, in ballot order. Reads only.
+   */
+  const onBallotFor = async (run: RunRecord): Promise<string | undefined> => {
+    const link = run.ballot;
+    if (run.status !== "done" || !link || !o.ballots) return undefined;
+    const b = await o.ballots.store.get(link.id);
+    if (!b?.reading) return undefined;
+    const r = b.reading;
+    const keys = [
+      ...r.contests.map((_, i) => String(i)),
+      ...measuresOf(r).map((_, i) => measureKey(i)),
+    ].filter((k) => b.started[k] || k === link.key);
+    const items: BallotItemDossier[] = [];
+    const notCompared: string[] = [];
+    const unreadable: string[] = [];
+    let here = -1;
+    const slugs = new Map<string, string>();
+    for (const k of keys) {
+      const it = k === link.key ? run : await o.store.get(b.started[k]);
+      const heading = ballotItem(b, k)?.heading ?? "";
+      if (!it) {
+        unreadable.push(heading);
+        continue;
+      }
+      if (it.status !== "done") {
+        notCompared.push(heading);
+        continue;
+      }
+      if (k === link.key) here = items.length;
+      items.push({ heading, runId: it.id, race: it.race, measure: it.measure_result });
+      for (const [key, s] of o.store.knowledge.slugsOfRun(it.id)) slugs.set(key, s);
+    }
+    if (here < 0) return undefined;
+    return onBallotHtml(onBallot(items, here), (id) => `${BASE}/races/${id}`, {
+      notCompared,
+      unreadable,
+      entityHref: (key) => {
+        const s = slugs.get(key);
+        return s ? `${BASE}/entities/${s}` : null;
+      },
+    });
+  };
+
   /** A finished run's links into entity pages: only entities its own graph share holds. */
   const linksFor = (run: RunRecord): EntityLinks | undefined => {
     if (run.status !== "done") return undefined;
@@ -1135,6 +1184,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           choice: await choiceFor(run),
           walk: await walkFor(run),
           links: linksFor(run),
+          onBallot: await onBallotFor(run),
           againPlace: againPlace(run),
           ...extra,
         });
