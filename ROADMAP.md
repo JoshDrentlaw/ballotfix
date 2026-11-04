@@ -545,6 +545,17 @@ A failed answer is sent back once with its problems. Saved runs are done as one 
 copy, then copied to the live database by hash (`apply`), so the live data is written by a step that
 calls nothing. The job runner makes one for every new run, last.
 
+Run on a copy of the live data (Nov 3): 34 runs (one had too few facts), 274 sections and briefs
+summarized in 812 lines, 50 left out, about $1.33 in two batches (the 3-run trial before it, about
+$0.18). 27 of 34 first answers failed a check and were sent back. About half the name rejections
+were real (a name in no fact the line cites: "Sergey Brin", "Robert Kaplan"); the rest were the
+checks being literal (an outlet inside a source's name, plurals, "UC", the Chino Champion), fixed
+after the run without a rerun, so those sections stay left out until the facts change or
+`DIGEST_VERSION` is bumped. Not done: saving the model's raw answers, so a check change could be
+replayed for free; lines over `MAX_LINE_CHARS` (9) and sections over four lines (6) are left out,
+not cut. Most lines cite one fact: less condensed than "X, Y, and Z report"; the brief condenses
+most.
+
 ## 16. Tie roles
 
 A tool-less call per run reads each named tie's fact and marks the name supports / opposes /
