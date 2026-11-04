@@ -57,6 +57,7 @@ import type {
   SharedSources,
   Stance,
   SubjectDigest,
+  TieRole,
   VoteMeanings,
 } from "./types.ts";
 
@@ -1415,7 +1416,7 @@ function tieHtml(label: string, t: Tie): string {
     }</li>`;
   }
   const more = t.fact.also?.length ? ` and ${t.fact.also.length} more` : "";
-  return `<li>${who}named in ${esc(SUPPORT_TITLE[t.section] ?? t.section)}: “${
+  return `<li>${who}${tieRole(t.mark)}named in ${esc(SUPPORT_TITLE[t.section] ?? t.section)}: “${
     esc(t.fact.statement)
   }” · ${link(t.fact.source_url, t.fact.source_name)}${more}</li>`;
 }
@@ -1449,6 +1450,24 @@ function possibleHtml(p: PairConnections): string {
   ).join("");
 }
 
+export const TIE_ROLE_LABEL: Record<TieRole, string> = {
+  supports: "supports",
+  opposes: "opposes",
+  reported: "reported",
+};
+
+/**
+ * A tie's role where the fact's own words say it (src/ties.ts), with those
+ * words, so the mark shows what it rests on. Plain text: never a stance color.
+ */
+export function tieRole(m: { role: TieRole; words: string } | undefined): string {
+  return m
+    ? `<span class="tie-role">${TIE_ROLE_LABEL[m.role]}</span> <span class="desig">(“${
+      esc(m.words)
+    }”)</span>, `
+    : "";
+}
+
 /**
  * What a "named" tie is, said wherever ties are shown. A name in an
  * Endorsements or case for/against fact may be someone supporting, someone
@@ -1456,7 +1475,7 @@ function possibleHtml(p: PairConnections): string {
  * it, and nothing here can tell which, so no view calls a name an endorser.
  */
 export const NAMED_TIE =
-  `a name only where a verified fact in ${SUPPORT_TITLE.endorsements}, ${SUPPORT_TITLE.case_for}, or ${SUPPORT_TITLE.case_against} names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it, so read each one.`;
+  `a name only where a verified fact in ${SUPPORT_TITLE.endorsements}, ${SUPPORT_TITLE.case_for}, or ${SUPPORT_TITLE.case_against} names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it. Where its own words say which, the tie is marked supports, opposes, or reported, with those words; a model picked them, and they were checked only to be in the fact. Otherwise it says only named, so read each one.`;
 
 /**
  * Who each pair shares as a contributor or a name in its support facts, each
@@ -1902,6 +1921,7 @@ details.quote .src { color: var(--muted); }
 .digest ul { margin: 0; padding-left: 18px; }
 .digest li { margin: 4px 0; }
 .dg-src { color: var(--muted); font-size: .8rem; }
+.tie-role { font-weight: 650; }
 .dg-left { color: var(--muted); font-size: .82rem; margin: 4px 0; }
 /* The source heads its facts: named in body text, bold, so a skim finds who is talking. */
 .fact > .grp-src > a:first-child { color: var(--fg); font-weight: 650; text-decoration-color: var(--line-strong); }

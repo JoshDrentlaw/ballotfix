@@ -321,6 +321,16 @@ show it. A found quote shows the page has those words, not that the statement re
   calling nothing). The page shows "In short" over a section's facts and "In brief" under a name,
   each line with its facts' outlets and count, labeled a model's summary: the facts below stay the
   record, and a found quote says nothing of its wording.
+- Tie roles (roadmap item 16, `src/ties.ts`): after the digest, `JobRunner` makes one tool-less,
+  low-effort call per run with named ties (`TieRoleMarker.markTieRoles`, `BALLOTFIX_TIES_MODEL` or
+  `DEFAULT_TIES_MODEL` (Haiku), "off" skips it). Each tie (`raceTies`, `measureTies`: the same
+  support facts and verified notes `raceParties`/`measureParties` use) is sent with its fact and its
+  subject; a mark (`TIE_ROLES`: supports, opposes, reported) stands only if its words are found
+  whole-word in that fact and are more than the name (`checkMarks`). Saved as `tie_roles` with an
+  input hash; `deno task ties` (`src/ties_cli.ts`) does saved runs as one Message Batch and applies
+  marks from a copy by hash (`apply`). The connection views show a marked tie as "supports (“the
+  fact's words”), named in ..." (`tieRole`); every other tie stays "named". Entity pages read ties
+  from the graph, which doesn't hold marks yet, so they still say only "named".
 - Entity pages (step 5, `src/web/entities.ts`): read-only GET pages over the graph, no model or
   network calls. `/entities/:slug` (slug: a hash of the entity key, stable across rebuilds) shows
   one person, organization, office, measure, or side: facts about it in its kind's fixed sections

@@ -556,11 +556,17 @@ replayed for free; lines over `MAX_LINE_CHARS` (9) and sections over four lines 
 not cut. Most lines cite one fact: less condensed than "X, Y, and Z report"; the brief condenses
 most.
 
-## 16. Tie roles
+## 16. Tie roles — done
 
 A tool-less call per run reads each named tie's fact and marks the name supports / opposes /
 reported / other, kept only where the fact's words say so. Cents on Haiku. Until then, item 12's
 wording stands.
+
+Done (`src/ties.ts`, `deno task ties`). "Other" is no mark. A mark keeps the fact's words that say
+it, checked to be in the statement and to be more than the name, and the page shows them beside it.
+The race, measure, and ballot connection views use the marks; entity pages don't yet, since the
+graph doesn't hold them (a `KNOWLEDGE_VERSION` bump would add them). The batch helper moved to
+`src/batch.ts`, shared with the digest command.
 
 ## 17. Possible matches from names never looked up
 
