@@ -18,6 +18,14 @@ import {
   raceFinanceFailed,
 } from "../finance.ts";
 import { mergeMeasure, mergeRace } from "../merge.ts";
+import {
+  digestFailed,
+  type DigestPlan,
+  isCurrent,
+  planMeasure,
+  planRace,
+  runPlan,
+} from "../digest.ts";
 import { officeForRace, raceOfficeFailed } from "../office.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
@@ -28,6 +36,7 @@ import type {
   CandidateSource,
   ClaimMerger,
   ContextWriter,
+  Digester,
   FinanceResearcher,
   MeasureDossier,
   MeasureQuery,
@@ -75,6 +84,13 @@ export interface JobRunnerOptions {
    * candidate's research, and puts them first in each one's. Omit to skip.
    */
   makeSharedFinder?: () => SharedSourceFinder;
+  /**
+   * Summarizes each section's verified facts: one call per run (two when the
+   * first answer fails a check), last, after every other step. Omit to skip.
+   */
+  makeDigester?: () => Digester;
+  /** The digest model's name, part of each digest's input hash. */
+  digestModel?: string;
 }
 
 /** What one finished run needs for the steps after it, race or measure. */
@@ -158,6 +174,8 @@ export class JobRunner {
   readonly #makeFinanceResearcher: (() => FinanceResearcher) | undefined;
   readonly #makeOfficeResearcher: (() => OfficeResearcher) | undefined;
   readonly #makeSharedFinder: (() => SharedSourceFinder) | undefined;
+  readonly #makeDigester: (() => Digester) | undefined;
+  readonly #digestModel: string;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
   #post = new Set<Promise<void>>();
@@ -174,6 +192,8 @@ export class JobRunner {
     this.#makeFinanceResearcher = opts.makeFinanceResearcher;
     this.#makeOfficeResearcher = opts.makeOfficeResearcher;
     this.#makeSharedFinder = opts.makeSharedFinder;
+    this.#makeDigester = opts.makeDigester;
+    this.#digestModel = opts.digestModel ?? "unknown";
   }
 
   /**
@@ -296,9 +316,9 @@ export class JobRunner {
     id: string,
     race: RaceDossier,
     save: (d: RaceDossier) => Promise<void>,
-  ): Promise<void> {
+  ): Promise<RaceDossier> {
     const make = this.#makeOfficeResearcher;
-    await this.#after(
+    return await this.#after(
       id,
       "office powers",
       race,
@@ -319,6 +339,36 @@ export class JobRunner {
       }),
       save,
       raceOfficeFailed,
+    );
+  }
+
+  /**
+   * The digest, last, from what the other steps left: skipped when the run
+   * has too few facts or already has a digest of these exact facts.
+   */
+  async #afterDigest<T extends RaceDossier | MeasureDossier>(
+    id: string,
+    dossier: T,
+    planOf: (d: T, model: string, now: Date) => DigestPlan<T> | null,
+    save: (d: T) => Promise<void>,
+  ): Promise<void> {
+    const make = this.#makeDigester;
+    const p = make && planOf(dossier, this.#digestModel, this.#now());
+    if (!make || !p || isCurrent(dossier, p)) return;
+    await this.#after(
+      id,
+      "digest",
+      dossier,
+      async () => {
+        const r = await runPlan(p, make());
+        return {
+          dossier: r.dossier,
+          changed: true,
+          log: [`digested ${p.sent} facts in ${r.calls} call(s), ${r.left_out} left out`],
+        };
+      },
+      save,
+      (_d, error) => digestFailed(p, error),
     );
   }
 
@@ -458,10 +508,11 @@ export class JobRunner {
           error: result.error,
         });
         if (result.status === "ok") {
-          this.#background(this.#afterDone(run.id, result, {
-            ...MEASURE_STEPS,
-            save: (d) => save({ measure_result: d }),
-          }));
+          const saveMeasure = (d: MeasureDossier) => save({ measure_result: d });
+          this.#background(
+            this.#afterDone(run.id, result, { ...MEASURE_STEPS, save: saveMeasure })
+              .then((d) => this.#afterDigest(run.id, d, planMeasure, saveMeasure)),
+          );
         }
         return;
       }
@@ -478,7 +529,8 @@ export class JobRunner {
       const saveRace = (d: RaceDossier) => save({ race: d });
       this.#background(
         this.#afterDone(run.id, race, { ...RACE_STEPS, save: saveRace })
-          .then((d) => this.#afterOffice(run.id, d, saveRace)),
+          .then((d) => this.#afterOffice(run.id, d, saveRace))
+          .then((d) => this.#afterDigest(run.id, d, planRace, saveRace)),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

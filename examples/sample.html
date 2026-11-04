@@ -58,7 +58,7 @@ p, li { overflow-wrap: anywhere; }
 .inc { font-weight: 600; color: var(--fg); }
 .dossier { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 16px; margin: 24px 0; }
 .facts { list-style: none; padding: 0; margin: 0; }
-.fact { padding: 10px 0; }
+.fact { padding: 16px 0; }
 .fact + .fact { border-top: 1px solid var(--line); }
 .fact p { margin: 4px 0 0; }
 /* Evidence chips: told apart by fill and border as well as color. */
@@ -78,7 +78,18 @@ details.quote ul { margin: 4px 0 0; padding-left: 20px; }
 details.quote .src { color: var(--muted); }
 .nsrc { font-size: .78rem; color: var(--muted); }
 /* Every fact item: its source line first, the fact or facts under it on a quiet rule. */
-.fact > .grp-src { margin: 0 0 4px; }
+.fact > .grp-src { margin: 0 0 8px; font-size: .9rem; }
+/* A digest: a model's summary over a section's facts, tinted and quieter than a fact, never a chip. */
+.digest { background: var(--tint); border-radius: var(--r); padding: 10px 14px; margin: 8px 0 12px; }
+.digest .dg-head { margin: 0 0 4px; font-weight: 650; font-size: .9rem; }
+.digest .dg-note { font-weight: 400; color: var(--muted); font-size: .8rem; }
+.digest ul { margin: 0; padding-left: 18px; }
+.digest li { margin: 4px 0; }
+.dg-src { color: var(--muted); font-size: .8rem; }
+.dg-left { color: var(--muted); font-size: .82rem; margin: 4px 0; }
+/* The source heads its facts: named in body text, bold, so a skim finds who is talking. */
+.fact > .grp-src > a:first-child { color: var(--fg); font-weight: 650; text-decoration-color: var(--line-strong); }
+.fact.merged > .grp-src .nsrc { color: var(--fg); font-weight: 650; font-size: .9rem; }
 .grp { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
 .grp > li { padding: 6px 0; }
 .grp > li + li { border-top: 1px dashed var(--line); }
@@ -352,7 +363,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 <main id="top">
 
 <h1>Example City Mayor · Nov 3, 2026</h1>
-<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched Nov 3, 2026</p>
+<p class="sub">Example City, CA · Candidate list from <a href="https://example.org/nominees.pdf" rel="noopener noreferrer nofollow" target="_blank">Example City Clerk, Notice of Nominees (placeholder)</a> · Researched Nov 4, 2026</p>
 
 
 
@@ -376,6 +387,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
 <dt><span class="chk chk-seen">Search result only</span></dt><dd>The research saw the page only as a search result: a title and a snippet.</dd>
 </dl>
 <p>A found quote shows the page has those words, not that the statement is a fair reading of them. "Page doesn't mention" means the opened page doesn't contain the candidate's surname (or the measure's label), so it may be about someone or something else.</p>
+<p>"In short" and "In brief" are a model's summary of the facts under them, written after the research. Each sentence lists the outlets and the number of facts it rests on, and was checked to cite only those facts, to name no outlet they don't come from, and to use no judging word they don't use. It wasn't checked against the pages themselves: the facts below it are the record. A section summarized for one candidate is summarized for every candidate, or for none.</p>
 <p>A fact marked "reported by N sources" was stated by that many different outlets; it is shown once, with each of them. More sources means wider reporting, not that it is truer or more important.</p>
 <p>In the app, a name with a dotted underline opens everything the research holds on it. A <span class="ctx-eg">who?</span> or <span class="ctx-eg">what?</span> after a name opens a one-line note on it.</p>
 </details></div>
@@ -444,6 +456,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   
   
   
+  
   <section class="sec" id="sample-candidate-a--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <p class="meta grp-src"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
   <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
@@ -486,6 +499,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <p class="note"><strong>Identity check.</strong> Placeholder: another person with this name serves on a county board.</p>
   
   
+  
   <section class="sec" id="sample-candidate-b--background"><h4>Who they are</h4><ul class="facts"><li class="fact">
   <p class="meta grp-src"><a href="https://example.org/mayor" rel="noopener noreferrer nofollow" target="_blank">Example City</a> · author not stated · 2024</p>
   <ul class="grp"><li><span class="ev ev-primary_record">Primary record</span> <span class="chk chk-quoted">Quote found on page</span>
@@ -526,6 +540,7 @@ table.gifts { width: 100%; border-collapse: collapse; font-size: .92rem; font-va
   <p class="cov evidence">Research behind this: 19 searches and 8 pages opened · nothing kept, since the research failed.</p>
   
   <p class="note">Research for this candidate failed in this run; nothing was checked. Every section below keeps its place.</p>
+  
   
   <section class="sec empty" id="sample-candidate-c--background"><h4>Who they are</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--record"><h4>Record in this office</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--accomplishments"><h4>Accomplishments</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--criticisms"><h4>Criticisms and controversies</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--money"><h4>Money and interests</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--endorsements"><h4>Endorsements and affiliations</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--platform"><h4>Stated platform</h4><p class="gap">Not checked.</p></section><section class="sec empty" id="sample-candidate-c--community"><h4>Community impact and local coverage</h4><p class="gap">Not checked.</p></section>
   <section class="sec money" id="sample-candidate-c--filed"><h4>Contributions on file</h4>

@@ -523,7 +523,7 @@ page, and one of them paired two different CalMatters facts (the price cap and n
 Folding either into a reference would hide a real fact. This moves to item 15, whose digest reads
 the facts.
 
-## 15. Section digests
+## 15. Section digests — done
 
 Also takes on what item 14 left: a point several sections repeat (Prop 37's income limit is in "What
 a yes or no vote does" and under the voter's issue) is said once in the digest, citing every fact
@@ -534,6 +534,27 @@ code rejects a digest that cites an unknown or unverified fact, names an outlet 
 those facts' sources, or treats the case for and the case against unevenly. Shown as a summary over
 the facts, never in place of them. A found quote doesn't extend to the digest's wording. About $1–2
 on Sonnet for all saved runs, stored by input hash.
+
+Done (`src/digest.ts`, `deno task digest`). Each section with two or more facts gets 1-4 lines, and
+each candidate or measure with four or more a brief across its sections, which is where a point
+several sections repeat is said once, citing every fact that makes it. Besides the checks above, a
+line may not name anything whose words aren't in the facts it cites: the outlet check alone missed
+an outlet the run never cited ("KQED reports..." with no KQED fact). Evenness is by section: one
+left out for one candidate is left out for all, and a measure's case for and against stand together.
+A failed answer is sent back once with its problems. Saved runs are done as one Message Batch on a
+copy, then copied to the live database by hash (`apply`), so the live data is written by a step that
+calls nothing. The job runner makes one for every new run, last.
+
+Run on a copy of the live data (Nov 3): 34 runs (one had too few facts), 274 sections and briefs
+summarized in 812 lines, 50 left out, about $1.33 in two batches (the 3-run trial before it, about
+$0.18). 27 of 34 first answers failed a check and were sent back. About half the name rejections
+were real (a name in no fact the line cites: "Sergey Brin", "Robert Kaplan"); the rest were the
+checks being literal (an outlet inside a source's name, plurals, "UC", the Chino Champion), fixed
+after the run without a rerun, so those sections stay left out until the facts change or
+`DIGEST_VERSION` is bumped. Not done: saving the model's raw answers, so a check change could be
+replayed for free; lines over `MAX_LINE_CHARS` (9) and sections over four lines (6) are left out,
+not cut. Most lines cite one fact: less condensed than "X, Y, and Z report"; the brief condenses
+most.
 
 ## 16. Tie roles
 
