@@ -411,7 +411,7 @@ export interface SubjectDigest {
   brief: DigestLine[];
   sections: Record<string, DigestLine[]>;
   /** Sections (or "brief") with enough facts that got no digest, and why. */
-  left_out: { section: string; reason: string }[];
+  left_out: { section: string; reason: string; detail?: string }[];
 }
 
 export interface DigestResult {

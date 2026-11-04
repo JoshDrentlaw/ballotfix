@@ -42,7 +42,7 @@ import type {
 } from "./types.ts";
 
 /** Bumped when the request or the checks change, so saved digests are made again. */
-export const DIGEST_VERSION = 1;
+export const DIGEST_VERSION = 2;
 /** A section needs this many facts to be summarized; one fact is its own summary. */
 export const MIN_SECTION_FACTS = 2;
 /** A candidate or measure needs this many facts for a brief across its sections. */
@@ -205,7 +205,28 @@ function plan<T>(
   };
 }
 
-/** Why a line can't stand, or null. */
+/** Why a line can't stand: said on the page, and in more detail back to the model. */
+interface Problem {
+  reason: string;
+  detail: string;
+}
+
+/** The words of a name that make it one: "Republican-affiliated" is "Republican". */
+function nameWords(name: string): string[] {
+  return name.split(/[\s\-‐–]+/).filter((w) => /^[\p{Lu}\p{N}]/u.test(w))
+    .flatMap((w) => nameKey(w).split(" ")).filter(Boolean);
+}
+
+/** "PPIC" for "Public Policy Institute of California": capitals that start words in a row there. */
+function abbreviates(word: string, text: string): boolean {
+  if (!/^[A-Z]{2,6}$/.test(word)) return false;
+  const caps = text.split(/[^\p{L}\p{N}&]+/u).filter((w) => !/^(of|the|and|for|&)$/i.test(w));
+  return caps.some((_, i) =>
+    caps.slice(i, i + word.length).map((w) => w[0] ?? "").join("") === word &&
+    caps.slice(i, i + word.length).every((w) => /^\p{Lu}/u.test(w))
+  );
+}
+
 function lineProblem(
   raw: RawDigestLine,
   allowed: ReadonlySet<string>,
@@ -213,29 +234,62 @@ function lineProblem(
   outlets: readonly string[],
   others: readonly string[],
   subject: string,
-): string | null {
+): Problem | null {
   const text = typeof raw?.text === "string" ? raw.text.trim() : "";
-  if (!text) return "a line is empty";
-  if (text.length > MAX_LINE_CHARS) return `a line is over ${MAX_LINE_CHARS} characters`;
+  const said = `"${text.slice(0, 60)}"`;
+  const problem = (reason: string, about = reason) => ({ reason, detail: `${said} ${about}` });
+  if (!text) return { reason: "a line was empty", detail: "a line is empty" };
+  if (text.length > MAX_LINE_CHARS) return problem(`a line was over ${MAX_LINE_CHARS} characters`);
   const ids = Array.isArray(raw.facts) ? raw.facts.filter((x) => typeof x === "string") : [];
-  if (!ids.length) return `"${text.slice(0, 60)}" cites no fact`;
+  if (!ids.length) return problem("a line cited no fact", "cites no fact");
   const bad = ids.find((id) => !allowed.has(id));
-  if (bad) return `"${text.slice(0, 60)}" cites ${bad}, which isn't one of its facts`;
+  if (bad) {
+    return problem(
+      "a line cited a fact from elsewhere",
+      `cites ${bad}, which isn't one of its facts`,
+    );
+  }
   const cited = ids.map((id) => slots.get(id)!.fact);
   const sources = new Set(cited.flatMap(sourcesOf).map(nameKey));
   const words = cited.map((f) => f.statement).join(" ");
-  const outlet = outlets.find((o) => mentions(text, o) && !sources.has(nameKey(o)));
-  if (outlet) return `"${text.slice(0, 60)}" names ${outlet}, which none of its facts come from`;
+  // An outlet may be named as a source of these facts or as something they mention.
+  const outlet = outlets.find((o) =>
+    mentions(text, o) && !sources.has(nameKey(o)) && !mentions(words, o)
+  );
+  if (outlet) {
+    return problem(
+      `a line named ${outlet}, which its facts don't come from`,
+      `names ${outlet}, which none of its facts come from or mention`,
+    );
+  }
   const other = others.find((o) => mentions(text, o) && !mentions(words, o));
-  if (other) return `"${text.slice(0, 60)}" names ${other}, whom none of its facts name`;
+  if (other) {
+    return problem(
+      `a line named ${other}, whom its facts don't`,
+      `names ${other}, whom none of its facts name`,
+    );
+  }
   // Any other name, an outlet the run never cited included, must come from the cited facts:
-  // each of its words in their statements or sources ("Hertzberg" for "Bob Hertzberg").
-  const known = new Set(nameKey(`${words} ${[...sources].join(" ")} ${subject}`).split(" "));
-  const stray = findNames(text).find((n) => nameKey(n).split(" ").some((w) => !known.has(w)));
-  if (stray) return `"${text.slice(0, 60)}" names ${stray}, which none of its facts name`;
+  // each of its words in their statements or sources ("Hertzberg" for "Bob Hertzberg"), or
+  // an abbreviation of words there ("PPIC").
+  const material = `${words} ${cited.flatMap(sourcesOf).join(" ")} ${subject}`;
+  const known = new Set(nameKey(material).split(" "));
+  const stray = findNames(text).find((n) =>
+    nameWords(n).some((w) => !known.has(w)) &&
+    !(/^[A-Z]{2,6}$/.test(n.trim()) && abbreviates(n.trim(), material))
+  );
+  if (stray) {
+    return problem(
+      `a line named ${stray}, which its facts don't`,
+      `names ${stray}, which none of its facts name`,
+    );
+  }
   const word = characterization(text);
   if (word && !mentions(words, word)) {
-    return `"${text.slice(0, 60)}" says "${word}", which none of its facts say`;
+    return problem(
+      `a line said "${word}", which its facts don't`,
+      `says "${word}", which none of its facts say`,
+    );
   }
   return null;
 }
@@ -274,7 +328,9 @@ function checkDigest(
       }
       const problem = list.map((l) => lineProblem(l, allowed, slots, outlets, others, rs.name))
         .find(Boolean);
-      if (problem) return out[si].left_out.push({ section, reason: problem });
+      if (problem) {
+        return out[si].left_out.push({ section, reason: problem.reason, detail: problem.detail });
+      }
       const kept = list.map((l) => toLine(l, slots));
       if (section === BRIEF) out[si].brief = kept;
       else out[si].sections[section] = kept;
@@ -338,7 +394,7 @@ export function problemsOf(
   return request.subjects.flatMap((rs) => {
     const s = subjects[Number(rs.id.slice(1)) - 1];
     return (s?.left_out ?? []).filter((l) => !l.reason.startsWith("left out "))
-      .map((l) => `${rs.id} ${l.section}: ${l.reason}`);
+      .map((l) => `${rs.id} ${l.section}: ${l.detail ?? l.reason}`);
   });
 }
 

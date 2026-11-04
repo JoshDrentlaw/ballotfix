@@ -131,7 +131,7 @@ Deno.test("a line citing another section's fact, an outlet not its own, or anoth
       a.subjects[0].sections[0].lines[0].facts.push("f1");
       return a;
     }],
-    ["names KQED, which none of its facts come from", (req) => {
+    ["names KQED, which none of its facts name", (req) => {
       const a = fair(req);
       a.subjects[0].sections[0].lines[0].text = "KQED reports parks.";
       return a;
@@ -151,11 +151,11 @@ Deno.test("a line citing another section's fact, an outlet not its own, or anoth
     const d = new Scripted([answer]);
     const { dossier, calls } = await runPlan(planRace(r, "m", NOW)!, d);
     assertEquals(calls, 2, why); // sent back once, with what was wrong
-    assertStringIncludes(d.calls[1].problems!.join(" "), why.split(",")[0].split(" ").slice(-1)[0]);
+    assertStringIncludes(d.calls[1].problems!.join(" "), why);
     const [sida, reyes] = dossier.digest!.subjects;
     assertEquals(sida.sections.platform, undefined, why);
     assertEquals(reyes.sections.platform, undefined, why);
-    assertStringIncludes(sida.left_out[0].reason, why.split('"')[0].trim().split(",")[0]);
+    assert(sida.left_out[0].reason.startsWith("a line "), why);
     assertStringIncludes(reyes.left_out[0].reason, "left out for every candidate");
     assertStringIncludes(renderRace(dossier), "No summary here:");
   }
@@ -216,4 +216,23 @@ Deno.test("the job runner digests a finished run after its other steps", async (
   assertEquals(saved.race!.digest!.subjects[1].sections.platform.length, 1);
   assert(logs.some((l) => l.includes("digested 4 facts in 1 call(s), 0 left out")));
   s.db.close();
+});
+
+Deno.test("a name its facts mention, an abbreviation of one, and a hyphenated word all stand", async () => {
+  const r = await race();
+  for (
+    const text of [
+      "Inland Daily and Fontana Herald News report Joz Sida wants parks.",
+      "The Fontana Herald News (FHN) reports Joz Sida wants parks.",
+      "Inland Daily-affiliated reporting says rents are too high.",
+    ]
+  ) {
+    const d = new Scripted([(req) => {
+      const a = fair(req);
+      a.subjects[0].sections[0].lines[0].text = text;
+      return a;
+    }]);
+    const { calls, left_out } = await runPlan(planRace(r, "m", NOW)!, d);
+    assertEquals([calls, left_out], [1, 0], text);
+  }
 });

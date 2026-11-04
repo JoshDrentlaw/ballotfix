@@ -173,7 +173,7 @@ async function batch(
       fetches: 0,
     };
     spent += (estimateCost(model, u) ?? 0) / 2;
-    console.log(`[usage] ${usageLine(`digest ${r.custom_id} (batch: half this)`, model, u)}`);
+    console.log(usageLine(`digest ${r.custom_id} (batch: half this)`, model, u));
     if (m.stop_reason === "refusal") {
       out.set(r.custom_id, { error: "the model declined" });
       continue;
