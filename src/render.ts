@@ -509,7 +509,13 @@ function factsAt(
  */
 function digestBox(head: string, note: string, lines: readonly DigestLine[], at: FactsAt): string {
   const items = lines.map((l) => {
-    const cited = l.facts.map((c) => at(c.section, c.index)).filter((f): f is Fact => !!f);
+    // A fact under a voter's issue is also in its section: the same fact counts once.
+    const cited = [
+      ...new Map(
+        l.facts.map((c) => at(c.section, c.index)).filter((f): f is Fact => !!f)
+          .map((f) => [shownKey(f), f]),
+      ).values(),
+    ];
     const outlets = [
       ...new Set(
         cited.flatMap((f) => [f.source_name, ...(f.also ?? []).map((a) => a.source_name)]),

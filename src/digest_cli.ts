@@ -214,11 +214,15 @@ async function run(store: RunStore, model: string, todo: Planned[]): Promise<voi
   });
   if (retry.length) {
     console.log(`${retry.length} answer(s) failed a check; sending them back once.`);
+    // A failed retry batch keeps the first answers: they were already paid for.
     const second = await batch(
       client,
       retry.map((r) => ({ key: `r${r.i}`, request: r.request })),
       model,
-    );
+    ).catch((e) => {
+      console.log(`retry batch failed, keeping the first answers: ${e}`);
+      return new Map<string, { raw?: unknown; error?: string }>();
+    });
     for (const { i } of retry) {
       const got = second.get(`r${i}`);
       if (!got?.raw) continue;
@@ -229,18 +233,37 @@ async function run(store: RunStore, model: string, todo: Planned[]): Promise<voi
   for (const [i, t] of sendable.entries()) {
     const c = checked.get(i);
     const dossier = c ? t.plan.finish(c) : digestFailed(t.plan, errors.get(i) ?? "no result");
-    // Read again just before saving, so a change made meanwhile isn't overwritten.
-    const fresh = await store.get(t.run.id);
-    if (!fresh) continue;
-    await store.save(withDigest(fresh, dossier));
+    if (!(await saveDigest(store, t, model, dossier))) continue;
     console.log(
       `${t.run.id}: ${c ? `saved, ${leftOut(c)} left out` : `recorded failure: ${errors.get(i)}`}`,
     );
   }
   for (const t of todo.filter((t) => !t.plan.sent)) {
-    const fresh = await store.get(t.run.id);
-    if (fresh) await store.save(withDigest(fresh, t.plan.finish(null)));
+    await saveDigest(store, t, model, t.plan.finish(null));
   }
+}
+
+/**
+ * Puts only the digest onto the run as it is now, read again just before
+ * saving, so a change made meanwhile (the server's own steps) isn't
+ * overwritten. Skipped when the facts changed since the plan: the digest's
+ * citations point at facts by place.
+ */
+async function saveDigest(
+  store: RunStore,
+  t: Planned,
+  model: string,
+  made: unknown,
+): Promise<boolean> {
+  const fresh = await store.get(t.run.id);
+  const now = fresh && planOf(fresh, model, new Date());
+  if (!fresh || !now || now.hash !== t.plan.hash) {
+    console.log(`${t.run.id}: changed since it was planned; not saved`);
+    return false;
+  }
+  const digest = (made as { digest?: DigestResult }).digest;
+  await store.save(withDigest(fresh, { ...(fresh.measure_result ?? fresh.race), digest }));
+  return true;
 }
 
 /** Copies digests from another database's runs, only where this run's facts hash the same. */
@@ -283,6 +306,21 @@ if (import.meta.main) {
   const data = args.data ?? "data";
   const model = args.model ?? Deno.env.get("BALLOTFIX_DIGEST_MODEL") ?? DEFAULT_DIGEST_MODEL;
   const only = args.only ? new Set(args.only.split(",")) : null;
+  // "off" (or a model without a price) would send a batch that can't run, or estimate it at $0.
+  if (cmd === "run" || cmd === "estimate") {
+    const zero = {
+      requests: 0,
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      searches: 0,
+      fetches: 0,
+    };
+    if (estimateCost(model, zero) === null) {
+      throw new Error(`no price for model "${model}"; pass --model or set BALLOTFIX_DIGEST_MODEL`);
+    }
+  }
   const stores = await openStores(data);
   try {
     if (cmd === "apply") {

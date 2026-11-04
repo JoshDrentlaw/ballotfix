@@ -301,7 +301,7 @@ function lineProblem(
 function toLine(raw: RawDigestLine, slots: ReadonlyMap<string, Slot>): DigestLine {
   return {
     text: raw.text.trim(),
-    facts: [...new Set(raw.facts)].map((id) => {
+    facts: [...new Set(raw.facts.filter((x) => typeof x === "string"))].map((id) => {
       const s = slots.get(id)!;
       return { section: s.section, index: s.index };
     }),
@@ -441,7 +441,13 @@ export async function runPlan<T>(
   const first = p.check(await digester.digestFacts(p.request));
   const problems = problemsOf(p.request, first);
   if (!problems.length) return { dossier: p.finish(first), calls: 1, left_out: leftOut(first) };
-  const second = p.check(await digester.digestFacts({ ...p.request, problems }));
+  // A failed retry keeps the first answer: its checked lines were already paid for.
+  let second: SubjectDigest[];
+  try {
+    second = p.check(await digester.digestFacts({ ...p.request, problems }));
+  } catch {
+    return { dossier: p.finish(first), calls: 2, left_out: leftOut(first) };
+  }
   const best = leftOut(second) < leftOut(first) ? second : first;
   return { dossier: p.finish(best), calls: 2, left_out: leftOut(best) };
 }
