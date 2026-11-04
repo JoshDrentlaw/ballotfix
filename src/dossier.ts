@@ -188,7 +188,7 @@ function quoteIn(quote: string, hay: string): boolean | null {
   return true;
 }
 
-const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "phd", "md", "esq"]);
+export const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v", "phd", "md", "esq"]);
 
 /** A candidate's surname as written, for the name check: the last word that isn't a suffix. */
 export function surname(name: string): string {

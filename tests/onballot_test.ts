@@ -118,6 +118,7 @@ Deno.test("a measure's label is found as facts write it, and not inside another 
   assert(local.test("Voters rejected Measure A."));
   assert(local.test("Measures B and A share a donor."));
   assert(!local.test("a measure as broad as this"));
+  assert(!measurePattern("Measure I").test("She backed Prop 50 and I think it passes."));
 });
 
 Deno.test("a candidate is named by a given name and the surname together, never the surname alone", () => {
@@ -133,6 +134,16 @@ Deno.test("a candidate is named by a given name and the surname together, never 
   assert(namesPerson("Victor H. Rodriguez spoke.", rod));
   assert(!namesPerson("Victor met with the city and Rodriguez.", rod));
   assertEquals(nameParts("CHER"), null);
+  const leon = nameParts("KEVIN DE LEÓN")!;
+  assert(namesPerson("Kevin de León voted no.", leon));
+  assert(!namesPerson("De León voted no.", leon));
+  const cruz = nameParts("MARIA DE LA CRUZ")!;
+  assert(namesPerson("Maria de la Cruz said so.", cruz));
+  assert(!namesPerson("Councilmember de la Cruz said so.", cruz));
+  const lopez = nameParts("MARY LOPEZ")!;
+  assert(!namesPerson("Supervisors Mary Brown, Jose Lopez backed it.", lopez));
+  assert(!namesPerson("It was Mary. Lopez said no.", lopez));
+  assert(namesPerson("Jane Doe backed it.", nameParts("JANE DOE MD")!));
 });
 
 Deno.test("each item lists the facts that name another item, either way, and groups tied to others", async () => {
@@ -211,6 +222,13 @@ Deno.test("an item with no connection says what was compared; a lone item shows 
     }),
   };
   assertEquals(onBallotHtml(onBallot([lone], 0), (id) => id), "");
+  // Others started but not done (or not loadable): the box says so rather than vanishing.
+  const waiting = onBallotHtml(onBallot([lone], 0), (id) => id, {
+    notCompared: ["City Clerk"],
+    unreadable: ["Proposition 40"],
+  });
+  assertStringIncludes(waiting, "No other item on this ballot has finished research yet");
+  assertStringIncludes(waiting, "couldn&#39;t be read: Proposition 40.");
   const other: BallotItemDossier = {
     heading: "Proposition 37",
     runId: "r37",

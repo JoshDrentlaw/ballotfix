@@ -641,7 +641,8 @@ export interface BallotConnections {
   /** Alphabetical by name. */
   shared: BallotShared[];
   /** Names that may be one entity across items, kept separate: each with where it appears. */
-  possible: { name: string; item: string; label: string }[][];
+  /** Each with its item's position in the list ballotConnections was given (`at`). */
+  possible: { at: number; name: string; item: string; label: string }[][];
   /** Items and subjects compared, and how many places (state + jurisdiction) they are in. */
   items: number;
   subjects: number;
@@ -739,7 +740,7 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
     const m = byLoose.get(k)!;
     const seen = [...m.values()].flat().sort((a, b) => a.at - b.at);
     if (m.size > 1 && new Set(seen.map((x) => x.at)).size > 1) {
-      possible.push(seen.map(({ name, item, label }) => ({ name, item, label })));
+      possible.push(seen.map(({ at, name, item, label }) => ({ at, name, item, label })));
     }
   }
   return {

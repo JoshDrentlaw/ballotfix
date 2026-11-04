@@ -1569,18 +1569,8 @@ export function ballotSharedHtml(
       ).join("")
     }</ul>`
     : `<p class="gap">No contributor or name is tied to more than one item.</p>`;
-  const gaps = [
-    ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
-    ...(notCompared.length
-      ? [`Not compared, because their research isn't done: ${notCompared.join("; ")}.`]
-      : []),
-    ...c.gaps.map((g) => `${g.item}: ${g.why}.`),
-  ].map((g) => `<p class="gap">${esc(g)}</p>`).join("");
-  const possible = c.possible.map((group) =>
-    `<p class="gap">Possibly the same, kept separate because the names, details, or places don't match exactly: ${
-      group.map((x) => `${esc(x.name)} (${esc(x.item)} · ${esc(x.label)})`).join(" / ")
-    }.</p>`
-  ).join("");
+  const gaps = compareGaps(c, notCompared).map((g) => `<p class="gap">${esc(g)}</p>`).join("");
+  const possible = ballotPossibleHtml(c.possible);
   return `<details class="shared sec" id="shared"><summary>Shared across this ballot (${
     c.shared.length ? `${c.shared.length} found` : "none found"
   })</summary>
@@ -1590,6 +1580,33 @@ export function ballotSharedHtml(
       : ""
   } Sharing within one contest or measure is on its own page. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${gaps}${list}${possible}</details>`;
+}
+
+/** What limits a comparison of a ballot's items: the cap, items not compared, and each gap. */
+function compareGaps(
+  c: BallotConnections,
+  notCompared: readonly string[],
+  unreadable: readonly string[] = [],
+): string[] {
+  return [
+    ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
+    ...(notCompared.length
+      ? [`Not compared, because their research isn't done: ${notCompared.join("; ")}.`]
+      : []),
+    ...(unreadable.length
+      ? [`Not compared, because their saved research couldn't be read: ${unreadable.join("; ")}.`]
+      : []),
+    ...c.gaps.map((g) => `${g.item}: ${g.why}.`),
+  ];
+}
+
+/** Near misses across a ballot's items, each kept separate and said so. */
+function ballotPossibleHtml(possible: BallotConnections["possible"]): string {
+  return possible.map((group) =>
+    `<p class="gap">Possibly the same, kept separate because the names, details, or places don't match exactly: ${
+      group.map((x) => `${esc(x.name)} (${esc(x.item)} · ${esc(x.label)})`).join(" / ")
+    }.</p>`
+  ).join("");
 }
 
 /** Where a fact sits on its item's page, for a link to it. */
@@ -1605,7 +1622,8 @@ function mentionHtml(m: Mention, target: "race" | "measure", href: string): stri
   const f = m.fact;
   const where = [m.subject, m.title].filter(Boolean).join(" · ");
   const names = target === "race" ? ` <span class="desig">(names ${esc(m.names)})</span>` : "";
-  const sources = [f, ...(f.also ?? [])].map((x) => link(x.source_url, x.source_name)).join(", ");
+  // Every source with its author and date, as the fact shows them in place.
+  const sources = [f, ...(f.also ?? [])].map(factMeta).join("; ");
   return `<li><span class="who-tag">${esc(where)}:</span>${names} ${evTag(f.evidence_type)}${
     checkTag(f)
   } “${esc(f.statement)}” · ${sources} · <a class="jumpto" href="${
@@ -1623,9 +1641,15 @@ function mentionHtml(m: Mention, target: "race" | "measure", href: string): stri
 export function onBallotHtml(
   o: OnBallot,
   hrefOf: (runId: string) => string,
-  opts: { entityHref?: (key: string) => string | null; notCompared?: readonly string[] } = {},
+  opts: {
+    entityHref?: (key: string) => string | null;
+    notCompared?: readonly string[];
+    /** Started items whose run couldn't be loaded. */
+    unreadable?: readonly string[];
+  } = {},
 ): string {
-  if (o.compared < 1) return "";
+  // Nothing else on the ballot was started: nothing to compare or to say.
+  if (o.compared < 1 && !opts.notCompared?.length && !opts.unreadable?.length) return "";
   const here = o.candidates ? "race" : "measure";
   const links = opts.entityHref ? { runId: "", href: opts.entityHref } : undefined;
   const blocks = o.items.map((it) => {
@@ -1671,11 +1695,12 @@ export function onBallotHtml(
     : "";
   const c = o.connections;
   const gapLines = [
-    ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
-    ...(opts.notCompared?.length
-      ? [`Not compared, because their research isn't done: ${opts.notCompared.join("; ")}.`]
+    ...compareGaps(c, opts.notCompared ?? [], opts.unreadable ?? []),
+    ...(c.places > 1
+      ? [
+        `These items are in ${c.places} different places (city, county, district, or state), and groups are only matched within one place, so the same group in two places is listed as a possible match instead.`,
+      ]
       : []),
-    ...c.gaps.map((g) => `${g.item}: ${g.why}.`),
   ];
   // What limits the comparison stays on the page, folded under its count like the standing gaps.
   const gaps = gapLines.length
@@ -1683,6 +1708,11 @@ export function onBallotHtml(
       plural(gapLines.length, "note")
     }</span></h5></summary>${
       gapLines.map((g) => `<p class="gap">${esc(g)}</p>`).join("")
+    }</details>`
+    : "";
+  const possible = o.possible.length
+    ? `<details class="pair"><summary><h5>Possibly the same, kept separate <span class="desig">${o.possible.length} found</span></h5></summary>${
+      ballotPossibleHtml(o.possible)
     }</details>`
     : "";
   const n = o.items.length;
@@ -1697,10 +1727,12 @@ export function onBallotHtml(
 ${
     n || o.groups.length
       ? `${blocks}${groups}`
-      : `<p class="gap">Of the ${
+      : o.compared
+      ? `<p class="gap">Of the ${
         plural(o.compared, "other researched item")
       }, no fact here names one, none of their facts names this ${here}, and no group or contributor is tied to both.</p>`
-  }${gaps}</details>`;
+      : `<p class="gap">No other item on this ballot has finished research yet, so there is nothing to compare.</p>`
+  }${possible}${gaps}</details>`;
 }
 
 function dossierSection(

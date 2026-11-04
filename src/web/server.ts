@@ -783,12 +783,16 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     ].filter((k) => b.started[k] || k === link.key);
     const items: BallotItemDossier[] = [];
     const notCompared: string[] = [];
+    const unreadable: string[] = [];
     let here = -1;
     const slugs = new Map<string, string>();
     for (const k of keys) {
       const it = k === link.key ? run : await o.store.get(b.started[k]);
       const heading = ballotItem(b, k)?.heading ?? "";
-      if (!it) continue;
+      if (!it) {
+        unreadable.push(heading);
+        continue;
+      }
       if (it.status !== "done") {
         notCompared.push(heading);
         continue;
@@ -800,6 +804,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     if (here < 0) return undefined;
     return onBallotHtml(onBallot(items, here), (id) => `${BASE}/races/${id}`, {
       notCompared,
+      unreadable,
       entityHref: (key) => {
         const s = slugs.get(key);
         return s ? `${BASE}/entities/${s}` : null;
