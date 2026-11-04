@@ -25,7 +25,6 @@ import {
   digestBatchParams,
   digestPrompt,
   estimateCost,
-  usageLine,
 } from "./research/anthropic.ts";
 import {
   digestFailed,
@@ -37,11 +36,9 @@ import {
   problemsOf,
 } from "./digest.ts";
 import type { DigestRequest, DigestResult, SubjectDigest } from "./types.ts";
+import { batch } from "./batch.ts";
 import { openStores, type RunRecord, type RunStore } from "./web/store.ts";
 
-/** How long `run` waits on a batch before giving up (most end within the hour). */
-const MAX_WAIT_MS = 3 * 60 * 60 * 1000;
-const POLL_MS = 30_000;
 /** Output per summarized section and per brief, thinking included: an assumption. */
 const OUTPUT_PER_SECTION = 400;
 const OUTPUT_PER_BRIEF = 500;
@@ -127,79 +124,14 @@ function report(todo: Planned[], current: number, none: number, model: string): 
   return total;
 }
 
-/** One Message Batch: each request keyed by its index, results read back by key. */
-async function batch(
-  client: Anthropic,
-  requests: { key: string; request: DigestRequest }[],
-  model: string,
-): Promise<Map<string, { raw?: unknown; error?: string }>> {
-  const out = new Map<string, { raw?: unknown; error?: string }>();
-  if (!requests.length) return out;
-  const created = await client.messages.batches.create({
-    requests: requests.map((r) => ({
-      custom_id: r.key,
-      // output_config and adaptive thinking are Messages API fields the batch takes as is.
-      params: digestBatchParams(
-        r.request,
-        model,
-      ) as unknown as Anthropic.MessageCreateParamsNonStreaming,
-    })),
-  });
-  console.log(`batch ${created.id}: ${requests.length} request(s)`);
-  const start = Date.now();
-  let b = created;
-  while (b.processing_status !== "ended") {
-    if (Date.now() - start > MAX_WAIT_MS) {
-      throw new Error(`batch ${b.id} still running after ${MAX_WAIT_MS / 60000} minutes`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_MS));
-    b = await client.messages.batches.retrieve(b.id);
-    console.log(`  ${b.processing_status}: ${JSON.stringify(b.request_counts)}`);
-  }
-  let spent = 0;
-  for await (const r of await client.messages.batches.results(b.id)) {
-    if (r.result.type !== "succeeded") {
-      out.set(r.custom_id, { error: `batch request ${r.result.type}` });
-      continue;
-    }
-    const m = r.result.message;
-    const u = {
-      requests: 1,
-      input: m.usage.input_tokens,
-      output: m.usage.output_tokens,
-      cacheRead: m.usage.cache_read_input_tokens ?? 0,
-      cacheWrite: m.usage.cache_creation_input_tokens ?? 0,
-      searches: 0,
-      fetches: 0,
-    };
-    spent += (estimateCost(model, u) ?? 0) / 2;
-    console.log(usageLine(`digest ${r.custom_id} (batch: half this)`, model, u));
-    if (m.stop_reason === "refusal") {
-      out.set(r.custom_id, { error: "the model declined" });
-      continue;
-    }
-    if (m.stop_reason === "max_tokens") {
-      out.set(r.custom_id, { error: "the answer hit max_tokens before finishing" });
-      continue;
-    }
-    const text = m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
-    try {
-      out.set(r.custom_id, { raw: JSON.parse(text) });
-    } catch {
-      out.set(r.custom_id, { error: "the answer was not valid JSON" });
-    }
-  }
-  console.log(`batch ${b.id}: about $${spent.toFixed(3)} at the batch discount`);
-  return out;
-}
-
 async function run(store: RunStore, model: string, todo: Planned[]): Promise<void> {
   const client = new Anthropic();
   const sendable = todo.filter((t) => t.plan.sent);
   const first = await batch(
     client,
-    sendable.map((t, i) => ({ key: `r${i}`, request: t.plan.request })),
+    sendable.map((t, i) => ({ key: `r${i}`, params: digestBatchParams(t.plan.request, model) })),
     model,
+    "digest",
   );
   const checked = new Map<number, SubjectDigest[]>();
   const errors = new Map<number, string>();
@@ -217,8 +149,9 @@ async function run(store: RunStore, model: string, todo: Planned[]): Promise<voi
     // A failed retry batch keeps the first answers: they were already paid for.
     const second = await batch(
       client,
-      retry.map((r) => ({ key: `r${r.i}`, request: r.request })),
+      retry.map((r) => ({ key: `r${r.i}`, params: digestBatchParams(r.request, model) })),
       model,
+      "digest",
     ).catch((e) => {
       console.log(`retry batch failed, keeping the first answers: ${e}`);
       return new Map<string, { raw?: unknown; error?: string }>();

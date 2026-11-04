@@ -28,7 +28,8 @@
  */
 
 import { attachNotes } from "./context.ts";
-import { normalizeUrl } from "./dossier.ts";
+import { marksOf, tieKey } from "./ties.ts";
+import { normalizeUrl, plainText } from "./dossier.ts";
 import {
   contributorRef,
   type EntityRef,
@@ -60,6 +61,7 @@ import {
   type RawFinanceResult,
   type RawFinanceSubject,
   type SectionResult,
+  type TieRoleMark,
 } from "./types.ts";
 
 /** Most contributions kept in one run, shared equally. Bounds the answer's size and cost. */
@@ -443,7 +445,13 @@ export const measureFinanceFailed = (m: MeasureDossier, error: string) =>
 /** How an entity is tied to one party: it gave money, or a support fact names it. */
 export type Tie =
   | { kind: "contribution"; contribution: Contribution }
-  | { kind: "named"; section: typeof SUPPORT_SECTIONS[number]; fact: Fact };
+  | {
+    kind: "named";
+    section: typeof SUPPORT_SECTIONS[number];
+    fact: Fact;
+    /** What the fact's own words say the name does, where they say it (src/ties.ts). */
+    mark?: TieRoleMark;
+  };
 
 /** One side of a comparison: a candidate, or a measure's supporters or opponents. */
 export interface Party {
@@ -481,6 +489,8 @@ function party(
   scope: { state: string; jurisdiction: string; notes: RaceDossier["context"] },
   /** Row ids as the graph writes them (`run|subject|row`), so keys match the graph's. */
   row: { run: string; subject: number },
+  /** The tie marks of the dossier, and this party's place in it (a candidate's index; 0 for a measure). */
+  marks: { by: ReadonlyMap<string, TieRoleMark>; subject: number } = { by: new Map(), subject: 0 },
 ): Party {
   const ties = new Map<string, { ref: EntityRef; ties: Tie[] }>();
   const add = (ref: EntityRef, tie: Tie) => {
@@ -503,12 +513,24 @@ function party(
   // The same rule the graph's "named" role uses: verified notes, attached where the page shows them.
   const notes = (scope.notes?.notes ?? []).filter((n) => n.verified);
   for (const { section, result } of support) {
-    for (const fact of result?.facts ?? []) {
+    (result?.facts ?? []).forEach((fact, index) => {
       for (const p of attachNotes(fact.statement, notes)) {
         if (typeof p === "string") continue;
-        add(noteRef(p.note, scope.state, scope.jurisdiction), { kind: "named", section, fact });
+        const found = marks.by.get(
+          tieKey({ section, subject: marks.subject, index, name: p.note.name }),
+        );
+        // A mark is keyed by the fact's place: shown only while its words are still that fact's.
+        const mark = found && plainText(fact.statement).includes(plainText(found.words))
+          ? found
+          : undefined;
+        add(noteRef(p.note, scope.state, scope.jurisdiction), {
+          kind: "named",
+          section,
+          fact,
+          ...(mark ? { mark } : {}),
+        });
       }
-    }
+    });
   }
   return { label, ties, untyped: [...new Set(untyped)] };
 }
@@ -548,6 +570,7 @@ export function raceParties(race: RaceDossier, runId = "page"): Party[] {
   const q = race.query;
   const scope = { state: q.state, jurisdiction: q.city, notes: race.context };
   const subjects = race.finance?.subjects ?? [];
+  const marks = marksOf(race);
   return race.candidates.flatMap((c, i) => {
     if (c.status === "pending") return [];
     const subject = subjects.findIndex((s) => s.candidate === i);
@@ -557,6 +580,7 @@ export function raceParties(race: RaceDossier, runId = "page"): Party[] {
       c.status === "ok" ? [{ section: "endorsements", result: c.sections.endorsements }] : [],
       scope,
       { run: runId, subject },
+      { by: marks, subject: i },
     )];
   });
 }
@@ -574,6 +598,7 @@ export function measureParties(m: MeasureDossier, runId = "page"): Party[] {
   const q = m.query;
   const scope = { state: q.state, jurisdiction: q.jurisdiction, notes: m.context };
   const subjects = m.finance?.subjects ?? [];
+  const marks = marksOf(m);
   const side = (s: "support" | "oppose", section: "case_for" | "case_against") => {
     const subject = subjects.findIndex((x) => x.side === s);
     return party(
@@ -582,6 +607,7 @@ export function measureParties(m: MeasureDossier, runId = "page"): Party[] {
       [{ section, result: m.sections[section] }],
       scope,
       { run: runId, subject },
+      { by: marks, subject: 0 },
     );
   };
   return [side("support", "case_for"), side("oppose", "case_against")];

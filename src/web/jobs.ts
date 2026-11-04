@@ -26,6 +26,7 @@ import {
   planRace,
   runPlan,
 } from "../digest.ts";
+import { planMeasureTies, planRaceTies, runTies, type TiePlan, tiesCurrent } from "../ties.ts";
 import { officeForRace, raceOfficeFailed } from "../office.ts";
 import { runMeasure, runRace } from "../race.ts";
 import { slug } from "../render.ts";
@@ -45,6 +46,7 @@ import type {
   RaceQuery,
   ResearchPort,
   SharedSourceFinder,
+  TieRoleMarker,
 } from "../types.ts";
 import type { BallotLink, BallotRecord, BallotStore, RunRecord, RunStore } from "./store.ts";
 
@@ -91,6 +93,13 @@ export interface JobRunnerOptions {
   makeDigester?: () => Digester;
   /** The digest model's name, part of each digest's input hash. */
   digestModel?: string;
+  /**
+   * Marks what each named tie's fact says the name does: one call per run
+   * with named ties, after the digest. Omit to skip.
+   */
+  makeTieMarker?: () => TieRoleMarker;
+  /** The tie model's name, part of the marks' input hash. */
+  tiesModel?: string;
 }
 
 /** What one finished run needs for the steps after it, race or measure. */
@@ -176,6 +185,8 @@ export class JobRunner {
   readonly #makeSharedFinder: (() => SharedSourceFinder) | undefined;
   readonly #makeDigester: (() => Digester) | undefined;
   readonly #digestModel: string;
+  readonly #makeTieMarker: (() => TieRoleMarker) | undefined;
+  readonly #tiesModel: string;
   #tail: Promise<void> = Promise.resolve();
   #waiting = 0;
   #post = new Set<Promise<void>>();
@@ -194,6 +205,8 @@ export class JobRunner {
     this.#makeSharedFinder = opts.makeSharedFinder;
     this.#makeDigester = opts.makeDigester;
     this.#digestModel = opts.digestModel ?? "unknown";
+    this.#makeTieMarker = opts.makeTieMarker;
+    this.#tiesModel = opts.tiesModel ?? "unknown";
   }
 
   /**
@@ -351,11 +364,11 @@ export class JobRunner {
     dossier: T,
     planOf: (d: T, model: string, now: Date) => DigestPlan<T> | null,
     save: (d: T) => Promise<void>,
-  ): Promise<void> {
+  ): Promise<T> {
     const make = this.#makeDigester;
     const p = make && planOf(dossier, this.#digestModel, this.#now());
-    if (!make || !p || isCurrent(dossier, p)) return;
-    await this.#after(
+    if (!make || !p || isCurrent(dossier, p)) return dossier;
+    return await this.#after(
       id,
       "digest",
       dossier,
@@ -369,6 +382,33 @@ export class JobRunner {
       },
       save,
       (_d, error) => digestFailed(p, error),
+    );
+  }
+
+  /** The named ties' roles, last: skipped when the run has none or they're marked for these facts. */
+  async #afterTies<T extends RaceDossier | MeasureDossier>(
+    id: string,
+    dossier: T,
+    planOf: (d: T, model: string, now: Date) => TiePlan<T> | null,
+    save: (d: T) => Promise<void>,
+  ): Promise<void> {
+    const make = this.#makeTieMarker;
+    const p = make && planOf(dossier, this.#tiesModel, this.#now());
+    if (!make || !p || tiesCurrent(dossier, p)) return;
+    await this.#after(
+      id,
+      "tie roles",
+      dossier,
+      async () => {
+        const r = await runTies(p, make());
+        return {
+          dossier: r.dossier,
+          changed: true,
+          log: [`marked ${r.marked} of ${p.request.ties.length} named tie(s)`],
+        };
+      },
+      save,
+      (_d, error) => p.finish(null, error),
     );
   }
 
@@ -511,7 +551,8 @@ export class JobRunner {
           const saveMeasure = (d: MeasureDossier) => save({ measure_result: d });
           this.#background(
             this.#afterDone(run.id, result, { ...MEASURE_STEPS, save: saveMeasure })
-              .then((d) => this.#afterDigest(run.id, d, planMeasure, saveMeasure)),
+              .then((d) => this.#afterDigest(run.id, d, planMeasure, saveMeasure))
+              .then((d) => this.#afterTies(run.id, d, planMeasureTies, saveMeasure)),
           );
         }
         return;
@@ -530,7 +571,8 @@ export class JobRunner {
       this.#background(
         this.#afterDone(run.id, race, { ...RACE_STEPS, save: saveRace })
           .then((d) => this.#afterOffice(run.id, d, saveRace))
-          .then((d) => this.#afterDigest(run.id, d, planRace, saveRace)),
+          .then((d) => this.#afterDigest(run.id, d, planRace, saveRace))
+          .then((d) => this.#afterTies(run.id, d, planRaceTies, saveRace)),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -37,6 +37,10 @@
  *   BALLOTFIX_DIGEST_MODEL  model for the one call per finished run, after every other step,
  *                        that summarizes each section's verified facts, every line checked
  *                        against the facts it cites (default: claude-sonnet-5-5); "off" skips it
+ *   BALLOTFIX_TIES_MODEL  model for the one low-effort call per finished run with named ties
+ *                        that marks what each tie's fact says the name does (supports,
+ *                        opposes, reported), kept only where the fact's words say it
+ *                        (default: claude-haiku-5-5); "off" skips it
  *   BALLOTFIX_MAX_QUEUED  races allowed to wait behind the running one (default 30); waiting
  *                        races are saved and put back in line after a restart
  *
@@ -44,7 +48,11 @@
  */
 
 import { NetFileClient, NetFileResearcher, parseAgencyMap } from "./netfile.ts";
-import { AnthropicResearcher, DEFAULT_DIGEST_MODEL } from "./research/anthropic.ts";
+import {
+  AnthropicResearcher,
+  DEFAULT_DIGEST_MODEL,
+  DEFAULT_TIES_MODEL,
+} from "./research/anthropic.ts";
 import { BallotJobs, JobRunner } from "./web/jobs.ts";
 import { createApp } from "./web/server.ts";
 import { openStores } from "./web/store.ts";
@@ -144,6 +152,14 @@ const digester = () =>
     effort: effort as Effort,
     log,
   });
+const tiesModel = env("BALLOTFIX_TIES_MODEL");
+const tieMarker = () =>
+  new AnthropicResearcher({
+    model: env("BALLOTFIX_MODEL"),
+    tiesModel,
+    effort: effort as Effort,
+    log,
+  });
 const maxQueued = env("BALLOTFIX_MAX_QUEUED");
 if (maxQueued !== undefined && !/^\d+$/.test(maxQueued)) {
   throw new Error("BALLOTFIX_MAX_QUEUED must be a whole number");
@@ -158,6 +174,8 @@ const jobs = new JobRunner(store, researcher, {
   makeSharedFinder: sharedModel === "off" ? undefined : sharedFinder,
   makeDigester: digestModel === "off" ? undefined : digester,
   digestModel: digestModel ?? DEFAULT_DIGEST_MODEL,
+  makeTieMarker: tiesModel === "off" ? undefined : tieMarker,
+  tiesModel: tiesModel ?? DEFAULT_TIES_MODEL,
 });
 const ballots = new BallotJobs(ballotStore, researcher, { log: (m) => console.log(m) });
 // Runs that were waiting when the server stopped never started: back in line, in order,

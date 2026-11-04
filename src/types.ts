@@ -322,6 +322,8 @@ export interface RaceDossier {
   office?: OfficeResult;
   /** A model's summary of each section's verified facts (src/digest.ts). Absent until made. */
   digest?: DigestResult;
+  /** What each named tie's fact says the name does (src/ties.ts). Absent until made. */
+  tie_roles?: TieRoleResult;
   /**
    * Pages covering every candidate, found once before any candidate's research
    * and put first in each one's prompt (src/shared.ts). Absent on runs saved
@@ -396,6 +398,49 @@ export interface MeasureDossier {
   finance?: FinanceResult;
   /** A model's summary of each section's verified facts (src/digest.ts). Absent until made. */
   digest?: DigestResult;
+  /** What each named tie's fact says the name does (src/ties.ts). Absent until made. */
+  tie_roles?: TieRoleResult;
+}
+
+/** What a named tie's fact says the name does, relative to the candidate or measure. */
+export const TIE_ROLES = ["supports", "opposes", "reported"] as const;
+export type TieRole = typeof TIE_ROLES[number];
+
+/** One tie's mark: which fact, which name, its role, and the fact's words that say so. */
+export interface TieRoleMark {
+  section: string;
+  /** The candidate's index in ballot order; 0 for a measure. */
+  subject: number;
+  index: number;
+  name: string;
+  role: TieRole;
+  /** The fact's own words that say the role, found in its statement. */
+  words: string;
+}
+
+export interface TieRoleResult {
+  model: string;
+  made_at: string;
+  /** Hash of what was sent (src/ties.ts): the same ties are never paid for twice. */
+  input_hash: string;
+  marks: TieRoleMark[];
+  error?: string;
+}
+
+export interface TieRoleRequest {
+  contest: string;
+  ties: { id: string; name: string; subject: string; statement: string }[];
+}
+
+export interface RawTieRole {
+  id: string;
+  role: string;
+  words: string;
+}
+
+/** Marks named ties; src/ties.ts keeps a mark only where the fact's words say it. */
+export interface TieRoleMarker {
+  markTieRoles(request: TieRoleRequest): Promise<RawTieRole[]>;
 }
 
 /** One sentence of a digest and the facts it rests on, by their place in the dossier. */
