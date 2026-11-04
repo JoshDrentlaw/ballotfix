@@ -29,7 +29,7 @@
 
 import { attachNotes } from "./context.ts";
 import { marksOf, tieKey } from "./ties.ts";
-import { normalizeUrl } from "./dossier.ts";
+import { normalizeUrl, plainText } from "./dossier.ts";
 import {
   contributorRef,
   type EntityRef,
@@ -516,9 +516,13 @@ function party(
     (result?.facts ?? []).forEach((fact, index) => {
       for (const p of attachNotes(fact.statement, notes)) {
         if (typeof p === "string") continue;
-        const mark = marks.by.get(
+        const found = marks.by.get(
           tieKey({ section, subject: marks.subject, index, name: p.note.name }),
         );
+        // A mark is keyed by the fact's place: shown only while its words are still that fact's.
+        const mark = found && plainText(fact.statement).includes(plainText(found.words))
+          ? found
+          : undefined;
         add(noteRef(p.note, scope.state, scope.jurisdiction), {
           kind: "named",
           section,

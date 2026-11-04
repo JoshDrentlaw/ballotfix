@@ -1474,8 +1474,12 @@ export function tieRole(m: { role: TieRole; words: string } | undefined): string
  * opposing (Trellis lists groups recommending No), or the outlet that reported
  * it, and nothing here can tell which, so no view calls a name an endorser.
  */
+const NAMED_TIE_BASE =
+  `a name only where a verified fact in ${SUPPORT_TITLE.endorsements}, ${SUPPORT_TITLE.case_for}, or ${SUPPORT_TITLE.case_against} names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it`;
 export const NAMED_TIE =
-  `a name only where a verified fact in ${SUPPORT_TITLE.endorsements}, ${SUPPORT_TITLE.case_for}, or ${SUPPORT_TITLE.case_against} names someone with a sourced note. Being named isn't the same as endorsing: the fact may say they support, oppose, or only reported it. Where its own words say which, the tie is marked supports, opposes, or reported, with those words; a model picked them, and they were checked only to be in the fact. Otherwise it says only named, so read each one.`;
+  `${NAMED_TIE_BASE}. Where its own words say which, the tie is marked supports, opposes, or reported, with those words; a model picked them, and they were checked only to be in the fact. Otherwise it says only named, so read each one.`;
+/** NAMED_TIE where ties are never marked (entity pages: the graph doesn't hold marks yet). */
+export const NAMED_TIE_UNMARKED = `${NAMED_TIE_BASE}, so read each one.`;
 
 /**
  * Who each pair shares as a contributor or a name in its support facts, each

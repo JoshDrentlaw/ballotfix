@@ -30,7 +30,7 @@ import {
   EVIDENCE_LABEL,
   levelChip,
   link,
-  NAMED_TIE,
+  NAMED_TIE_UNMARKED,
   page,
   pairCount,
   publishedDate,
@@ -460,7 +460,7 @@ function sharedHtml(v: EntityView, base: string): string {
   return `<details class="shared sec"><summary>Shared with others in ${esc(place)}</summary>
 <p>Every other candidate and measure side in ${
     esc(place)
-  } that finished research holds, alphabetically, with the contributors and the names in the facts both have, and where each tie comes from. A contributor counts only from a filing a run retrieved; ${NAMED_TIE} They are matched by identity only: the same exact name and kind in this place, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. Nobody in another place is compared, whatever their name. A shared name is a connection to look into, not a judgment of anyone.</p>
+  } that finished research holds, alphabetically, with the contributors and the names in the facts both have, and where each tie comes from. A contributor counts only from a filing a run retrieved; ${NAMED_TIE_UNMARKED} They are matched by identity only: the same exact name and kind in this place, and an individual also by the same stated occupation and employer, so close names are kept separate rather than guessed. Nobody in another place is compared, whatever their name. A shared name is a connection to look into, not a judgment of anyone.</p>
 ${body}</details>`;
 }
 

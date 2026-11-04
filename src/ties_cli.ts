@@ -106,7 +106,8 @@ if (import.meta.main) {
         }[]
       ) {
         const t = dossierOf(JSON.parse(row.body) as RunRecord).tie_roles;
-        if (t) theirs.set(row.id, t);
+        // A failed marking there is nothing to copy: this run would only look attempted.
+        if (t && !t.error) theirs.set(row.id, t);
       }
       src.close();
       let copied = 0, skipped = 0;

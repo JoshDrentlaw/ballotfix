@@ -35,8 +35,12 @@ import { TIE_ROLES } from "./types.ts";
 
 /** Bumped when the request or the checks change, so saved marks are made again. */
 export const TIES_VERSION = 1;
-/** Most ties in one call; over it, the run's ties stay unmarked and the log says so. */
-export const MAX_TIES = 200;
+/**
+ * Most ties in one call; over it, the run's ties stay unmarked (each says only
+ * "named"). Kept so an answer fits TIES_MAX_TOKENS at ties_cli's assumed
+ * output per tie, thinking included, rather than failing at max_tokens.
+ */
+export const MAX_TIES = 100;
 export const MAX_TIE_WORDS_CHARS = 160;
 /** Statements are cut to this length in the request; the words must still be in the whole one. */
 export const MAX_TIE_STATEMENT_CHARS = 600;
@@ -151,8 +155,9 @@ export function checkMarks(
     if (!role || !words || words.length > MAX_TIE_WORDS_CHARS) continue;
     const said = plainText(words);
     if (!said.trim() || !plainText(t.fact.statement).includes(said)) continue;
-    // The name alone says nothing about what it does.
-    if (nameKey(words) === nameKey(t.name)) continue;
+    // The name alone (or with only an article or a possessive) says nothing about what it does.
+    const rest = said.replace(plainText(t.name), " ").replace(/ (the|a|an|s)(?= )/g, "").trim();
+    if (!rest) continue;
     seen.add(r.id);
     out.push({ section: t.section, subject: t.subject, index: t.index, name: t.name, role, words });
   }

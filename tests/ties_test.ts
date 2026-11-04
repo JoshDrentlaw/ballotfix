@@ -115,7 +115,7 @@ Deno.test("a role without the fact's words, words from outside it, or the name a
   const r = await race();
   const bad = new Marker((req) => [
     { id: req.ties[0].id, role: "supports", words: "strongly backs" }, // not in the fact
-    { id: req.ties[1].id, role: "opposes", words: "Fontana Teachers Association" }, // the name
+    { id: req.ties[1].id, role: "opposes", words: "The Fontana Teachers Association" }, // the name
     { id: req.ties[2].id, role: "other", words: "" },
     { id: "t99", role: "supports", words: "listed by" },
   ]);
