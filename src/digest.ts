@@ -211,12 +211,6 @@ interface Problem {
   detail: string;
 }
 
-/** The words of a name that make it one: "Republican-affiliated" is "Republican". */
-function nameWords(name: string): string[] {
-  return name.split(/[\s\-‐–]+/).filter((w) => /^[\p{Lu}\p{N}]/u.test(w))
-    .flatMap((w) => nameKey(w).split(" ")).filter(Boolean);
-}
-
 /** "PPIC" for "Public Policy Institute of California": capitals that start words in a row there. */
 function abbreviates(word: string, text: string): boolean {
   if (!/^[A-Z]{2,6}$/.test(word)) return false;
@@ -253,8 +247,10 @@ function lineProblem(
   const sources = new Set(cited.flatMap(sourcesOf).map(nameKey));
   const words = cited.map((f) => f.statement).join(" ");
   // An outlet may be named as a source of these facts or as something they mention.
+  const sourceText = cited.flatMap(sourcesOf).join(" · ");
   const outlet = outlets.find((o) =>
-    mentions(text, o) && !sources.has(nameKey(o)) && !mentions(words, o)
+    mentions(text, o) && !sources.has(nameKey(o)) && !mentions(words, o) &&
+    !mentions(sourceText, o) // "EdSource" in "Yahoo News (republishing EdSource)"
   );
   if (outlet) {
     return problem(
@@ -274,9 +270,17 @@ function lineProblem(
   // an abbreviation of words there ("PPIC").
   const material = `${words} ${cited.flatMap(sourcesOf).join(" ")} ${subject}`;
   const known = new Set(nameKey(material).split(" "));
+  // A plural of a word there stands ("Propositions"), and so does "Prop" for "Proposition".
+  const knows = (w: string): boolean =>
+    known.has(w) || (w.endsWith("s") && knows(w.slice(0, -1))) ||
+    (w.endsWith("ies") && known.has(`${w.slice(0, -3)}y`)) ||
+    (/^props?$/.test(w) && known.has("proposition"));
   const stray = findNames(text).find((n) =>
-    nameWords(n).some((w) => !known.has(w)) &&
-    !(/^[A-Z]{2,6}$/.test(n.trim()) && abbreviates(n.trim(), material))
+    n.split(/[\s\-‐–]+/).some((part) =>
+      /^[\p{Lu}\p{N}]/u.test(part) &&
+      !(/^[A-Z]{2,6}$/.test(part) && abbreviates(part, material)) &&
+      nameKey(part).split(" ").filter(Boolean).some((w) => !knows(w))
+    )
   );
   if (stray) {
     return problem(
@@ -285,7 +289,7 @@ function lineProblem(
     );
   }
   const word = characterization(text);
-  if (word && !mentions(words, word)) {
+  if (word && !mentions(`${words} ${sourceText}`, word)) {
     return problem(
       `a line said "${word}", which its facts don't`,
       `says "${word}", which none of its facts say`,

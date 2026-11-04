@@ -225,6 +225,7 @@ Deno.test("a name its facts mention, an abbreviation of one, and a hyphenated wo
       "Inland Daily and Fontana Herald News report Joz Sida wants parks.",
       "The Fontana Herald News (FHN) reports Joz Sida wants parks.",
       "Inland Daily-affiliated reporting says rents are too high.",
+      "Inland Dailys report Joz Sida wants parks.", // a plural of a word there
     ]
   ) {
     const d = new Scripted([(req) => {
@@ -235,4 +236,39 @@ Deno.test("a name its facts mention, an abbreviation of one, and a hyphenated wo
     const { calls, left_out } = await runPlan(planRace(r, "m", NOW)!, d);
     assertEquals([calls, left_out], [1, 0], text);
   }
+});
+
+Deno.test("an outlet inside a source's name, and a judging word that is an outlet's name, stand", async () => {
+  const research = (who: string) =>
+    raw({
+      sections: {
+        platform: {
+          facts: [
+            fact(`${who} wants more parks.`, "Chino Champion", HERALD),
+            fact(`${who} said rents are too high.`, "Yahoo News (republishing EdSource)", DAILY),
+          ],
+          searched: [],
+          gap_note: null,
+        },
+        record: {
+          facts: [fact(`${who} voted no.`, "EdSource", "https://edsource.org/x")],
+          searched: [],
+          gap_note: null,
+        },
+      },
+      retrieved_urls: [HERALD, DAILY, "https://edsource.org/x"],
+    });
+  const port = new FakeResearch(listing(CANDS), {
+    "Joz Sida": research("Joz Sida"),
+    "Ana Reyes": research("Ana Reyes"),
+  });
+  const r = await runRace(QUERY, port, { candidates: CANDS });
+  const d = new Scripted([(req) => {
+    const a = fair(req);
+    a.subjects[0].sections.find((x) => x.id === "platform")!.lines[0].text =
+      "The Chino Champion and a republished EdSource piece report on parks and rents.";
+    return a;
+  }]);
+  const { calls, left_out } = await runPlan(planRace(r, "m", NOW)!, d);
+  assertEquals([calls, left_out], [1, 0]);
 });
