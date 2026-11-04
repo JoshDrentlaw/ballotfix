@@ -1282,6 +1282,9 @@ Deno.test("researched items get their own tab and can be read one after another"
   assertStringIncludes(second, "2 of 2");
   // The top bar leads back to the ballot instead of to a new race.
   assertStringIncludes(second, `<a href="/ballots/${id}/researched#item-m0">Your ballot</a></nav>`);
+  // Each finished item compares itself with the ballot's other finished items.
+  assertStringIncludes(first, `id="onballot"`);
+  assertStringIncludes(second, "On this ballot (");
   // A race not started from a ballot has no walk.
   const plain = await s.app(post("/races", {
     city: "Fontana",
@@ -1295,6 +1298,7 @@ Deno.test("researched items get their own tab and can be read one after another"
   const solo = await (await s.app(new Request(`http://app.test${plain.headers.get("location")}`)))
     .text();
   assert(!solo.includes(`class="walk"`));
+  assert(!solo.includes(`id="onballot"`));
   assertStringIncludes(solo, `<a href="/?new#new">New race</a></nav>`);
 });
 

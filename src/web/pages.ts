@@ -903,6 +903,8 @@ export interface RunPageOptions {
   saved?: boolean;
   /** Links into entity pages, for a finished run the graph holds. */
   links?: EntityLinks;
+  /** "On this ballot" (onBallotHtml), for a finished run started from a ballot. */
+  onBallot?: string;
 }
 
 /**
@@ -984,6 +986,7 @@ ${mine}`;
         mine,
         stopped: !active,
         links: opts.links,
+        onBallot: opts.onBallot,
       }),
       { nav: true, base, back, ...refresh },
     );
@@ -1003,7 +1006,7 @@ ${mine}`;
   }
   return page(
     raceTitle(run.race),
-    raceBody(run.race, { status, actions, mine, links: opts.links }),
+    raceBody(run.race, { status, actions, mine, links: opts.links, onBallot: opts.onBallot }),
     {
       nav: true,
       base,

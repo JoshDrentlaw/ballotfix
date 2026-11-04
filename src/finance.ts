@@ -623,6 +623,8 @@ export interface BallotItemDossier {
 
 /** A subject on the ballot: a candidate in a contest, or one side of a measure. */
 export interface BallotHolder {
+  /** The item's position in the list ballotConnections was given. */
+  at: number;
   item: string;
   label: string;
   ties: Tie[];
@@ -709,7 +711,7 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
   subjects.forEach((s, n) => {
     for (const [key, { ref, ties }] of s.party.ties) {
       const got = byKey.get(key) ?? { ref, holders: [], items: new Set<number>() };
-      got.holders.push({ item: s.item, label: s.label, ties });
+      got.holders.push({ at: s.at, item: s.item, label: s.label, ties });
       got.items.add(s.at);
       byKey.set(key, got);
     }

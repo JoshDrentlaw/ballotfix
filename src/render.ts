@@ -28,6 +28,7 @@ import {
 } from "./finance.ts";
 import { type EntityRef, keptApart, nameKey, noteRef, personRef, sideRef } from "./knowledge.ts";
 import { publisherKey } from "./merge.ts";
+import type { Mention, OnBallot, PlacedFact } from "./onballot.ts";
 import { factAt, OFFICE_TITLE } from "./office.ts";
 import { SHARED_PAGE_MAX_CHARS } from "./shared.ts";
 import { MEASURE_SECTIONS, OFFICE_SECTION_IDS, SECTIONS } from "./template.ts";
@@ -90,7 +91,7 @@ export function slug(s: string): string {
 }
 
 /** Ids the page uses itself; a candidate's anchor never takes one. */
-const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new", "office"]);
+const PAGE_IDS = new Set(["top", "glance", "shared", "mine", "new", "office", "onballot"]);
 
 /**
  * Like slug, but keeps letters in any script: an anchor only has to work
@@ -1591,6 +1592,117 @@ export function ballotSharedHtml(
 ${gaps}${list}${possible}</details>`;
 }
 
+/** Where a fact sits on its item's page, for a link to it. */
+function placedAnchor(candidates: readonly string[] | null, m: PlacedFact): string {
+  if (!candidates) {
+    return sectionAnchor("m", m.section.startsWith("vote_") ? "effect" : m.section);
+  }
+  return sectionAnchor(candidateAnchors(candidates)[m.index] ?? "x", m.section);
+}
+
+/** One fact that names another item: where it is, its words, and every source it has. */
+function mentionHtml(m: Mention, target: "race" | "measure", href: string): string {
+  const f = m.fact;
+  const where = [m.subject, m.title].filter(Boolean).join(" · ");
+  const names = target === "race" ? ` <span class="desig">(names ${esc(m.names)})</span>` : "";
+  const sources = [f, ...(f.also ?? [])].map((x) => link(x.source_url, x.source_name)).join(", ");
+  return `<li><span class="who-tag">${esc(where)}:</span>${names} ${evTag(f.evidence_type)}${
+    checkTag(f)
+  } “${esc(f.statement)}” · ${sources} · <a class="jumpto" href="${
+    esc(href)
+  }">see it in place</a></li>`;
+}
+
+/**
+ * "On this ballot" (src/onballot.ts), app pages of an item on a ballot only:
+ * for every other researched item with any connection, in ballot order, the
+ * facts here that name it, its facts that name this item, and the groups
+ * and contributors tied to both. Collapsed; each item its own block, counts
+ * in view, never a score. `hrefOf` gives another run's page.
+ */
+export function onBallotHtml(
+  o: OnBallot,
+  hrefOf: (runId: string) => string,
+  opts: { entityHref?: (key: string) => string | null; notCompared?: readonly string[] } = {},
+): string {
+  if (o.compared < 1) return "";
+  const here = o.candidates ? "race" : "measure";
+  const links = opts.entityHref ? { runId: "", href: opts.entityHref } : undefined;
+  const blocks = o.items.map((it) => {
+    const there = it.candidates ? "race" : "measure";
+    const parts = [
+      it.named.length
+        ? `${plural(it.named.length, "fact")} here ${it.named.length === 1 ? "names" : "name"} it`
+        : "",
+      it.namedBy.length
+        ? `${it.namedBy.length} of its facts ${
+          it.namedBy.length === 1 ? "names" : "name"
+        } this ${here}`
+        : "",
+    ].filter(Boolean);
+    const named = it.named.length
+      ? `<h5>Facts on this page that name it</h5><ul class="ties">${
+        it.named.map((m) => mentionHtml(m, there, `#${placedAnchor(o.candidates, m)}`)).join("")
+      }</ul>`
+      : "";
+    const namedBy = it.namedBy.length
+      ? `<h5>Facts on its page that name this ${here}</h5><ul class="ties">${
+        it.namedBy.map((m) =>
+          mentionHtml(m, here, `${hrefOf(it.runId)}#${placedAnchor(it.candidates, m)}`)
+        ).join("")
+      }</ul>`
+      : "";
+    return `<details class="pair"><summary><h5>${esc(it.heading)} <span class="desig">${
+      parts.join(" · ")
+    }</span></h5></summary><p class="meta"><a href="${esc(hrefOf(it.runId))}">Open ${
+      esc(it.heading)
+    }</a></p>${named}${namedBy}</details>`;
+  }).join("");
+  const groups = o.groups.length
+    ? `<details class="pair"><summary><h5>Groups and contributors tied here and to other items <span class="desig">${o.groups.length} found</span></h5></summary><ul class="shared-list">${
+      o.groups.map((x) =>
+        sharedEntryHtml(
+          x.ref,
+          x.holders.flatMap((h) => h.ties.map((t) => tieHtml(`${h.item} · ${h.label}`, t))),
+          links,
+        )
+      ).join("")
+    }</ul></details>`
+    : "";
+  const c = o.connections;
+  const gapLines = [
+    ...(c.per_subject ? [capCaveat(c.per_subject)] : []),
+    ...(opts.notCompared?.length
+      ? [`Not compared, because their research isn't done: ${opts.notCompared.join("; ")}.`]
+      : []),
+    ...c.gaps.map((g) => `${g.item}: ${g.why}.`),
+  ];
+  // What limits the comparison stays on the page, folded under its count like the standing gaps.
+  const gaps = gapLines.length
+    ? `<details class="pair"><summary><h5>What couldn't be fully compared <span class="desig">${
+      plural(gapLines.length, "note")
+    }</span></h5></summary>${
+      gapLines.map((g) => `<p class="gap">${esc(g)}</p>`).join("")
+    }</details>`
+    : "";
+  const n = o.items.length;
+  const found = [
+    n ? `${plural(n, "item")} named` : "",
+    o.groups.length ? `${plural(o.groups.length, "group")} tied to others` : "",
+  ].filter(Boolean);
+  return `<details class="shared sec onballot" id="onballot"><summary>On this ballot (${
+    found.length ? found.join(" · ") : "nothing found"
+  })</summary>
+<p>How this ${here} connects to the other researched items on your ballot, from the research already saved. Three kinds, each with its sources: verified facts here that name another item, verified facts there that name this one, and groups or contributors tied to both. A measure is named by its label as facts write it (“Proposition 40”, “Prop. 40”, “Props. 41 and 40”, “Yes on 40”), so a fact about an earlier measure with the same number shows too. A candidate is named by a given name and the surname together, so a surname alone or a nickname not on the ballot is missed. Groups are matched the way the Researched tab matches them; ${NAMED_TIE} Being named in a fact says only that the fact mentions it: read the fact for how they relate. Candidates' own positions on the measures weren't researched, so a candidate with nothing here may still have one.</p>
+${
+    n || o.groups.length
+      ? `${blocks}${groups}`
+      : `<p class="gap">Of the ${
+        plural(o.compared, "other researched item")
+      }, no fact here names one, none of their facts names this ${here}, and no group or contributor is tied to both.</p>`
+  }${gaps}</details>`;
+}
+
 function dossierSection(
   d: CandidateDossier,
   anchor: string,
@@ -2308,7 +2420,14 @@ export function raceTitle(r: RaceDossier): string {
 /** The race overview and every dossier: shared by the app and the static export. */
 export function raceBody(
   r: RaceDossier,
-  extra: { status?: string; actions?: string; mine?: string; links?: EntityLinks } = {},
+  extra: {
+    status?: string;
+    actions?: string;
+    mine?: string;
+    links?: EntityLinks;
+    /** "On this ballot" (onBallotHtml), app pages only. */
+    onBallot?: string;
+  } = {},
 ): string {
   const q = r.query;
   const inc = incumbencyNote(r.listing);
@@ -2369,6 +2488,7 @@ ${empty}
 ${glance}
 ${startedFromHtml(r.shared)}
 ${officeHtml(r.office)}
+${extra.onBallot ?? ""}
 ${readYourselfHtml(r.shared, r.finance)}
 ${jumpHtml(r, anchors, showShared, hasMine(extra.mine))}
 
@@ -2495,6 +2615,8 @@ export function measureBody(
     mine?: string;
     stopped?: boolean;
     links?: EntityLinks;
+    /** "On this ballot" (onBallotHtml), app pages only. */
+    onBallot?: string;
   } = {},
 ): string {
   const q = d.query;
@@ -2601,6 +2723,7 @@ ${
 ${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
 ${question}
 ${identity}
+${extra.onBallot ?? ""}
 ${d.status === "pending" ? "" : measureJump(d, hasMine(extra.mine))}
 <article class="dossier">
 ${body}
