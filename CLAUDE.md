@@ -284,7 +284,10 @@ show it. A found quote shows the page has those words, not that the statement re
   URL (what counts as retrieved) and `filing_url` the filing's image. The result names its `source`,
   and only then `checkFinance` takes its larger share (`MAX_EXPORT_PER_SUBJECT`, the same for every
   subject). `BALLOTFIX_NETFILE=off` or CLI `--no-netfile` always uses the model; with the finance
-  model off, the step is off. The page says which source the rows came from (`financeSource`).
+  model off, the step is off. The page says which source the rows came from (`financeSource`). Saved
+  runs get NetFile finance with `deno task finance run --place <name>` (`src/finance_cli.ts`: no
+  model fallback, only a NetFile result saved; `apply --from` copies one from a copy where the
+  subjects are the same).
 - Office powers (roadmap item 8, `src/office.ts`): after the other steps, races only, `JobRunner`
   looks up what the race's office can do (`OfficeResearcher.findOfficePowers`: `LOOKUP_EFFORT`,
   `BALLOTFIX_OFFICE_MODEL` or `DEFAULT_OFFICE_MODEL`, "off" skips it; CLI `--no-powers`), with

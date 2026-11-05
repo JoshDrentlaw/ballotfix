@@ -22,12 +22,13 @@
     "digest": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=data src/digest_cli.ts",
     // Tie roles for saved runs: `run` spends money (cents), prints an estimate, needs --yes.
     "ties": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=data src/ties_cli.ts",
+    "finance": "deno run --allow-net=netfile.com --allow-env --allow-read --allow-write=data src/finance_cli.ts",
     // How much one race's research changes between runs. Spends money: it prints an
     // estimate and stops unless given --yes. --compare reads saved runs and calls nothing.
     "stability": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=out src/stability.ts",
     // Scores runs against a person's judgments and answer key: no network, writes only with --out.
     "answer-key": "deno run --allow-read --allow-write=out src/answer_key.ts",
-    "check": "deno fmt --check && deno lint && deno check src/main.ts src/serve.ts src/diagnose.ts src/digest_cli.ts src/ties_cli.ts src/stability.ts src/answer_key.ts examples/demo_server.ts examples/build_sample.ts",
+    "check": "deno fmt --check && deno lint && deno check src/main.ts src/serve.ts src/diagnose.ts src/digest_cli.ts src/ties_cli.ts src/finance_cli.ts src/stability.ts src/answer_key.ts examples/demo_server.ts examples/build_sample.ts",
     "test": "deno test --allow-read --allow-write"
   },
   "fmt": {

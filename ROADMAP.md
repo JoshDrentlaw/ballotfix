@@ -583,10 +583,19 @@ facts come from, places, and the ballot's candidates. A name containing another 
 alongside the 7 shared. Not done: a paid notes step for just these names (web search, well under
 $1), which would turn them into sourced matches; a surname alone ("Newsom") is never listed.
 
-## 18. Fontana finance from NetFile
+## 18. Fontana finance from NetFile — done
 
 Rerun only the finance step for the Fontana races through `NetFileResearcher` (no model; netfile.com
 only), on a copy first.
+
+Done (`deno task finance`, `src/finance_cli.ts`): `run --place` reads a place's finished races and
+measures from NetFile with no model fallback and saves only a NetFile result, only the finance
+changed; `apply --from` copies it from a copy where the subjects are the same. On a copy of the live
+data, City Treasurer went from 0 contributions (the model couldn't read the portal) to 38 (19 each)
+and City Clerk to 15 (9, 6, and none listed for the third candidate's committee), every committee
+matched by name. No contributor is matched across the two races: South Star Logistics gave to a
+candidate in each, but NetFile gives no contributor type for it, so it is listed as possibly the
+same, never matched.
 
 ## 19. Results tracking
 
