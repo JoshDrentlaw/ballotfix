@@ -618,78 +618,95 @@ the voter's pick; race and measure pages show their item's. No winner is named, 
 it is unofficial until its source certifies. On the live ballot: 49 of 49 items matched. Not done:
 other counties' pages (each needs its own layout and an approved host), and other states.
 
-# Between elections: what the results led to (Nov 2026)
+# Between elections: what the ballot decided (Nov 2026)
 
-Planned on Nov 5, 2026, with the count under way. Until the next election the app's use is in what
-the ballot led to: the officeholders and measures that won, watched against the research already
+Planned on Nov 5, 2026, with the count under way, and revised the same day after a review of what
+the code and the outside sources actually offer. Until the next election the app's use is in what
+the ballot decided: the officeholders and measures that won, watched against the research already
 saved. The same invariants hold: the same template and the same effort for everyone, provenance on
 every fact, coverage gaps shown, and no verdict, including "promise kept" or "working as promised".
-Items 20–22 call no model and make the app link its own items to each other; 23–24 change the layout
-by election stage rather than adding a tab; 25–28 are the new domain.
+
+Items 20–21 make the app link its own items to each other and 22 rebuilds the ballot around one full
+view; none calls a model or waits on a decision. Item 23 is the gate for 24–27: the app knows
+counts, not outcomes, so it needs a source that states them. Item 28 doesn't depend on it.
 
 ## Decisions already made (by the owner, Nov 5 2026)
 
-- **No new navigation tab.** The ballot's tabs follow the election's stages (at most four at once),
-  and monitoring is a stage of each item, not a separate place.
+- **Placement before features.** No new tab by default. Each feature says where it lives in what
+  already exists and why, and the existing tabs can be replaced when a better structure shows up:
+  they grew one feature at a time, and there is still nowhere to see the whole ballot (item 22). No
+  fixed number of tabs; the test is whether each place answers a question the others can't.
 - **Winners and passed measures are monitored; losers and failed measures are not.** Not advancing
-  says little that's true about anyone. Their entities are kept and they're shown again only when a
-  new fact appears.
-- **Still to decide** before item 27 and the paid part of 26: which city's minutes system to start
-  with (and its host), and the monthly cap per officeholder and per measure.
+  says little that's true about anyone. Their research is kept and linked when later research meets
+  them (item 28).
+
+## Still to decide
+
+- Item 23: where outcomes come from (hand entry with the stating document's URL, the state's
+  Statement of Vote, the county's certified results, or hand entry first). Never computed from
+  counts.
+- Item 25: approving `public.netfile.com` for Form 700s, if a live check shows they're there.
+- Item 26: the schedule and per-measure cap (the whole item is a paid lookup).
+- Item 27: which city's agenda system to start with, after a live check, and its host; the cap per
+  officeholder.
 
 ## 20. Ballot item references carry their identity
 
 [#46](https://github.com/JoshDrentlaw/ballotfix/issues/46). One reference renderer wherever an item
 is named (On this ballot, shared connections, Picks, Results, entity pages, ties): its label plus a
 one-line identity from saved data only (a measure's printed question or `vote_means` YES; a race's
-office and place; the result standing), linked. Never generated text.
+office and place; the count's standing), linked. Never generated text.
 
 ## 21. Ballot items mentioned in fact text are linked
 
 [#47](https://github.com/JoshDrentlaw/ballotfix/issues/47). The On this ballot matchers
-(`measurePattern`, `namesPerson`) run over every fact on app pages, with the item's reference
-attached after its first mention, collapsed, like `attachNotes`. App pages only.
+(`measurePattern`, `namesPerson`) run over every fact on app pages started from a ballot, with the
+item's reference attached after its first mention, collapsed, like `attachNotes`.
 
-## 22. Certified results in the graph
+## 22. One full-ballot view, and the tabs rethought around it
 
-[#48](https://github.com/JoshDrentlaw/ballotfix/issues/48). A certified, unambiguous count becomes
-`elected_to` (person → office), `enacted` (measure), or `retained`, citing the count. Rebuilt from
-saved results. Election views still never name a winner.
+[#49](https://github.com/JoshDrentlaw/ballotfix/issues/49). Every item in ballot order on one page,
+each with enough to decide there: what it is, what was found (or a checkbox to research it), the
+pick and notes, and its count. Then decide what each current tab is still for: a filter of this
+view, or gone. Item pages get a stage strip. Designed on a mock-up in the demo; no client script.
 
-## 23. Stage-aware ballot tabs and an item stage strip
+## 23. Election outcomes from an official statement, then the graph
 
-[#49](https://github.com/JoshDrentlaw/ballotfix/issues/49). The tabs follow the calendar
-(`inCountWindow`, certification days), at most four at once; race and measure pages get a CSS-only
-strip: Researched · Your pick · Result · Since then.
+[#48](https://github.com/JoshDrentlaw/ballotfix/issues/48). Item 19 reads counts but not outcomes:
+the state feed states no standing and the app never calls a count certified or names a winner.
+Winners can't be computed from counts without applying election law (seats, runoffs, top-two,
+two-thirds thresholds), so an outcome comes from a document that states it, with its URL. Then
+`elected_to`, `enacted`, or `retained` in the graph, citing it. Gates items 24–27.
 
 ## 24. Home page by season
 
 [#50](https://github.com/JoshDrentlaw/ballotfix/issues/50). Between elections the home page leads
-with "Who represents you, from your ballots", by place and in ballot order, the forms folded; never
-counts that read as a score.
+with "What your ballot decided", by place and in ballot order, the forms folded. Never "who
+represents you": a ballot lists only the seats that were up. It switches back when a new ballot or a
+race with a future date is started.
 
 ## 25. Officeholder monitoring, part 1: NetFile
 
-[#51](https://github.com/JoshDrentlaw/ballotfix/issues/51). Post-election Form 460s, plus Form 700s
-where the agency publishes them there, read on a schedule through `NetFileResearcher`, no model. The
-same schedule and share for everyone; a place not on NetFile gets a gap.
+[#51](https://github.com/JoshDrentlaw/ballotfix/issues/51). Local officeholders only; others get a
+gap naming where their filings are. Post-election Form 460s through `NetFileResearcher` with a date
+window from the election on. Form 700s only if the agency publishes them on `public.netfile.com` (a
+new host), shown as redacted public copies.
 
 ## 26. Measure implementation tracker
 
 [#52](https://github.com/JoshDrentlaw/ballotfix/issues/52). Fixed follow-up sections for every
-passed measure (effective date, implementing ordinance, money, oversight reports, legal challenges)
-under its saved YES statement. A capped, priced, scheduled lookup, the same cap for every measure,
-with the provenance and quote checks.
+passed measure under its saved YES statement, "doesn't apply" kept apart from "nothing found". A
+capped, priced, scheduled lookup with the same cap for every measure.
 
-## 27. Officeholder monitoring, part 2: minutes, then said before / done since
+## 27. Officeholder monitoring, part 2: votes, then said before / done since
 
-[#53](https://github.com/JoshDrentlaw/ballotfix/issues/53). A deterministic council-minutes adapter
-for one city's system, then the dossier's platform and the voter's issues beside in-office actions,
-with the same stance check and threshold. Never a tally or "kept/broken"; coverage asymmetry
-disclosed.
+[#53](https://github.com/JoshDrentlaw/ballotfix/issues/53). Votes from one city's agenda system
+where it records them in structured form and allows anonymous reads (Legistar's Web API does for
+some cities, not all); minutes only in PDFs are a gap. Then the platform and the voter's issues
+beside in-office actions, with the same stance check. Never a tally or "kept/broken".
 
 ## 28. Losing candidates and failed measures
 
-[#54](https://github.com/JoshDrentlaw/ballotfix/issues/54). Entities kept and reused by the next
-election's research; shown again only when a new fact appears (a new candidacy, post-election
-filings, the same measure filed again by name).
+[#54](https://github.com/JoshDrentlaw/ballotfix/issues/54). Research kept and linked when later
+research meets the same person in the same scope. A later measure is never matched by its label,
+which elections reuse; the same official title in the same place is a possible match only.

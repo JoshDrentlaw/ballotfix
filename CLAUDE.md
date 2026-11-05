@@ -490,6 +490,11 @@ the unit tests missed: browsers can send `Origin: null` on the app's own form po
 `ROADMAP.md` holds the planned work in order, one PR per item, with the decisions already made. Read
 it before starting a new item, and mark an item done there in the PR that finishes it.
 
+Placement before features (owner, Nov 2026): a new feature says where it lives in what already
+exists and why, before it's built. No new tab or page by default, and the existing ones aren't
+fixed: they grew one feature at a time, so when a feature shows a better structure, propose changing
+them rather than adding beside them.
+
 ## Phases
 
 Phase 0 (this) is web research, for candidates and ballot measures, plus the first primary-record
