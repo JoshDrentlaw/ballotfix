@@ -70,6 +70,8 @@ export interface OnBallot {
   groups: BallotShared[];
   /** Near misses (one loose name kept as separate entities) that include this item. */
   possible: BallotConnections["possible"];
+  /** Same names never looked up (unlookedNames) that this item's facts hold. */
+  unlooked: BallotConnections["unlooked"];
   /** This item's candidates' names in ballot order; null for a measure. */
   candidates: string[] | null;
   /** Other items compared (done research). */
@@ -280,6 +282,7 @@ export function onBallot(items: readonly BallotItemDossier[], here: number): OnB
     items: out,
     groups,
     possible: connections.possible.filter((g) => g.some((x) => x.at === here)),
+    unlooked: connections.unlooked.filter((u) => u.holders.some((h) => h.at === here)),
     candidates: candidatesOf(items[here]),
     compared: items.length - 1,
     connections,

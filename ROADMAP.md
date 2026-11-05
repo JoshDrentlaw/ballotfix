@@ -568,10 +568,20 @@ The race, measure, and ballot connection views use the marks; entity pages don't
 graph doesn't hold them (a `KNOWLEDGE_VERSION` bump would add them). The batch helper moved to
 `src/batch.ts`, shared with the digest command.
 
-## 17. Possible matches from names never looked up
+## 17. Possible matches from names never looked up — done
 
 Names that recur across items but have no note (over the cap, or not picked up) are listed as
 possible matches, never as ties.
+
+Done (`unlookedNames` in `src/finance.ts`, part of `ballotConnections`; no model or network calls).
+A name `findNames` picks out of support facts of two or more items, by the same words with leading
+titles off, where at least one item has no sourced note on it, is listed as "Same name, no sourced
+note" on the Researched tab and in "On this ballot", each holder with its facts and whether it has a
+note there. Left out: one-word names unless an acronym, offices and generic words, laws, outlets the
+facts come from, places, and the ballot's candidates. A name containing another found on the ballot
+(or a shared one) is said to be possibly the same, never merged. On the live data: 15 names,
+alongside the 7 shared. Not done: a paid notes step for just these names (web search, well under
+$1), which would turn them into sourced matches; a surname alone ("Newsom") is never listed.
 
 ## 18. Fontana finance from NetFile
 

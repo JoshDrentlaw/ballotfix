@@ -27,12 +27,13 @@
  * they may be one.
  */
 
-import { attachNotes } from "./context.ts";
+import { attachNotes, exclusions, findNames, genericOnly, isAcronym } from "./context.ts";
 import { marksOf, tieKey } from "./ties.ts";
 import { normalizeUrl, plainText } from "./dossier.ts";
 import {
   contributorRef,
   type EntityRef,
+  jurisdictionKey,
   looseKey,
   nameKey,
   nearMisses,
@@ -651,6 +652,32 @@ export interface BallotConnections {
   gaps: { item: string; why: string }[];
   /** The most contributions any item kept per subject; 0 when no item's filings were read. */
   per_subject: number;
+  /** Names in support facts of two or more items, without a sourced note in one of them: same name only. */
+  unlooked: BallotUnlooked[];
+}
+
+/** Where a name without a note appears: one subject's support facts that say it. */
+export interface UnlookedHolder {
+  at: number;
+  item: string;
+  label: string;
+  /** Each a "named" tie, never marked: the fact and its section. */
+  ties: Tie[];
+  /** Whether that item's context step gave the name a sourced note (so it is matched there). */
+  noted: boolean;
+}
+
+/**
+ * A name in the support facts of two or more items on a ballot, with no
+ * sourced note in at least one of them, so the entity rule can't match it
+ * there. Listed by the same words only, never a tie or a shared entity.
+ */
+export interface BallotUnlooked {
+  name: string;
+  /** In ballot order. */
+  holders: UnlookedHolder[];
+  /** Other names in this list or in `shared` that contain this one whole, or that it is inside. */
+  close: string[];
 }
 
 /** Why an item's ties may be incomplete, in the words the race pages' caveats use. */
@@ -757,5 +784,191 @@ export function ballotConnections(items: readonly BallotItemDossier[]): BallotCo
         return filingsRead(f) ? f.per_subject : 0;
       }),
     ),
+    unlooked: unlookedNames(items, shared),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Names without a note (roadmap item 17)
+// ---------------------------------------------------------------------------
+
+/** Offices and words that make a run of capitals a title or a law, not a group. */
+const NOT_GROUP_WORDS = new Set(
+  (`clerk treasurer mayor auditor assessor controller sheriff superintendent instruction
+  governor lieutenant senator councilmember councilmembers associate justice division fund
+  club tax act`).split(/\s+/),
+);
+/**
+ * A name ending in one of these is a law or a measure ("Billionaire Tax"). Not "Fund" or
+ * "Bond": "Planned Parenthood Action Fund" is a committee, and "General Fund" is all
+ * generic words anyway.
+ */
+const LAW_ENDINGS = new Set([
+  "act",
+  "tax",
+  "initiative",
+  "amendment",
+  "ordinance",
+  "measure",
+]);
+/** Titles before a name, taken off its key so "U.S. Senator Bernie Sanders" is Bernie Sanders. */
+const NAME_TITLES = new Set(
+  (`senator sen governor gov lieutenant mayor rep representative assemblymember
+  supervisor councilmember councilwoman councilman president treasurer clerk judge
+  justice`).split(/\s+/),
+);
+/**
+ * Words taken off only before a title ("U.S. Senator", "State Treasurer", "Former Mayor"),
+ * never alone: "U.S. Chamber of Commerce" and "State Building Trades Council" keep theirs.
+ */
+const TITLE_QUALIFIERS = new Set(["u", "s", "us", "state", "former", "lt"]);
+
+/**
+ * A name's words with leading titles off; the last word always stays. A title
+ * before "of" or "for" starts a name ("Justice for Janitors"), and qualifiers
+ * come off only with the title they lead to.
+ */
+function unlookedKey(name: string): string {
+  const words = nameKey(name).split(" ").filter(Boolean);
+  let cut = 0;
+  for (let i = 0; i < words.length - 1; i++) {
+    if (NAME_TITLES.has(words[i]) && !["of", "for", "the", "and"].includes(words[i + 1])) {
+      cut = i + 1;
+    } else if (!TITLE_QUALIFIERS.has(words[i])) break;
+  }
+  return words.slice(cut).join(" ");
+}
+
+/** The subjects' support facts, as raceParties and measureParties read them. */
+function supportOf(
+  it: BallotItemDossier,
+): { label: string; section: typeof SUPPORT_SECTIONS[number]; facts: readonly Fact[] }[] {
+  if (it.measure) {
+    const m = it.measure;
+    if (m.status !== "ok") return [];
+    return [
+      { label: SIDE_LABEL.support, section: "case_for", facts: m.sections.case_for?.facts ?? [] },
+      {
+        label: SIDE_LABEL.oppose,
+        section: "case_against",
+        facts: m.sections.case_against?.facts ?? [],
+      },
+    ];
+  }
+  return (it.race?.candidates ?? []).flatMap((c) =>
+    c.status === "ok"
+      ? [{
+        label: c.candidate.name,
+        section: "endorsements" as const,
+        facts: c.sections.endorsements?.facts ?? [],
+      }]
+      : []
+  );
+}
+
+/**
+ * Names found (findNames, the context step's heuristic) in the support facts
+ * of subjects of two or more items, by the same words with leading titles
+ * off, where at least one item gave the name no sourced note. Left out: a
+ * one-word name unless an acronym (a surname alone, "Treasurer"), a run of
+ * offices and generic words ("City Clerk"), a law or fund ("General Fund"),
+ * an outlet the ballot's facts are sourced from, a place on the ballot, and
+ * any candidate on it (named items are "On this ballot"'s to show). Words
+ * alone don't make one group: the same name can be different people or
+ * groups, especially in different places. Alphabetical; holders in ballot order.
+ */
+export function unlookedNames(
+  items: readonly BallotItemDossier[],
+  shared: readonly BallotShared[] = [],
+): BallotUnlooked[] {
+  const people = items.flatMap((it) => (it.race?.candidates ?? []).map((c) => c.candidate.name));
+  const exclude = exclusions(people, []);
+  // findNames drops a candidate's name as found; this drops it with a title before it too.
+  const candidates = new Set(people.map(unlookedKey));
+  const places = new Set<string>();
+  const outlets = new Set<string>();
+  for (const it of items) {
+    const q = it.measure?.query ?? it.race?.query;
+    const place = it.measure?.query.jurisdiction ?? it.race?.query.city;
+    // "City of Fontana" and "Fontana", "County of X" and "X County": one place.
+    if (place) places.add(jurisdictionKey(place));
+    if (q?.state) places.add(nameKey(q.state));
+    for (const s of supportOf(it)) {
+      for (const f of s.facts) {
+        for (const src of [f, ...(f.also ?? [])]) {
+          outlets.add(nameKey(src.source_name));
+          // "Yahoo News (republishing EdSource)": both are outlets.
+          for (const inner of src.source_name.matchAll(/\(([^)]*)\)/g)) {
+            outlets.add(nameKey(inner[1].replace(/^(republishing|via|from)\s+/i, "")));
+          }
+        }
+      }
+    }
+  }
+  const listable = (name: string, key: string) => {
+    const words = key.split(" ");
+    if (!key || places.has(key) || places.has(jurisdictionKey(name))) return false;
+    if (outlets.has(key) || outlets.has(nameKey(name))) return false;
+    if (candidates.has(key)) return false;
+    if (words.length === 1 && !isAcronym(name.trim())) return false;
+    if (LAW_ENDINGS.has(words.at(-1)!)) return false;
+    return !genericOnly(key, NOT_GROUP_WORDS);
+  };
+
+  const byKey = new Map<string, { name: string; holders: UnlookedHolder[]; unnoted: boolean }>();
+  items.forEach((it, at) => {
+    const d = it.measure ?? it.race;
+    // As attachNotes ties a note to a statement holding its name, a name holding a
+    // noted one ("Sierra Club California", note "Sierra Club") is tied there already.
+    const notes = (d?.context?.notes ?? []).filter((n) => n.verified).map((n) =>
+      unlookedKey(n.name)
+    )
+      .filter(Boolean);
+    const isNotedKey = (key: string) => notes.some((n) => ` ${key} `.includes(` ${n} `));
+    for (const s of supportOf(it)) {
+      const here = new Map<string, Tie[]>();
+      for (const fact of s.facts) {
+        for (const name of findNames(fact.statement, exclude)) {
+          const key = unlookedKey(name);
+          if (!listable(name, key)) continue;
+          if (!byKey.has(key)) byKey.set(key, { name, holders: [], unnoted: false });
+          const ties = here.get(key) ?? [];
+          if (!ties.some((t) => t.kind === "named" && t.fact === fact)) {
+            ties.push({ kind: "named", section: s.section, fact });
+          }
+          here.set(key, ties);
+        }
+      }
+      for (const [key, ties] of here) {
+        const e = byKey.get(key)!;
+        const isNoted = isNotedKey(key);
+        e.holders.push({ at, item: it.heading, label: s.label, ties, noted: isNoted });
+        if (!isNoted) e.unnoted = true;
+      }
+    }
+  });
+
+  const kept = [...byKey.entries()].filter(([, e]) =>
+    e.unnoted && new Set(e.holders.map((h) => h.at)).size > 1
+  );
+  // Close names come from every name found on the ballot, listed or not, and every shared one.
+  // A shared entity of the very same words is the closest of all, so it counts too.
+  const names = [
+    ...[...byKey.entries()].map(([key, e]) => ({ key, name: e.name, self: true })),
+    ...shared.map((x) => ({ key: unlookedKey(x.ref.name), name: x.ref.name, self: false })),
+  ];
+  const inside = (a: string, b: string) => ` ${b} `.includes(` ${a} `);
+  return kept
+    .map(([key, e]) => ({
+      name: e.name,
+      holders: e.holders,
+      close: [
+        ...new Set(
+          names.filter((n) =>
+            (n.self ? n.key !== key : true) && (inside(key, n.key) || inside(n.key, key))
+          ).map((n) => n.name),
+        ),
+      ].sort((a, b) => nameKey(a).localeCompare(nameKey(b))),
+    }))
+    .sort((a, b) => unlookedKey(a.name).localeCompare(unlookedKey(b.name)));
 }

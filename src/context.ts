@@ -120,6 +120,12 @@ const GENERIC = new Set(
   teacher educator parent deputy`).split(/\s+/),
 );
 
+/** Whether a name is made only of generic words ("City Council", "Democratic Party"). */
+export function genericOnly(name: string, extra: ReadonlySet<string> = new Set()): boolean {
+  const words = nameKey(name).split(" ").filter(Boolean);
+  return words.every((w) => GENERIC.has(w) || CONNECTORS.has(w) || extra.has(w));
+}
+
 /** A run starting with one of these is a ballot item or a law, not a name. */
 const NOT_NAMES = new Set(["measure", "proposition", "prop", "resolution", "ordinance", "section"]);
 
@@ -147,7 +153,8 @@ const ABBREVIATIONS = new Set([
 ]);
 
 const isCap = (w: string) => /^\p{Lu}/u.test(w);
-const isAcronym = (w: string) => /^[\p{Lu}.&-]{2,}$/u.test(w) && /\p{Lu}.*\p{Lu}/u.test(w);
+/** "SEIU", "U.S.", "SEIU-UHW": shared with the ballot's same-name list (src/finance.ts). */
+export const isAcronym = (w: string) => /^[\p{Lu}.&-]{2,}$/u.test(w) && /\p{Lu}.*\p{Lu}/u.test(w);
 
 interface Token {
   word: string;

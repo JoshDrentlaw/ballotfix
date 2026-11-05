@@ -18,6 +18,7 @@ import {
 } from "./dossier.ts";
 import {
   type BallotConnections,
+  type BallotUnlooked,
   capCaveat,
   filingsRead,
   measureConnections,
@@ -1571,15 +1572,45 @@ export function ballotSharedHtml(
     : `<p class="gap">No contributor or name is tied to more than one item.</p>`;
   const gaps = compareGaps(c, notCompared).map((g) => `<p class="gap">${esc(g)}</p>`).join("");
   const possible = ballotPossibleHtml(c.possible);
+  const unlooked = unlookedHtml(c.unlooked);
   return `<details class="shared sec" id="shared"><summary>Shared across this ballot (${
     c.shared.length ? `${c.shared.length} found` : "none found"
+  }${
+    c.unlooked.length
+      ? ` · ${c.unlooked.length} same ${c.unlooked.length === 1 ? "name" : "names"} without a note`
+      : ""
   })</summary>
 <p>Contributors and names tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them, by exact name and kind, and an individual also by the same stated occupation and employer: a contributor only from a filing that run retrieved; ${NAMED_TIE}${
     c.places > 1
       ? ` These items are in ${c.places} different places (city, county, district, or state), and names are only matched within one place, so the same group in two places is listed under possible matches instead.`
       : ""
   } Sharing within one contest or measure is on its own page. A shared name is a connection to look into, not a judgment of anyone.</p>
-${gaps}${list}${possible}</details>`;
+${gaps}${list}${unlooked}${possible}</details>`;
+}
+
+/**
+ * Names in support facts of two or more items that weren't looked up in at
+ * least one (unlookedNames): listed by the same words only, folded, never as
+ * a tie or a shared entity. Each holder's facts with their sources.
+ */
+function unlookedHtml(list: readonly BallotUnlooked[]): string {
+  if (!list.length) return "";
+  const entries = list.map((u) =>
+    `<li><strong>${
+      esc(u.name)
+    }</strong> <span class="desig">same name, not matched</span><ul class="ties">${
+      u.holders.flatMap((h) =>
+        h.ties.map((t) =>
+          tieHtml(`${h.item} · ${h.label}${h.noted ? " (has a sourced note there)" : ""}`, t)
+        )
+      ).join("")
+    }</ul>${
+      u.close.length
+        ? `<p class="gap">Possibly the same as ${u.close.map(esc).join(" / ")}, kept separate.</p>`
+        : ""
+    }</li>`
+  ).join("");
+  return `<details class="pair"><summary><h5>Same name, no sourced note <span class="desig">${list.length} found</span></h5></summary><p>These names appear in the facts of more than one item, but at least one of those items has no sourced note on the name (it wasn't looked up, or the lookup found no source), so it can't be matched there. They are listed by the same words only: the same name can belong to different people or groups, especially in different places, so each is a lead to check, not a connection. Names were picked out of the facts automatically, so some are missed; one-word names, offices, laws, outlets the facts come from, places, and the ballot's candidates are left out.</p><ul class="shared-list">${entries}</ul></details>`;
 }
 
 /** What limits a comparison of a ballot's items: the cap, items not compared, and each gap. */
@@ -1715,10 +1746,14 @@ export function onBallotHtml(
       ballotPossibleHtml(o.possible)
     }</details>`
     : "";
+  const unlooked = unlookedHtml(o.unlooked);
   const n = o.items.length;
   const found = [
     n ? `${plural(n, "item")} named` : "",
     o.groups.length ? `${plural(o.groups.length, "group")} tied to others` : "",
+    o.unlooked.length
+      ? `${o.unlooked.length} same ${o.unlooked.length === 1 ? "name" : "names"} without a note`
+      : "",
   ].filter(Boolean);
   return `<details class="shared sec onballot" id="onballot"><summary>On this ballot (${
     found.length ? found.join(" · ") : "nothing found"
@@ -1732,7 +1767,7 @@ ${
         plural(o.compared, "other researched item")
       }, no fact here names one, none of their facts names this ${here}, and no group or contributor is tied to both.</p>`
       : `<p class="gap">No other item on this ballot has finished research yet, so there is nothing to compare.</p>`
-  }${possible}${gaps}</details>`;
+  }${unlooked}${possible}${gaps}</details>`;
 }
 
 function dossierSection(
