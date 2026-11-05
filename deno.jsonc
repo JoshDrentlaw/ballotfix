@@ -22,7 +22,7 @@
     "digest": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=data src/digest_cli.ts",
     // Tie roles for saved runs: `run` spends money (cents), prints an estimate, needs --yes.
     "ties": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=data src/ties_cli.ts",
-    "finance": "deno run --allow-net=netfile.com --allow-env --allow-read --allow-write=data src/finance_cli.ts",
+    "finance": "deno run --env-file=.env --allow-net=netfile.com --allow-env --allow-read --allow-write=data src/finance_cli.ts",
     // How much one race's research changes between runs. Spends money: it prints an
     // estimate and stops unless given --yes. --compare reads saved runs and calls nothing.
     "stability": "deno run --env-file=.env --allow-net=api.anthropic.com --allow-env --allow-read --allow-write=out src/stability.ts",

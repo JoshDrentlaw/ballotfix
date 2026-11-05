@@ -11,9 +11,16 @@
  *
  * Only a result read from NetFile is saved: where the place isn't on NetFile
  * or no committee matches, the run keeps what it had and the command says
- * why. There is no model fallback here. Each run is read again just before
- * its save, and only its finance changes; the graph is rebuilt for it in the
+ * why. There is no model fallback here. A result with fewer contributions for
+ * any subject than the run already has is not saved (a year unreadable, the
+ * export cut short, a committee not matched) unless given --replace, and
+ * apply skips a run whose finance here is already from NetFile, so an older
+ * copy never replaces a newer read. Each run is read again just before its
+ * save, and only its finance changes; the graph is rebuilt for it in the
  * same save.
+ *
+ * On live data, use it only while no run is in its after-done steps: the job
+ * runner holds that run in memory and would save its own finance back over this.
  */
 
 import { parseArgs } from "@std/cli/parse-args";
@@ -40,10 +47,20 @@ function financeOf(run: RunRecord): FinanceResult | undefined {
   return (run.measure_result ?? run.race)?.finance;
 }
 
-/** Whether a run is a finished race or measure in `place`. */
-export function inPlace(run: RunRecord, place: string): boolean {
+/** Whether a run is a finished race or measure in `place`, in `state` (NetFile is California's). */
+export function inPlace(run: RunRecord, place: string, state = "CA"): boolean {
   const p = placeOf(run);
-  return run.status === "done" && !!p && jurisdictionKey(p) === jurisdictionKey(place);
+  const st = (run.measure_result ?? run.race)?.query.state ?? "";
+  return run.status === "done" && !!p && st.toUpperCase() === state.toUpperCase() &&
+    jurisdictionKey(p) === jurisdictionKey(place);
+}
+
+/** The subjects (by their place in the result) that would have fewer contributions after than before. */
+export function losesRows(before: FinanceResult | undefined, after: FinanceResult): number[] {
+  if (!before) return [];
+  return after.subjects.flatMap((s, i) =>
+    s.contributions.length < (before.subjects[i]?.contributions.length ?? 0) ? [i] : []
+  );
 }
 
 /** Only finance goes onto the run as it is now, and only if it looks up the same subjects. */
@@ -74,10 +91,29 @@ function describe(f: FinanceResult): string {
 }
 
 if (import.meta.main) {
-  const args = parseArgs(Deno.args, { string: ["data", "from", "place", "only"] });
+  const args = parseArgs(Deno.args, {
+    string: ["data", "from", "place", "only", "state"],
+    boolean: ["replace"],
+  });
   const [cmd] = args._.map(String);
+  if (cmd !== "run" && cmd !== "apply") {
+    console.log(
+      "usage: finance run|apply --data <dir> --place <name> [--state CA] [--only id] [--from db] [--replace]",
+    );
+    Deno.exit(cmd ? 1 : 0);
+  }
   if (!args.place) throw new Error("--place <name> is needed, e.g. --place Fontana");
   const place = args.place;
+  const state = args.state ?? "CA";
+  /** Why a result isn't saved over what the run has, or "" to save it. */
+  const refuse = (before: FinanceResult | undefined, f: FinanceResult) => {
+    const lost = losesRows(before, f);
+    return lost.length && !args.replace
+      ? `fewer contributions than it has for subject(s) ${
+        lost.map((i) => i + 1).join(", ")
+      }; kept as it was (--replace saves it anyway)`
+      : "";
+  };
   const stores = await openStores(args.data ?? "data");
   try {
     if (cmd === "run") {
@@ -86,9 +122,10 @@ if (import.meta.main) {
         agencies: parseAgencyMap(Deno.env.get("BALLOTFIX_NETFILE_AGENCIES")),
         log: (m) => console.log(m),
       });
-      let saved = 0;
+      let saved = 0, matched = 0;
       for (const run of await stores.runs.list()) {
-        if (!inPlace(run, place) || (args.only && run.id !== args.only)) continue;
+        if (!inPlace(run, place, state) || (args.only && run.id !== args.only)) continue;
+        matched++;
         const before = financeOf(run);
         try {
           const f = run.measure_result
@@ -101,12 +138,22 @@ if (import.meta.main) {
           console.log(
             `${run.id}: was ${before ? describe(before) : "not looked up"}; now ${describe(f)}`,
           );
+          const no = refuse(before, f);
+          if (no) {
+            console.log(`${run.id}: ${no}`);
+            continue;
+          }
           if (await saveFinance(stores.runs, run.id, subjectsOf(run), f)) saved++;
         } catch (err) {
           console.log(
             `${run.id}: kept as it was. ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+      }
+      if (!matched) {
+        console.log(
+          `no finished race or measure in ${place}${args.only ? ` with id ${args.only}` : ""}.`,
+        );
       }
       console.log(`saved NetFile finance for ${saved} run(s) in ${place}.`);
     } else if (cmd === "apply") {
@@ -119,15 +166,31 @@ if (import.meta.main) {
           body: string;
         }[]
       ) {
-        theirs.set(row.id, JSON.parse(row.body) as RunRecord);
+        try {
+          theirs.set(row.id, JSON.parse(row.body) as RunRecord);
+        } catch {
+          console.log(`${row.id}: unreadable in the copy; skipped`);
+        }
       }
       src.close();
       let copied = 0, skipped = 0;
       for (const run of await stores.runs.list()) {
-        if (!inPlace(run, place)) continue;
+        if (!inPlace(run, place, state)) continue;
         const t = theirs.get(run.id);
         const f = t && financeOf(t);
         if (!t || !f || f.source?.kind !== "netfile") continue;
+        const here = financeOf(run);
+        if (here?.source?.kind === "netfile" && !args.replace) {
+          skipped++;
+          console.log(`${run.id}: its finance here is already from NetFile; skipped`);
+          continue;
+        }
+        const no = refuse(here, f);
+        if (no) {
+          skipped++;
+          console.log(`${run.id}: ${no}`);
+          continue;
+        }
         // The copy's body is as saved; its places may read differently, the subjects can't.
         if (subjectsOf(t) !== subjectsOf(run)) {
           skipped++;
@@ -140,8 +203,6 @@ if (import.meta.main) {
         }
       }
       console.log(`copied NetFile finance for ${copied} run(s), ${skipped} skipped.`);
-    } else {
-      console.log("usage: finance run|apply --data <dir> --place <name> [--only id] [--from db]");
     }
   } finally {
     stores.db.close();
