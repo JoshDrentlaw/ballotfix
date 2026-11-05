@@ -153,7 +153,8 @@ const ABBREVIATIONS = new Set([
 ]);
 
 const isCap = (w: string) => /^\p{Lu}/u.test(w);
-const isAcronym = (w: string) => /^[\p{Lu}.&-]{2,}$/u.test(w) && /\p{Lu}.*\p{Lu}/u.test(w);
+/** "SEIU", "U.S.", "SEIU-UHW": shared with the ballot's same-name list (src/finance.ts). */
+export const isAcronym = (w: string) => /^[\p{Lu}.&-]{2,}$/u.test(w) && /\p{Lu}.*\p{Lu}/u.test(w);
 
 interface Token {
   word: string;

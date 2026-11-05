@@ -184,15 +184,84 @@ Deno.test("the Researched tab and On this ballot list them folded, never as shar
   const html = ballotSharedHtml(c);
   assertStringIncludes(
     html,
-    "Shared across this ballot (none found · 3 same names never looked up)",
+    "Shared across this ballot (none found · 3 same names without a note)",
   );
-  assertStringIncludes(html, "Same name, never looked up");
+  assertStringIncludes(html, "Same name, no sourced note");
   assertStringIncludes(html, "a lead to check, not a connection");
   assertStringIncludes(html, "Possibly the same as Inland Empire Labor Council Steering Committee");
 
   const o = onBallot(items, 1);
   assertEquals(o.unlooked.map((x) => x.name), ["Inland Empire Labor Council"]);
   const page = onBallotHtml(o, (id) => `/races/${id}`);
-  assertStringIncludes(page, "1 same name never looked up");
+  assertStringIncludes(page, "1 same name without a note");
   assertStringIncludes(page, "Namou was endorsed by the Inland Empire Labor Council.");
+});
+
+Deno.test("the ballot's places in either form, and qualifiers without a title, stay as written", async () => {
+  const items: BallotItemDossier[] = [
+    {
+      heading: "Mayor",
+      runId: "mayor",
+      race: await race("Fontana", "Mayor", {
+        "Ann Lee": [
+          "Lee is backed by the City of Fontana firefighters, the U.S. Chamber of Commerce, and Justice for Janitors.",
+        ],
+      }),
+    },
+    {
+      heading: "County Supervisor",
+      runId: "sup",
+      race: await race("County of San Bernardino", "Supervisor", {
+        "Bob Ray": [
+          "Ray spoke at City of Fontana Hall; the Chamber of Commerce, San Bernardino County, and Justice for Janitors back him.",
+        ],
+      }),
+    },
+  ];
+  const names = unlookedNames(items).map((x) => x.name);
+  assert(!names.includes("City of Fontana"), "a race's city in its City of form");
+  assert(!names.includes("San Bernardino County"), "a County of place in its X County form");
+  // "U.S." comes off only before a title: the U.S. Chamber is not a local Chamber of Commerce.
+  assert(!names.includes("U.S. Chamber of Commerce"));
+  assert(names.includes("Justice for Janitors"));
+});
+
+Deno.test("a name holding a noted one is tied already; a Fund is a committee; the very same shared name is close", async () => {
+  const two = async (a: string, b: string) => [
+    { heading: "Mayor", runId: "mayor", race: await race("Fontana", "Mayor", { "Ann Lee": [a] }) },
+    {
+      heading: "Clerk",
+      runId: "clerk",
+      race: await race("Fontana", "City Clerk", { "Bob Ray": [b] }),
+    },
+  ];
+  const sierra = await two(
+    "Lee is endorsed by Sierra Club California.",
+    "Ray is endorsed by Sierra Club California.",
+  );
+  const noted = sierra.map((it) => ({ ...it, race: withNotes(it.race, ["Sierra Club"]) }));
+  assertEquals(unlookedNames(noted), []);
+
+  const fund = await two(
+    "Planned Parenthood Action Fund backs Lee; the General Fund pays for it.",
+    "Planned Parenthood Action Fund backs Ray.",
+  );
+  assertEquals(unlookedNames(fund).map((x) => x.name), ["Planned Parenthood Action Fund"]);
+
+  const items = await ballot();
+  const shared = [{
+    ref: {
+      kind: "organization" as const,
+      key: "k",
+      name: "Inland Empire Labor Council",
+      scope: "ca|fontana",
+      place: "Fontana",
+    },
+    holders: [],
+  }];
+  const labor = unlookedNames(items, shared).find((x) => x.name === "Inland Empire Labor Council")!;
+  assertEquals(labor.close, [
+    "Inland Empire Labor Council",
+    "Inland Empire Labor Council Steering Committee",
+  ]);
 });

@@ -1577,7 +1577,7 @@ export function ballotSharedHtml(
     c.shared.length ? `${c.shared.length} found` : "none found"
   }${
     c.unlooked.length
-      ? ` · ${c.unlooked.length} same ${c.unlooked.length === 1 ? "name" : "names"} never looked up`
+      ? ` · ${c.unlooked.length} same ${c.unlooked.length === 1 ? "name" : "names"} without a note`
       : ""
   })</summary>
 <p>Contributors and names tied to candidates or sides in more than one item on this ballot, each tie with its source. They are matched the way each race page matches them, by exact name and kind, and an individual also by the same stated occupation and employer: a contributor only from a filing that run retrieved; ${NAMED_TIE}${
@@ -1610,7 +1610,7 @@ function unlookedHtml(list: readonly BallotUnlooked[]): string {
         : ""
     }</li>`
   ).join("");
-  return `<details class="pair"><summary><h5>Same name, never looked up <span class="desig">${list.length} found</span></h5></summary><p>These names appear in the facts of more than one item, but at least one of those items has no sourced note on the name, so it can't be matched there. They are listed by the same words only: the same name can belong to different people or groups, especially in different places, so each is a lead to check, not a connection. Names were picked out of the facts automatically, so some are missed; one-word names, offices, laws, outlets the facts come from, places, and the ballot's candidates are left out.</p><ul class="shared-list">${entries}</ul></details>`;
+  return `<details class="pair"><summary><h5>Same name, no sourced note <span class="desig">${list.length} found</span></h5></summary><p>These names appear in the facts of more than one item, but at least one of those items has no sourced note on the name (it wasn't looked up, or the lookup found no source), so it can't be matched there. They are listed by the same words only: the same name can belong to different people or groups, especially in different places, so each is a lead to check, not a connection. Names were picked out of the facts automatically, so some are missed; one-word names, offices, laws, outlets the facts come from, places, and the ballot's candidates are left out.</p><ul class="shared-list">${entries}</ul></details>`;
 }
 
 /** What limits a comparison of a ballot's items: the cap, items not compared, and each gap. */
@@ -1752,7 +1752,7 @@ export function onBallotHtml(
     n ? `${plural(n, "item")} named` : "",
     o.groups.length ? `${plural(o.groups.length, "group")} tied to others` : "",
     o.unlooked.length
-      ? `${o.unlooked.length} same ${o.unlooked.length === 1 ? "name" : "names"} never looked up`
+      ? `${o.unlooked.length} same ${o.unlooked.length === 1 ? "name" : "names"} without a note`
       : "",
   ].filter(Boolean);
   return `<details class="shared sec onballot" id="onballot"><summary>On this ballot (${

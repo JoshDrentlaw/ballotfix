@@ -140,7 +140,7 @@ show it. A found quote shows the page has those words, not that the statement re
   items, by the same entity keys the race pages use, alphabetical, holders in ballot order, never
   counted up; same names in other places or close names are listed as possible matches, never
   matched; names in two or more items' support facts with no sourced note in one of them are listed
-  as "Same name, never looked up" (`unlookedNames`: same words, titles off; no one-word names but
+  as "Same name, no sourced note" (`unlookedNames`: same words, titles off; no one-word names but
   acronyms, offices, laws, outlets, places, or candidates), never a tie, also in "On this ballot";
   shown from two items up, with each item it couldn't fully compare named as a gap: research not
   done, finance not looked up or failed, no sourced notes), and Picks (`/picks`, only items with a
