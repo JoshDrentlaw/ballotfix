@@ -617,3 +617,79 @@ request (once per five minutes). The Results tab lists every item in ballot orde
 the voter's pick; race and measure pages show their item's. No winner is named, and each count says
 it is unofficial until its source certifies. On the live ballot: 49 of 49 items matched. Not done:
 other counties' pages (each needs its own layout and an approved host), and other states.
+
+# Between elections: what the results led to (Nov 2026)
+
+Planned on Nov 5, 2026, with the count under way. Until the next election the app's use is in what
+the ballot led to: the officeholders and measures that won, watched against the research already
+saved. The same invariants hold: the same template and the same effort for everyone, provenance on
+every fact, coverage gaps shown, and no verdict, including "promise kept" or "working as promised".
+Items 20–22 call no model and make the app link its own items to each other; 23–24 change the layout
+by election stage rather than adding a tab; 25–28 are the new domain.
+
+## Decisions already made (by the owner, Nov 5 2026)
+
+- **No new navigation tab.** The ballot's tabs follow the election's stages (at most four at once),
+  and monitoring is a stage of each item, not a separate place.
+- **Winners and passed measures are monitored; losers and failed measures are not.** Not advancing
+  says little that's true about anyone. Their entities are kept and they're shown again only when a
+  new fact appears.
+- **Still to decide** before item 27 and the paid part of 26: which city's minutes system to start
+  with (and its host), and the monthly cap per officeholder and per measure.
+
+## 20. Ballot item references carry their identity
+
+[#46](https://github.com/JoshDrentlaw/ballotfix/issues/46). One reference renderer wherever an item
+is named (On this ballot, shared connections, Picks, Results, entity pages, ties): its label plus a
+one-line identity from saved data only (a measure's printed question or `vote_means` YES; a race's
+office and place; the result standing), linked. Never generated text.
+
+## 21. Ballot items mentioned in fact text are linked
+
+[#47](https://github.com/JoshDrentlaw/ballotfix/issues/47). The On this ballot matchers
+(`measurePattern`, `namesPerson`) run over every fact on app pages, with the item's reference
+attached after its first mention, collapsed, like `attachNotes`. App pages only.
+
+## 22. Certified results in the graph
+
+[#48](https://github.com/JoshDrentlaw/ballotfix/issues/48). A certified, unambiguous count becomes
+`elected_to` (person → office), `enacted` (measure), or `retained`, citing the count. Rebuilt from
+saved results. Election views still never name a winner.
+
+## 23. Stage-aware ballot tabs and an item stage strip
+
+[#49](https://github.com/JoshDrentlaw/ballotfix/issues/49). The tabs follow the calendar
+(`inCountWindow`, certification days), at most four at once; race and measure pages get a CSS-only
+strip: Researched · Your pick · Result · Since then.
+
+## 24. Home page by season
+
+[#50](https://github.com/JoshDrentlaw/ballotfix/issues/50). Between elections the home page leads
+with "Who represents you, from your ballots", by place and in ballot order, the forms folded; never
+counts that read as a score.
+
+## 25. Officeholder monitoring, part 1: NetFile
+
+[#51](https://github.com/JoshDrentlaw/ballotfix/issues/51). Post-election Form 460s, plus Form 700s
+where the agency publishes them there, read on a schedule through `NetFileResearcher`, no model. The
+same schedule and share for everyone; a place not on NetFile gets a gap.
+
+## 26. Measure implementation tracker
+
+[#52](https://github.com/JoshDrentlaw/ballotfix/issues/52). Fixed follow-up sections for every
+passed measure (effective date, implementing ordinance, money, oversight reports, legal challenges)
+under its saved YES statement. A capped, priced, scheduled lookup, the same cap for every measure,
+with the provenance and quote checks.
+
+## 27. Officeholder monitoring, part 2: minutes, then said before / done since
+
+[#53](https://github.com/JoshDrentlaw/ballotfix/issues/53). A deterministic council-minutes adapter
+for one city's system, then the dossier's platform and the voter's issues beside in-office actions,
+with the same stance check and threshold. Never a tally or "kept/broken"; coverage asymmetry
+disclosed.
+
+## 28. Losing candidates and failed measures
+
+[#54](https://github.com/JoshDrentlaw/ballotfix/issues/54). Entities kept and reused by the next
+election's research; shown again only when a new fact appears (a new candidacy, post-election
+filings, the same measure filed again by name).
