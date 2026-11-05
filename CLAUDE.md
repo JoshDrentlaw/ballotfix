@@ -139,13 +139,16 @@ show it. A found quote shows the page has those words, not that the statement re
   `src/finance.ts`, every contributor or name in a support fact tied to subjects of two or more
   items, by the same entity keys the race pages use, alphabetical, holders in ballot order, never
   counted up; same names in other places or close names are listed as possible matches, never
-  matched; shown from two items up, with each item it couldn't fully compare named as a gap:
-  research not done, finance not looked up or failed, no sourced notes), and Picks (`/picks`, only
-  items with a pick; the rest are named in a "Still undecided" list linking to where to decide
-  them). A page saving picks only touches the items it posted (`parseSheet`). Race pages started
-  from a ballot get prev/next links through its researched items in ballot order (`walkFor`). The
-  checked-to-research highlight and the count on the research button are CSS only (`:has()` and a
-  CSS counter), so they need no script.
+  matched; names in two or more items' support facts with no sourced note in one of them are listed
+  as "Same name, never looked up" (`unlookedNames`: same words, titles off; no one-word names but
+  acronyms, offices, laws, outlets, places, or candidates), never a tie, also in "On this ballot";
+  shown from two items up, with each item it couldn't fully compare named as a gap: research not
+  done, finance not looked up or failed, no sourced notes), and Picks (`/picks`, only items with a
+  pick; the rest are named in a "Still undecided" list linking to where to decide them). A page
+  saving picks only touches the items it posted (`parseSheet`). Race pages started from a ballot get
+  prev/next links through its researched items in ballot order (`walkFor`). The checked-to-research
+  highlight and the count on the research button are CSS only (`:has()` and a CSS counter), so they
+  need no script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
