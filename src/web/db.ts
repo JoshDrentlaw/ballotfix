@@ -152,6 +152,27 @@ const MIGRATIONS = [
   -- rebuild KNOWLEDGE_VERSION 8 starts.
   ALTER TABLE claims ADD COLUMN check_level TEXT;
   `,
+  `
+  -- Election results (src/results.ts): each distinct count of a ballot item once, with
+  -- when it was first and last read, so a count's history is kept as it changes. Not
+  -- derived data: results are kept across elections and never rebuilt.
+  CREATE TABLE results (
+    id INTEGER PRIMARY KEY,
+    ballot_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    first_read TEXT NOT NULL,
+    last_read TEXT NOT NULL,
+    body TEXT NOT NULL,
+    UNIQUE (ballot_id, item_key, fingerprint)
+  ) STRICT;
+  CREATE INDEX results_by_item ON results (ballot_id, item_key, last_read);
+
+  -- The last check of each ballot: when, what couldn't be matched or read.
+  CREATE TABLE result_checks (
+    ballot_id TEXT PRIMARY KEY, checked_at TEXT NOT NULL, body TEXT NOT NULL
+  ) STRICT;
+  `,
 ];
 
 export type Row = Record<string, unknown>;

@@ -16,6 +16,8 @@
  *   GET  /ballots/:id/researched what has research, in ballot order, with the quick read on each
  *   GET  /ballots/:id/picks     the voter's picks and notes, in ballot order
  *   POST /ballots/:id/picks     save picks and notes (from the sheet, or the ballot page)
+ *   GET  /ballots/:id/results   every item's latest election count, in ballot order
+ *   POST /ballots/:id/results   read the results now (free; at most one per few minutes)
  *   GET  /entities              name search over the knowledge graph, one place at a time
  *   GET  /entities/:slug        what the graph holds on one person, organization, office,
  *                               measure, or measure side, across finished runs (read-only)
@@ -57,6 +59,9 @@ import type {
   RaceQuery,
 } from "../types.ts";
 import { type BallotJobs, type JobRunner, QueueFullError, type SubmitExtras } from "./jobs.ts";
+import type { ResultsChecker } from "./results_check.ts";
+import { resultBox } from "./results_view.ts";
+import { resultNames } from "../results.ts";
 import {
   ballotPage,
   type BallotWalk,
@@ -73,6 +78,7 @@ import {
   type PickItem,
   picksPage,
   researchedPage,
+  resultsPage,
   runPage,
   withSaved,
 } from "./pages.ts";
@@ -92,6 +98,8 @@ export interface AppOptions {
   ballots?: BallotJobs;
   /** Keeps the voter's notes and picks. Without it, there is no notes panel. */
   choices?: ChoiceStore;
+  /** Reads and keeps election results (src/web/results_check.ts). Without it, no results show. */
+  results?: ResultsChecker;
   /** False when no API key is configured: pages still work, research is disabled. */
   canResearch: boolean;
   /** When set, every request needs HTTP Basic auth with this password (any username). */
@@ -744,6 +752,21 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
     }));
   };
 
+  /** The results box for a run started from a ballot, once its item has a count. */
+  const resultsFor = async (run: RunRecord): Promise<string | undefined> => {
+    const link = run.ballot;
+    if (!link || !o.ballots || !o.results) return undefined;
+    const b = await o.ballots.store.get(link.id);
+    if (!b?.reading) return undefined;
+    const choice = o.choices ? await o.choices.get(ballotChoiceId(b.id, link.key)) : null;
+    return resultBox(o.results.forBallot(b.id).get(link.key), resultNames(b.reading, link.key), {
+      picks: choice?.picks,
+      electionDate: b.reading.election_date,
+      now: new Date(),
+      resultsHref: `${BASE}/ballots/${b.id}/results#item-${link.key}`,
+    }) || undefined;
+  };
+
   /** A ballot run's place among the ballot's researched items, in ballot order. */
   const walkFor = async (run: RunRecord): Promise<BallotWalk | undefined> => {
     const link = run.ballot;
@@ -934,7 +957,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
       }
     }
 
-    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/researched|\/picks)?$/);
+    const m = path.match(/^\/ballots\/([^/]+?)(\/research|\/researched|\/picks|\/results)?$/);
     if (!m) return null;
     const [, id, suffix] = m;
     const b = isRunId(id) ? await ballots.store.get(id) : null;
@@ -972,6 +995,53 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           return s ? `${BASE}/entities/${s}` : null;
         },
       }));
+    }
+    if (suffix === "/results" && (!o.results || !b.reading)) {
+      return html(
+        messagePage(
+          "No results",
+          o.results
+            ? "Results are read once the ballot has been read."
+            : "Election results aren't read on this server.",
+          BASE,
+        ),
+        404,
+      );
+    }
+    if (suffix === "/results" && o.results && b.reading) {
+      const notices: Record<string, string> = {
+        changed: "Checked: some counts changed since the last read.",
+        same: "Checked: no count has changed since the last read.",
+      };
+      if (req.method === "POST") {
+        const out = await o.results.check(b.id, true);
+        if (!out.ok) {
+          return html(
+            resultsPage(b, await pickItems(b), {
+              base: BASE,
+              results: o.results.forBallot(b.id),
+              lastCheck: o.results.lastCheck(b.id),
+              nextCheck: o.results.nextManual(b.id),
+              notice: out.why,
+              now: new Date(),
+            }),
+            out.limited ? 429 : 502,
+          );
+        }
+        return redirect(
+          `${BASE}/ballots/${b.id}/results?checked=${out.changed ? "changed" : "same"}`,
+        );
+      }
+      if (req.method === "GET") {
+        return html(resultsPage(b, await pickItems(b), {
+          base: BASE,
+          results: o.results.forBallot(b.id),
+          lastCheck: o.results.lastCheck(b.id),
+          nextCheck: o.results.nextManual(b.id),
+          notice: notices[url.searchParams.get("checked") ?? ""],
+          now: new Date(),
+        }));
+      }
     }
     if (suffix === "/picks" && req.method === "GET") {
       return html(picksPage(b, await pickItems(b), BASE, { saved: url.searchParams.has("saved") }));
@@ -1185,6 +1255,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
           walk: await walkFor(run),
           links: linksFor(run),
           onBallot: await onBallotFor(run),
+          results: await resultsFor(run),
           againPlace: againPlace(run),
           ...extra,
         });

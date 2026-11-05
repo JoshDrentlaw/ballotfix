@@ -19,7 +19,24 @@ import {
 } from "../render.ts";
 import { MAX_PRIORITIES, MAX_PRIORITIES_PER_LIST } from "../template.ts";
 import { BALLOT_MEDIA_TYPES } from "../types.ts";
-import type { BallotRecord, BallotStatus, ChoiceRecord, RunRecord, RunStatus } from "./store.ts";
+import { resultNames } from "../results.ts";
+import {
+  checkLine,
+  readTime,
+  resultHistory,
+  resultMeta,
+  resultTable,
+  standing,
+} from "./results_view.ts";
+import type {
+  BallotRecord,
+  BallotStatus,
+  ChoiceRecord,
+  RunRecord,
+  RunStatus,
+  StoredCheck,
+  StoredResult,
+} from "./store.ts";
 
 /** Upload limits. Claude takes up to 10 MB of base64 per image and 32 MB per request. */
 export const MAX_BALLOT_FILES = 8;
@@ -269,8 +286,8 @@ export interface BallotPageOptions {
   error?: string;
 }
 
-/** The three views of a read ballot, as tabs at the top of each. */
-type BallotTab = "research" | "researched" | "picks";
+/** The views of a read ballot, as tabs at the top of each. */
+type BallotTab = "research" | "researched" | "picks" | "results";
 
 function ballotTabs(b: BallotRecord, items: readonly PickItem[], at: BallotTab, base: string) {
   const r = b.reading;
@@ -286,7 +303,7 @@ function ballotTabs(b: BallotRecord, items: readonly PickItem[], at: BallotTab, 
     tab("research", "", "To research", String(total - started))
   }${tab("researched", "/researched", "Researched", String(started))}${
     tab("picks", "/picks", "Picks", `${decided} of ${total}`)
-  }</nav>`;
+  }${tab("results", "/results", "Results", "")}</nav>`;
 }
 
 /** "Your pick: <strong>…</strong>", or "" when there's no pick yet. */
@@ -905,6 +922,8 @@ export interface RunPageOptions {
   links?: EntityLinks;
   /** "On this ballot" (onBallotHtml), for a finished run started from a ballot. */
   onBallot?: string;
+  /** The item's election results (resultBox), for a run started from a ballot. */
+  results?: string;
 }
 
 /**
@@ -987,6 +1006,7 @@ ${mine}`;
         stopped: !active,
         links: opts.links,
         onBallot: opts.onBallot,
+        results: opts.results,
       }),
       { nav: true, base, back, ...refresh },
     );
@@ -1006,7 +1026,14 @@ ${mine}`;
   }
   return page(
     raceTitle(run.race),
-    raceBody(run.race, { status, actions, mine, links: opts.links, onBallot: opts.onBallot }),
+    raceBody(run.race, {
+      status,
+      actions,
+      mine,
+      links: opts.links,
+      onBallot: opts.onBallot,
+      results: opts.results,
+    }),
     {
       nav: true,
       base,
@@ -1116,6 +1143,67 @@ ${
       : `<p class="sub">No picks yet.</p>`
   }
 ${rest}`;
+  return page(title, body, { nav: true, base });
+}
+
+export interface ResultsPageOptions {
+  base?: string;
+  /** Each item's saved counts, newest first. */
+  results: Map<string, StoredResult[]>;
+  lastCheck: StoredCheck | null;
+  /** When the voter may ask for the next check; null when now. */
+  nextCheck: Date | null;
+  /** The outcome of a check just asked for, to say in place. */
+  notice?: string;
+  now: Date;
+}
+
+/**
+ * Every item on the ballot with its latest count, in ballot order, the
+ * voter's pick beside it: the counts as their sources state them, never a
+ * winner named, each saying whether it can still change.
+ */
+export function resultsPage(b: BallotRecord, items: PickItem[], o: ResultsPageOptions): string {
+  const base = o.base ?? "";
+  const title = "Results";
+  const r = b.reading!;
+  const why = new Map((o.lastCheck?.unmatched ?? []).map((u) => [u.item, u.why]));
+  const list = items.map((x) => {
+    const history = o.results.get(x.key);
+    const latest = history?.[0];
+    const names = resultNames(r, x.key);
+    const research = x.run
+      ? ` · <a href="${base}/races/${esc(x.run.id)}">See the research</a>`
+      : "";
+    const pick = yourPick(x.choice) || "Undecided";
+    const inside = latest
+      ? `${resultTable(latest, names, x.choice?.picks)}
+<p class="sub">${esc(standing(latest, r.election_date, o.now))}</p>
+${resultMeta(latest)}${resultHistory(history!, names)}`
+      : `<p class="gap">No count yet${why.has(x.key) ? `: ${esc(why.get(x.key)!)}` : ""}.</p>`;
+    return `<li class="item" id="item-${esc(x.key)}"><div class="item-head"><h3>${
+      esc(x.heading)
+    }</h3></div>
+<p class="desig">${esc(x.detail)}</p>
+<p class="item-lean">${pick}${research}</p>
+${inside}</li>`;
+  }).join("");
+  const counted = items.filter((x) => o.results.has(x.key)).length;
+  const button = o.nextCheck
+    ? `<p class="sub">You can check again after ${esc(readTime(o.nextCheck.toISOString()))}.</p>`
+    : `<form method="post" action="${base}/ballots/${
+      esc(b.id)
+    }/results"><button type="submit" class="secondary">Check for new results</button></form>`;
+  const body = `<h1>${title}</h1>
+<p class="sub">From the ballot uploaded ${
+    esc(when(b.created_at))
+  } · ${counted} of ${items.length} with a count, in ballot order.</p>
+${ballotTabs(b, items, "results", base)}
+${o.notice ? `<p class="note" role="status">${esc(o.notice)}</p>` : ""}
+<div class="banner info"><p><strong>Counts as the officials publish them, read on election day and once a day after, until a week after the state certifies.</strong> Statewide and district contests come from the California Secretary of State's results feed, the rest from your county's results page. Until certification they're unofficial and can change; each says where it stands. Candidates stay in ballot order and no winner is named here. Earlier counts are kept under each.</p></div>
+<p class="sub">${esc(checkLine(o.lastCheck, items.length))}</p>
+${button}
+<ol class="items results">${list}</ol>`;
   return page(title, body, { nav: true, base });
 }
 

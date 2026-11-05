@@ -2163,6 +2163,21 @@ label.check input { width: 24px; height: 24px; margin: 0; flex: none; }
 .tabs { display: flex; gap: 4px; margin: 12px 0; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
 .tabs a { flex: 1; text-align: center; padding: 10px 4px; border-radius: 9px; text-decoration: none; font-weight: 600; font-size: .92rem; min-height: 44px; }
 .tabs a[aria-current=page] { background: var(--accent); color: var(--accent-fg); }
+.tabs a .count:empty { display: none; }
+@media (max-width: 480px) { .tabs a { font-size: .82rem; padding: 10px 2px; } }
+.results-box { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
+.results-box h2 { margin-top: 0; }
+table.votes { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .95rem; }
+table.votes th, table.votes td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+table.votes thead th { font-size: .8rem; color: var(--muted); font-weight: 600; }
+table.votes th[scope=row] { font-weight: 600; overflow-wrap: anywhere; }
+table.votes .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.votes .bar-cell { width: 28%; }
+table.votes .bar { display: block; height: 8px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+table.votes tr.extra th, table.votes tr.extra td { color: var(--muted); font-weight: 400; }
+.your-pick { font-size: .75rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); white-space: nowrap; }
+ul.history { margin: 6px 0; padding-left: 18px; font-size: .9rem; }
+@media (max-width: 480px) { table.votes .bar-cell { width: 18%; } table.votes { font-size: .9rem; } }
 .tabs .count { font-weight: 400; opacity: .85; }
 .items, .picks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .item, .picks > li { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 0 14px; scroll-margin-top: 12px; }
@@ -2494,6 +2509,8 @@ export function raceBody(
     links?: EntityLinks;
     /** "On this ballot" (onBallotHtml), app pages only. */
     onBallot?: string;
+    /** The item's election results (src/web/results_view.ts), app pages only. */
+    results?: string;
   } = {},
 ): string {
   const q = r.query;
@@ -2543,6 +2560,7 @@ ${
       r.candidates.flatMap((d) => d.status === "ok" ? d.priorities ?? [] : []),
     )
   }
+${extra.results ?? ""}
 <h2${glance ? "" : ` id="glance"`}>${
     r.listing.contest_kind === "retention" ? "On the ballot" : "Candidates"
   }</h2>
@@ -2684,6 +2702,8 @@ export function measureBody(
     links?: EntityLinks;
     /** "On this ballot" (onBallotHtml), app pages only. */
     onBallot?: string;
+    /** The item's election results (src/web/results_view.ts), app pages only. */
+    results?: string;
   } = {},
 ): string {
   const q = d.query;
@@ -2788,6 +2808,7 @@ ${
     )
   }
 ${d.status === "ok" ? stanceSummary(d.priorities, "measure") : ""}
+${extra.results ?? ""}
 ${question}
 ${identity}
 ${extra.onBallot ?? ""}

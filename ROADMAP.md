@@ -598,7 +598,22 @@ candidate's committee), every committee matched by name. No contributor is match
 races: South Star Logistics gave to a candidate in each, but NetFile gives no contributor type for
 it, so it is listed as possibly the same, never matched.
 
-## 19. Results tracking
+## 19. Results tracking — done
 
 Official results per contest (entered by hand first; registrar or Secretary of State later), linked
 to the runs and kept across elections.
+
+Done without hand entry (the owner had no time for it, and approved the two hosts Nov 4 2026):
+`src/results.ts` reads the California Secretary of State's JSON feed (`api.sos.ca.gov/returns/...`,
+one per statewide or district office, the propositions, and each court's retentions) and the
+county's results page (San Bernardino's, `COUNTY_PAGES`), no model. An item matches by its own words
+only (every candidate's name without initials or nicknames, a proposition's number, a judge's name,
+a local measure's label and place), the state's count first, the county's for local items and as a
+fallback marked as that county's only; anything else is listed with why. Each distinct count is kept
+once in `results` (first and last read), so the history stays as the count changes; results are
+keyed by ballot item, not run, so reruns keep them. `ResultsChecker` reads on election day and once
+a day after until a week past the state's certification date (38 days; the county's is 30), and on
+request (once per five minutes). The Results tab lists every item in ballot order with its count and
+the voter's pick; race and measure pages show their item's. No winner is named, and each count says
+it is unofficial until its source certifies. On the live ballot: 49 of 49 items matched. Not done:
+other counties' pages (each needs its own layout and an approved host), and other states.

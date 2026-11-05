@@ -12,10 +12,11 @@ form. Phase 0 is deliberately narrow, unlike Parallax Fix:
 
 The web app (`deno task serve`) adds:
 
-| Grant                                     | Why                                                   |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `--allow-net=127.0.0.1,localhost,0.0.0.0` | Listening. `0.0.0.0` is for containers and Tailscale. |
-| `--allow-write=data,out`                  | `data/ballotfix.db` (runs, ballots, notes, graph).    |
+| Grant                                                 | Why                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--allow-net=127.0.0.1,localhost,0.0.0.0`             | Listening. `0.0.0.0` is for containers and Tailscale.                                                                                                                                                                                                                                    |
+| `--allow-net=api.sos.ca.gov,results.rov.sbcounty.gov` | Election results (`src/results.ts`): the California Secretary of State's public results feed and San Bernardino County's results page. GET only, no credentials, nothing about the voter or the ballot sent; `BALLOTFIX_RESULTS=off` never calls them. Approved by the owner Nov 4 2026. |
+| `--allow-write=data,out`                              | `data/ballotfix.db` (runs, ballots, notes, graph).                                                                                                                                                                                                                                       |
 
 Starting research spends money on the operator's API key, so the app:
 
@@ -29,6 +30,10 @@ Starting research spends money on the operator's API key, so the app:
   running one;
 - only saves or looks up records whose ids match `^[a-z0-9][a-z0-9-]{0,119}$`, and passes every
   value to SQLite as a bound parameter, never as SQL text;
+- reads election results with GETs to fixed public URLs (a feed per office, the county's page for
+  the election date), at most once a day per ballot on its schedule and once per five minutes when
+  asked, with a timeout and a size cap. What comes back is untrusted input: parsed as data, escaped,
+  and matched locally;
 - sends NetFile nothing about the race: it reads an agency's whole year of transactions and matches
   committees locally. What comes back is untrusted input, checked and escaped like research;
 - for ballot uploads, stops reading the body past 23 MB, decides each file's type from its bytes
