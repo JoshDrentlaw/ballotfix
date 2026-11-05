@@ -182,7 +182,8 @@ const flat = (html: string) => decode(html.replace(/<[^>]+>/g, " ")).replace(/\s
  */
 export function parseCountyPage(html: string, url: string, sourceName: string): ContestCount[] {
   const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ");
-  const head = flat(body.slice(0, body.search(/<h2[\s>]/i) >>> 0 || 200_000));
+  const h2 = body.search(/<h2[\s>]/i);
+  const head = flat(body.slice(0, h2 > 0 ? h2 : 200_000));
   const status = /\b((?:Final |Semi-?)?(?:Unofficial|Official|Certified)[\w -]{0,60}?Results)\b/i
     .exec(head)?.[1] ?? null;
   const report = /Summary Report #\s*(\d+)/i.exec(flat(body.slice(0, 400_000)))?.[1];
@@ -246,7 +247,11 @@ const ORDINALS = [
 export function districtOf(s: string): number | null {
   const m = /(?:district\s+(\d+))|(?:(\d+)(?:st|nd|rd|th)\s+(?:appellate\s+)?district)/i.exec(s);
   if (m) return Number(m[1] ?? m[2]);
-  const w = new RegExp(`\\b(${ORDINALS.join("|")})\\s+(?:appellate\\s+)?district`, "i").exec(s);
+  // Never the "third" of "Twenty-Third": a compound ordinal isn't read, rather than read wrong.
+  const w = new RegExp(
+    `(?<!ty[\\s-])\\b(${ORDINALS.join("|")})\\s+(?:appellate\\s+)?district`,
+    "i",
+  ).exec(s);
   return w ? ORDINALS.indexOf(w[1].toLowerCase()) + 1 : null;
 }
 
@@ -255,8 +260,8 @@ const STATEWIDE: [RegExp, string][] = [
   [/^governor$/, "governor"],
   [/^lieutenant governor$/, "lieutenant-governor"],
   [/^secretary of state$/, "secretary-of-state"],
-  [/^controller$/, "controller"],
-  [/^treasurer$/, "treasurer"],
+  [/^(state )?controller$/, "controller"],
+  [/^(state )?treasurer$/, "treasurer"],
   [/^attorney general$/, "attorney-general"],
   [/^insurance commissioner$/, "insurance-commissioner"],
   [/^superintendent of public instruction$/, "superintendent-of-public-instruction"],
@@ -267,7 +272,7 @@ const STATEWIDE: [RegExp, string][] = [
 export function sosPathFor(office: string, jurisdiction: string): string | null {
   const o = nameKey(office).replace(/^(member|member of the)\s+/, "").trim();
   const state = /^(state|california|state of california|state offices?)$/i
-    .test(jurisdiction.trim()) || /\bstate\b/i.test(jurisdiction);
+    .test(jurisdiction.trim()) || /\bstate(wide)?\b/i.test(jurisdiction) || o.startsWith("state ");
   for (const [re, path] of STATEWIDE) {
     // "Treasurer" alone is the state's only when the ballot puts it under the state.
     if (re.test(o) && (path !== "treasurer" && path !== "controller" || state)) return path;
@@ -276,7 +281,7 @@ export function sosPathFor(office: string, jurisdiction: string): string | null 
   if (d === null) return null;
   if (/representative|congress/.test(o)) return `us-rep/district/${d}`;
   if (/state assembly|assembly/.test(o)) return `state-assembly/district/${d}`;
-  if (/state senate|senate/.test(o)) return `state-senate/district/${d}`;
+  if (/\bsenat(e|or)\b/.test(o)) return `state-senate/district/${d}`;
   if (/board of equalization/.test(o)) return `board-of-equalization/district/${d}`;
   return null;
 }
@@ -370,7 +375,8 @@ export function matchResults(
     const statewide = sosPathFor(c.office, c.jurisdiction) !== null;
     const s = statewide ? byNames(names, state) : null;
     if (s && s !== "several") return add(item, s.c, s.order, false);
-    const k = byNames(names, county);
+    // Several state counts fit: not settled by picking one county's instead.
+    const k = s === "several" ? null : byNames(names, county);
     if (k && k !== "several") return add(item, k.c, k.order, statewide);
     unmatched.push({
       item,
@@ -423,18 +429,30 @@ export function matchResults(
     const withLabel = county.filter((c) => isYesNo(c) && label.test(c.contest));
     const place = jurisdictionKey(m.jurisdiction);
     const here = withLabel.length > 1
-      ? withLabel.filter((c) => place && nameKey(c.contest).includes(place))
+      ? withLabel.filter((c) => place && placeIn(c.contest, place))
       : withLabel;
     const c = one(here);
     if (c && c !== "several") return add(item, c, yn(c), false);
     unmatched.push({
       item,
-      why: c === "several"
+      why: c === "several" || withLabel.length > 1
         ? `more than one count is ${m.label} in ${m.jurisdiction || "its place"}`
         : `no count on the county's page is ${m.label}${missing("county")}`,
     });
   });
   return { matched, unmatched };
+}
+
+/**
+ * Whether a contest's title names a place (a jurisdictionKey), whole words: a
+ * county as "X County" or "County of X"; a city never by its county's name.
+ */
+function placeIn(contest: string, place: string): boolean {
+  const k = ` ${nameKey(contest)} `;
+  const county = /^(.+) county$/.exec(place)?.[1];
+  if (county) return k.includes(` ${place} `) || k.includes(` county of ${county} `);
+  return k.replaceAll(` county of ${place} `, " ").replaceAll(` ${place} county `, " ")
+    .includes(` ${place} `);
 }
 
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -485,7 +503,9 @@ export function inCountWindow(r: BallotReading, now: Date): boolean {
   if (!r.election_date || (r.state && r.state.toUpperCase() !== "CA")) return false;
   const dates = certifyDates(r.election_date);
   if (!dates) return false;
-  const start = new Date(`${r.election_date}T00:00:00Z`).getTime();
+  // California's polls close at 8 p.m. Pacific: 04:00 UTC the next day in November
+  // (03:00 in summer). Reading from then on means the first check is election night's.
+  const start = new Date(`${r.election_date}T03:00:00Z`).getTime() + 86_400_000;
   const end = new Date(`${dates.state}T00:00:00Z`).getTime() +
     CHECK_AFTER_CERTIFY_DAYS * 86_400_000;
   return now.getTime() >= start && now.getTime() <= end;
@@ -520,16 +540,18 @@ export async function checkResults(
   }
   const state: ContestCount[] = [];
   let stateWhy: string | undefined;
-  for (const p of sosPaths(r)) {
-    const url = `${SOS_BASE}/${p}`;
-    try {
-      state.push(...parseSosFeed(JSON.parse(await fetcher(url)), url));
-    } catch (err) {
-      const why = err instanceof Error ? err.message : String(err);
-      errors.push({ source: SOS_NAME, url, why });
-      stateWhy = "the Secretary of State's feed couldn't be read";
-    }
-  }
+  // The feeds are independent: read together, kept in path order.
+  const urls = sosPaths(r).map((p) => `${SOS_BASE}/${p}`);
+  const reads = await Promise.allSettled(
+    urls.map(async (url) => parseSosFeed(JSON.parse(await fetcher(url)), url)),
+  );
+  reads.forEach((res, i) => {
+    if (res.status === "fulfilled") return void state.push(...res.value);
+    const err = res.reason;
+    const why = err instanceof Error ? err.message : String(err);
+    errors.push({ source: SOS_NAME, url: urls[i], why });
+    stateWhy = "the Secretary of State's feed couldn't be read";
+  });
   const county: ContestCount[] = [];
   let countyWhy: string | undefined;
   const page = COUNTY_PAGES[nameKey(r.county ?? "").replace(/ county$/, "")];
@@ -552,14 +574,14 @@ export async function checkResults(
   return { checked_at: read_at, matched, unmatched, errors };
 }
 
-/** What makes two reads the same count: kept once, at its first read. */
+/** What makes two reads the same count (the same votes and status): kept once, at its first read. */
 export function fingerprint(c: ContestCount): string {
+  // Not as_of or reporting: a new report number or "next update" with the same votes is
+  // the same count (its last read moves), not a new row in every item's history.
   return createHash("sha256").update(JSON.stringify([
     c.source,
     c.source_url,
     c.contest,
-    c.reporting,
-    c.as_of,
     c.status,
     c.choices,
   ])).digest("hex");

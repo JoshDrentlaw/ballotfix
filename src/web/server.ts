@@ -996,6 +996,18 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
         },
       }));
     }
+    if (suffix === "/results" && (!o.results || !b.reading)) {
+      return html(
+        messagePage(
+          "No results",
+          o.results
+            ? "Results are read once the ballot has been read."
+            : "Election results aren't read on this server.",
+          BASE,
+        ),
+        404,
+      );
+    }
     if (suffix === "/results" && o.results && b.reading) {
       const notices: Record<string, string> = {
         changed: "Checked: some counts changed since the last read.",
@@ -1013,7 +1025,7 @@ export function createApp(o: AppOptions): (req: Request) => Promise<Response> {
               notice: out.why,
               now: new Date(),
             }),
-            out.why.startsWith("Results were just") ? 429 : 502,
+            out.limited ? 429 : 502,
           );
         }
         return redirect(

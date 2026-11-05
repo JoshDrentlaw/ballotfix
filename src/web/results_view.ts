@@ -48,7 +48,7 @@ export function standing(r: StoredResult, electionDate: string | null, now: Date
   const past = by ? now.toISOString().slice(0, 10) > by : false;
   const who = r.count.source === "county" ? "the county" : "the Secretary of State";
   const partial = r.partial
-    ? `Only ${r.count.source_name}'s count: the Secretary of State's feed for this contest couldn't be read, so votes cast in other counties aren't in it. `
+    ? `Only ${r.count.source_name}'s count: the Secretary of State's feed gave no count for this contest, so votes cast in other counties aren't in it. `
     : "";
   const own = r.count.status ? `The source says “${r.count.status}”. ` : "";
   const law = !by

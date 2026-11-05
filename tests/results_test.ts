@@ -324,6 +324,9 @@ Deno.test("two contests that both fit are neither's", () => {
 
 Deno.test("only a ballot in its count window is checked on a schedule", () => {
   assert(!inCountWindow(reading, new Date("2026-11-02T12:00:00Z")));
+  // Election day itself, before the polls close at 8 p.m. Pacific (04:00 UTC the next day).
+  assert(!inCountWindow(reading, new Date("2026-11-03T20:00:00Z")));
+  assert(inCountWindow(reading, new Date("2026-11-04T04:30:00Z")));
   assert(inCountWindow(reading, new Date("2026-11-04T12:00:00Z")));
   assert(inCountWindow(reading, new Date("2026-12-15T12:00:00Z")));
   assert(!inCountWindow(reading, new Date("2026-12-20T12:00:00Z")));
@@ -362,6 +365,12 @@ Deno.test("a count is kept once; a changed one is new, and the older stays as hi
     "2026-11-04T12:00:00.000Z",
     "2026-11-05T12:00:00.000Z",
   ]);
+  // A new report with the same votes is the same count, not a new row.
+  const relabeled = PAGE.replace("Summary Report #5", "Summary Report #6");
+  feeds = (u) => u === COUNTY ? Promise.resolve(relabeled) : fetcher()(u);
+  t = new Date("2026-11-05T18:00:00Z");
+  const again = await checker.check("ballot-1");
+  assertEquals(again.ok && again.changed, 0);
   // The county counts more ballots: a new count, the first kept below it.
   const later = PAGE.replace("12,149", "13,000").replace("Summary Report #5", "Summary Report #6");
   feeds = (u) => u === COUNTY ? Promise.resolve(later) : fetcher()(u);

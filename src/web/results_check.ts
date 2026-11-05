@@ -19,7 +19,7 @@ export const MIN_MANUAL_MS = 5 * 60 * 1000;
 
 export type CheckOutcome =
   | { ok: true; changed: number; matched: number; errors: number }
-  | { ok: false; why: string };
+  | { ok: false; why: string; limited?: boolean };
 
 export class ResultsChecker {
   #busy: Promise<unknown> = Promise.resolve();
@@ -61,7 +61,11 @@ export class ResultsChecker {
     const b = await this.ballots.get(id);
     if (!b?.reading) return { ok: false, why: "This ballot hasn't been read." };
     if (manual && this.nextManual(id)) {
-      return { ok: false, why: "Results were just checked. Try again in a few minutes." };
+      return {
+        ok: false,
+        why: "Results were just checked. Try again in a few minutes.",
+        limited: true,
+      };
     }
     try {
       const c = await checkResults(b.reading, this.fetcher, this.now());
