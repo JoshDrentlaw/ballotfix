@@ -9,6 +9,7 @@ import { notesToReuse } from "../context.ts";
 import { ballotPlace } from "../dossier.ts";
 import { scopeKey } from "../knowledge.ts";
 import { type KnownOffice, officeKey, reusable } from "../office.ts";
+import { fingerprint, type ItemResult, type ResultsCheck } from "../results.ts";
 import { Db } from "./db.ts";
 import { KnowledgeBase } from "./kb.ts";
 import type {
@@ -427,11 +428,90 @@ export class ChoiceStore extends RecordTable<ChoiceRecord> {
   }
 }
 
+/**
+ * Election results by ballot item (src/results.ts). A count is saved once per
+ * distinct reading, so a later check with the same numbers only moves its
+ * last read; a changed count is a new row, and the older ones stay as history.
+ * Never in a run's JSON or a download.
+ */
+export class ResultStore {
+  constructor(readonly db: Db) {}
+
+  /** Saves one check. Returns how many items got a count that differs from their last one. */
+  record(ballotId: string, check: ResultsCheck): number {
+    if (!isRunId(ballotId)) throw new Error(`invalid id: ${ballotId}`);
+    let changed = 0;
+    this.db.tx(() => {
+      for (const m of check.matched) {
+        const fp = fingerprint(m.count);
+        const last = this.db.get(
+          "SELECT fingerprint FROM results WHERE ballot_id = ? AND item_key = ? ORDER BY last_read DESC, id DESC LIMIT 1",
+          ballotId,
+          m.item,
+        );
+        if (last?.fingerprint !== fp) changed++;
+        this.db.run(
+          `INSERT INTO results (ballot_id, item_key, fingerprint, first_read, last_read, body)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (ballot_id, item_key, fingerprint) DO UPDATE SET last_read = excluded.last_read`,
+          ballotId,
+          m.item,
+          fp,
+          m.read_at,
+          check.checked_at,
+          JSON.stringify(m),
+        );
+      }
+      const { matched: _, ...rest } = check;
+      this.db.run(
+        `INSERT INTO result_checks (ballot_id, checked_at, body) VALUES (?, ?, ?)
+         ON CONFLICT (ballot_id) DO UPDATE SET checked_at = excluded.checked_at, body = excluded.body`,
+        ballotId,
+        check.checked_at,
+        JSON.stringify({ ...rest, matched: check.matched.length }),
+      );
+    });
+    return changed;
+  }
+
+  /** Each item's counts, newest read first; the first is what the page shows. */
+  forBallot(ballotId: string): Map<string, StoredResult[]> {
+    const out = new Map<string, StoredResult[]>();
+    for (
+      const row of this.db.all(
+        "SELECT item_key, first_read, last_read, body FROM results WHERE ballot_id = ? ORDER BY last_read DESC, id DESC",
+        ballotId,
+      )
+    ) {
+      const r = parse<ItemResult>(row.body);
+      if (!r) continue;
+      const k = String(row.item_key);
+      out.set(k, [...(out.get(k) ?? []), {
+        ...r,
+        read_at: String(row.first_read),
+        last_read: String(row.last_read),
+      }]);
+    }
+    return out;
+  }
+
+  lastCheck(ballotId: string): StoredCheck | null {
+    const row = this.db.get("SELECT body FROM result_checks WHERE ballot_id = ?", ballotId);
+    return row ? parse<StoredCheck>(row.body) : null;
+  }
+}
+
+/** A saved count: first read when first seen, last read at the latest check that saw it. */
+export type StoredResult = ItemResult & { last_read: string };
+/** A saved check, with how many items matched rather than the counts themselves. */
+export type StoredCheck = Omit<ResultsCheck, "matched"> & { matched: number };
+
 export interface Stores {
   db: Db;
   runs: RunStore;
   ballots: BallotStore;
   choices: ChoiceStore;
+  results: ResultStore;
 }
 
 export interface OpenOptions {
@@ -453,6 +533,7 @@ export async function openStores(dir: string, opts: OpenOptions = {}): Promise<S
     runs: new RunStore(db, log),
     ballots: new BallotStore(db),
     choices: new ChoiceStore(db),
+    results: new ResultStore(db),
   };
   let imported = 0;
   if (db.meta("json_imported_at") === null) {

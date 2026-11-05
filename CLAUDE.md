@@ -130,7 +130,7 @@ show it. A found quote shows the page has those words, not that the statement re
   saved: every write undoes the reading (`unplaceRun`); `query.place_as_saved` keeps the heading,
   and the race page says it was read. An office lookup from such a race isn't reused, since it was
   researched under the heading.
-- A read ballot has three tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
+- A read ballot has four tabs: To research (`/ballots/:id`, collapsed cards for unstarted items,
   each also taking a pick and notes; "Hide the N with a saved pick" is a CSS-only toggle that posts
   with the form and comes back as `?hide=decided`, never hides an item checked to research, and is
   off on an error page so what needs fixing stays in view; "Research checked" saves the page's picks
@@ -143,12 +143,13 @@ show it. A found quote shows the page has those words, not that the statement re
   as "Same name, no sourced note" (`unlookedNames`: same words, titles off; no one-word names but
   acronyms, offices, laws, outlets, places, or candidates), never a tie, also in "On this ballot";
   shown from two items up, with each item it couldn't fully compare named as a gap: research not
-  done, finance not looked up or failed, no sourced notes), and Picks (`/picks`, only items with a
-  pick; the rest are named in a "Still undecided" list linking to where to decide them). A page
-  saving picks only touches the items it posted (`parseSheet`). Race pages started from a ballot get
-  prev/next links through its researched items in ballot order (`walkFor`). The checked-to-research
-  highlight and the count on the research button are CSS only (`:has()` and a CSS counter), so they
-  need no script.
+  done, finance not looked up or failed, no sourced notes), Picks (`/picks`, only items with a pick;
+  the rest are named in a "Still undecided" list linking to where to decide them), and Results
+  (`/results`, every item's election count; see "Election results"). A page saving picks only
+  touches the items it posted (`parseSheet`). Race pages started from a ballot get prev/next links
+  through its researched items in ballot order (`walkFor`). The checked-to-research highlight and
+  the count on the research button are CSS only (`:has()` and a CSS counter), so they need no
+  script.
 - Measures: the reader returns structured `BallotMeasure`s (`kind` measure or retention). Older
   saved readings hold bare strings; `measuresOf()` reads both. A measure run is a `RunRecord` with
   `measure` set and its result in `measure_result` (one session, `researchMeasure`). A retention
@@ -337,6 +338,27 @@ show it. A found quote shows the page has those words, not that the statement re
   marks from a copy by hash (`apply`). The connection views show a marked tie as "supports (“the
   fact's words”), named in ..." (`tieRole`); every other tie stays "named". Entity pages read ties
   from the graph, which doesn't hold marks yet, so they still say only "named".
+- Election results (roadmap item 19, `src/results.ts`): no model. For a read California ballot,
+  `checkResults` reads the Secretary of State's JSON feeds (`SOS_BASE`; one per statewide or
+  district office via `sosPathFor`, the propositions, each court's retentions via `retentionPath`;
+  at most `MAX_SOS_FEEDS`) and the county's results page (`COUNTY_PAGES`, San Bernardino only;
+  `parseCountyPage`), each with a timeout and `MAX_RESULTS_BYTES`. `matchResults` matches an item by
+  its own words only: a contest by every ballot candidate's `personKey` (no initials, nicknames, or
+  suffixes; never a surname alone), a proposition by its number, a retention by the judge's name, a
+  local measure by its label and, where several places have one, its place. The state's count wins;
+  the county's is used for local items and as a fallback, then `partial` and said to be that
+  county's only. Two fitting counts are neither's; every unmatched item is saved with why.
+  `ResultStore` (`results`, `result_checks` tables) keeps each distinct count once by `fingerprint`
+  (first and last read), keyed by ballot item, never by run, and never in a download.
+  `ResultsChecker` (`src/web/results_check.ts`) reads each ballot in its count window
+  (`inCountWindow`: election day to `CHECK_AFTER_CERTIFY_DAYS` after the state certifies,
+  `STATE_CERTIFY_DAYS`; the county's is `COUNTY_CERTIFY_DAYS`) once per `SCHEDULE_MS`, and on the
+  voter's POST at most once per `MIN_MANUAL_MS`; `BALLOTFIX_RESULTS=off` skips it. The ballot's
+  Results tab (`resultsPage`) lists every item in ballot order with its latest count, the voter's
+  pick, its standing (`standing`: the source's own status, unofficial until its certification date,
+  and after it never called certified on our say), its source and reads, and earlier counts folded;
+  race and measure pages started from a ballot show their item's (`resultBox`, above the
+  candidates). Choices stay in ballot order and no winner is ever named.
 - On this ballot (`src/onballot.ts`, `onBallotHtml`): app race and measure pages started from a
   ballot, once done, get a collapsed box after the overview (race: after the office; measure: before
   the jump bar) comparing the run with the ballot's other finished items (the latest started run of

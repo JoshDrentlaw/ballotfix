@@ -41,6 +41,10 @@
  *                        that marks what each tie's fact says the name does (supports,
  *                        opposes, reported), kept only where the fact's words say it
  *                        (default: claude-haiku-5-5); "off" skips it
+ *   BALLOTFIX_RESULTS   "off" never reads election results; otherwise each read ballot's
+ *                        counts are read from the California Secretary of State's feed and
+ *                        its county's results page (no model) on election day and once a
+ *                        day after, until a week after the state certifies, and on request
  *   BALLOTFIX_MAX_QUEUED  races allowed to wait behind the running one (default 30); waiting
  *                        races are saved and put back in line after a restart
  *
@@ -53,7 +57,9 @@ import {
   DEFAULT_DIGEST_MODEL,
   DEFAULT_TIES_MODEL,
 } from "./research/anthropic.ts";
+import { fetchText } from "./results.ts";
 import { BallotJobs, JobRunner } from "./web/jobs.ts";
+import { ResultsChecker } from "./web/results_check.ts";
 import { createApp } from "./web/server.ts";
 import { openStores } from "./web/store.ts";
 
@@ -81,9 +87,12 @@ if (host !== "127.0.0.1" && host !== "localhost" && !password) {
 }
 
 const dataDir = env("BALLOTFIX_DATA_DIR") ?? "data";
-const { runs: store, ballots: ballotStore, choices } = await openStores(dataDir, {
-  log: (m) => console.log(m),
-});
+const { runs: store, ballots: ballotStore, choices, results: resultStore } = await openStores(
+  dataDir,
+  {
+    log: (m) => console.log(m),
+  },
+);
 const now = new Date().toISOString();
 const interrupted = await store.markInterrupted(now);
 if (interrupted) console.log(`Marked ${interrupted} run(s) cut off mid-research as interrupted.`);
@@ -186,8 +195,15 @@ if (resumed.interrupted) {
   console.log(`Marked ${resumed.interrupted} waiting run(s) as interrupted instead.`);
 }
 
+// Election results: free GETs to two public sources, no model. Read on a schedule
+// while a ballot's count is open, and when the voter asks.
+const results = env("BALLOTFIX_RESULTS") === "off"
+  ? undefined
+  : new ResultsChecker(ballotStore, resultStore, fetchText, (m) => console.log(m));
+results?.start();
+
 if (!canResearch) console.warn("ANTHROPIC_API_KEY is not set: research is disabled.");
 Deno.serve(
   { hostname: host, port },
-  createApp({ store, jobs, ballots, choices, canResearch, password, basePath }),
+  createApp({ store, jobs, ballots, choices, results, canResearch, password, basePath }),
 );
